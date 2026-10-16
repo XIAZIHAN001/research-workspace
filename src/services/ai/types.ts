@@ -120,5 +120,7 @@ export interface AiHealth {
     totalContextChars: number;
     questionChars: number;
     requestsPerMinute: number;
+    /** The generation ceiling in force, reasoning included. */
+    answerTokens: number;
   };
 }

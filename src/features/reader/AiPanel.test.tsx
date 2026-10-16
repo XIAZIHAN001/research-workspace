@@ -77,6 +77,7 @@ const HEALTH: AiHealth = {
     totalContextChars: 6000,
     questionChars: 1000,
     requestsPerMinute: 30,
+    answerTokens: 8192,
   },
 };
 

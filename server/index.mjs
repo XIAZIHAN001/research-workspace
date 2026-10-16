@@ -65,6 +65,9 @@ export function createAiServer({
       totalContextChars: LIMITS.totalContextChars,
       questionChars: LIMITS.questionChars,
       requestsPerMinute: LIMITS.requestsPerMinute,
+      // Reported so a live run can record, in its own evidence, which ceiling produced the
+      // result — and so a stale process cannot silently keep using the old one.
+      answerTokens: config.answerTokens ?? LIMITS.answerTokens,
     },
   };
 

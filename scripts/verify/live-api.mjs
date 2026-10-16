@@ -30,7 +30,6 @@ const SERVICE_ORIGIN = `http://127.0.0.1:${SERVICE}`;
 const ORIGIN = `http://127.0.0.1:${String(PORT)}/`;
 const ROOT = new URL('../../', import.meta.url);
 const SHOT_DIR = new URL('docs/screenshots-phase4.1/', ROOT);
-const REPORT_FILE = new URL('docs/phase4.1-live-api-report.json', ROOT);
 const VITE_BIN = fileURLToPath(new URL('node_modules/vite/bin/vite.js', ROOT));
 const PAPER = new URL('.cache/papers/2610.22294.pdf', ROOT);
 const STORAGE_KEY = 'rw.projects';
@@ -40,6 +39,24 @@ const STORAGE_KEY = 'rw.projects';
  * itself at the ceiling rather than trusting its own control flow to be correct.
  */
 const CALL_BUDGET = 4;
+
+/**
+ * `--only=formula` runs a single case.
+ *
+ * Re-running all three to re-test one of them would spend two calls on questions that already
+ * have answers, so a single case can be re-run on its own. Its report is written under a name
+ * that says which case it was, and never replaces the full run's.
+ */
+const CASES = ['explain', 'formula', 'translate'];
+const only =
+  process.argv
+    .slice(2)
+    .find((argument) => argument.startsWith('--only='))
+    ?.slice('--only='.length) ?? null;
+if (only !== null && !CASES.includes(only)) {
+  throw new Error(`--only must be one of: ${CASES.join(', ')}`);
+}
+const want = (name) => only === null || only === name;
 
 const MODE_LABEL = {
   explain: '解释这段话',
@@ -245,12 +262,34 @@ function pickRun(info, { wantMath, minSpans = 3, minChars = 80, maxChars = 600 }
     .filter((entry) => entry.text.trim().length >= minChars);
 
   // A run that is asked to contain mathematics and does not is not a substitute for one that
-  // does: returning it would quietly turn the formula test into a second prose test. The caller
-  // checks what it got and fails loudly instead.
-  const wanted = scored.filter((entry) => (wantMath ? entry.maths > 0 : entry.maths === 0));
-  const pool = wanted.length > 0 ? wanted : scored;
+  // does. Falling back would quietly turn the formula test into a second prose test and then
+  // fail a check about symbols, which reads as a product problem when it is a fixture problem.
+  const pool = wantMath ? scored.filter((entry) => entry.maths > 0) : scored;
+  if (pool.length === 0) return null;
+  // For mathematics, prefer the longest run: a complete sentence that uses the notation beats a
+  // two-character fragment that merely contains it.
   if (wantMath) pool.sort((one, other) => other.text.length - one.text.length);
   return pool[0] ?? null;
+}
+
+/**
+ * Finds a page carrying a usable passage of notation, looking near the most mathematical page.
+ *
+ * One page is not enough: on this paper the notation is dense on page 7 but so interleaved with
+ * the other column that no long single-column run of it survives. Neighbouring pages carry the
+ * same definitions in different layouts.
+ */
+async function findMathPassage(page, nearPage) {
+  const order = [nearPage, nearPage - 1, nearPage + 1, nearPage + 2, nearPage - 2, nearPage + 3];
+  for (const number of order) {
+    if (number < 1) continue;
+    await gotoPage(page, number);
+    const info = await spanInfo(page, number);
+    if (info === null) continue;
+    const run = pickRun(info, { wantMath: true, minSpans: 1, minChars: 60 });
+    if (run !== null && run.maths > 0) return { page: number, run };
+  }
+  return null;
 }
 
 /** Asks one question through the running app and returns what the service sent back. */
@@ -385,10 +424,18 @@ async function main() {
   }
 
   process.stdout.write(
-    `provider ${redact(health.label)} · ${redact(health.reasoning ?? '?')} · budget ${String(CALL_BUDGET)} calls\n\n`,
+    `provider ${redact(health.label)} · ${redact(health.reasoning ?? '?')} · ` +
+      `output ceiling ${String(health.limits?.answerTokens ?? '?')} tokens · ` +
+      `budget ${String(CALL_BUDGET)} calls${only === null ? '' : ` · only: ${only}`}\n\n`,
   );
 
   const math = await findMathPage(fileURLToPath(PAPER));
+
+  // Recorded in the report, so the evidence says which settings produced it rather than
+  // leaving it to be inferred from a command line nobody kept.
+  const serviceLimits = health.limits ?? {};
+  const reasoningSetting = health.reasoning ?? null;
+
   process.stdout.write(
     `page ${String(math.page)} carries ${String(math.symbols)} maths symbols\n\n`,
   );
@@ -417,99 +464,98 @@ async function main() {
     );
 
     // ---- Test 1: explain a passage -------------------------------------
-    await gotoPage(page, 1);
-    const prose = pickRun(await spanInfo(page, 1), { wantMath: false });
-    if (prose === null) throw new Error('no usable passage on page 1');
-    const explain = await ask(page, {
-      pageNumber: 1,
-      mode: 'explain',
-      run: prose,
-      label: '原文解释',
-    });
-    check(
-      'explain: the model answered and the app parsed it',
-      explain.status === 200 && typeof explain.answer === 'string' && explain.answer.length > 0,
-      `${String(explain.answer?.length ?? 0)} chars in ${String(explain.elapsedMs)} ms`,
-    );
-    // The model may legitimately cite the surrounding context it was given, so the check is
-    // that every citation names a passage that was actually sent, and that the passage the
-    // reader selected is among them — not that it only ever cites the selection.
-    const sentIds = new Set(['selection', 'before', 'after']);
-    const cited = explain.citations ?? [];
-    check(
-      'explain: the answer cites text that is really in what was sent',
-      cited.length > 0 &&
-        cited.every((citation) => sentIds.has(citation.passageId)) &&
-        cited.some((citation) => citation.passageId === 'selection'),
-      `${String(cited.length)} verified, ${String(explain.rejectedCitations)} rejected, from ` +
-        `${[...new Set(cited.map((citation) => citation.passageId))].join('/')}`,
-    );
-    check(
-      'explain: usage, model and thinking budget were reported',
-      explain.usage?.promptTokens != null && explain.usage?.completionTokens != null,
-      `in ${String(explain.usage?.promptTokens)} / out ${String(explain.usage?.completionTokens)}` +
-        (explain.usage?.reasoningTokens == null
-          ? ''
-          : ` (reasoning ${String(explain.usage.reasoningTokens)})`),
-    );
-    check(
-      'explain: the answer is not the passage echoed back',
-      explain.answer !== null && !explain.answer.startsWith(prose.text.slice(0, 40)),
-    );
+    if (want('explain')) {
+      await gotoPage(page, 1);
+      const prose = pickRun(await spanInfo(page, 1), { wantMath: false });
+      if (prose === null) throw new Error('no usable passage on page 1');
+      const explain = await ask(page, {
+        pageNumber: 1,
+        mode: 'explain',
+        run: prose,
+        label: '原文解释',
+      });
+      check(
+        'explain: the model answered and the app parsed it',
+        explain.status === 200 && typeof explain.answer === 'string' && explain.answer.length > 0,
+        `${String(explain.answer?.length ?? 0)} chars in ${String(explain.elapsedMs)} ms`,
+      );
+      // The model may legitimately cite the surrounding context it was given, so the check is
+      // that every citation names a passage that was actually sent, and that the passage the
+      // reader selected is among them — not that it only ever cites the selection.
+      const sentIds = new Set(['selection', 'before', 'after']);
+      const cited = explain.citations ?? [];
+      check(
+        'explain: the answer cites text that is really in what was sent',
+        cited.length > 0 &&
+          cited.every((citation) => sentIds.has(citation.passageId)) &&
+          cited.some((citation) => citation.passageId === 'selection'),
+        `${String(cited.length)} verified, ${String(explain.rejectedCitations)} rejected, from ` +
+          `${[...new Set(cited.map((citation) => citation.passageId))].join('/')}`,
+      );
+      check(
+        'explain: usage, model and thinking budget were reported',
+        explain.usage?.promptTokens != null && explain.usage?.completionTokens != null,
+        `in ${String(explain.usage?.promptTokens)} / out ${String(explain.usage?.completionTokens)}` +
+          (explain.usage?.reasoningTokens == null
+            ? ''
+            : ` (reasoning ${String(explain.usage.reasoningTokens)})`),
+      );
+      check(
+        'explain: the answer is not the passage echoed back',
+        explain.answer !== null && !explain.answer.startsWith(prose.text.slice(0, 40)),
+      );
+    }
 
     // ---- Test 2: a passage with mathematics ----------------------------
-    await gotoPage(page, math.page);
-    const formulaPage = math.page;
-    // Choosing a passage that carries notation, not a fragment of one. Displayed equations in
-    // this paper extract as a scatter of short pieces — `Qβ(u) :=`, `P1(u) exp(βR(u))`, `Zβ` —
-    // so the run with the most symbols is often a 43-character splinter cut mid-expression,
-    // which is a test of nothing. The longest run containing symbols is a complete sentence that
-    // uses the notation, which is what "explain this maths" actually means for a reader.
-    const formula = pickRun(await spanInfo(page, formulaPage), {
-      wantMath: true,
-      minSpans: 1,
-      minChars: 80,
-    });
-    if (formula === null) throw new Error('no usable passage with mathematics');
-    const symbolsInSelection = (formula.text.match(/[∀-⋿Ͱ-Ͽ∑√×±≤≥∈∂∇]/g) ?? []).length;
-    const formulaRun = await ask(page, {
-      pageNumber: formulaPage,
-      mode: 'formula',
-      run: formula,
-      label: '公式解释',
-    });
-    check(
-      'formula: the selection really contained symbols',
-      symbolsInSelection > 0,
-      `${String(symbolsInSelection)} symbols in ${String(formula.text.length)} chars`,
-    );
-    check(
-      'formula: the model answered',
-      formulaRun.status === 200 && (formulaRun.answer?.length ?? 0) > 0,
-      `${String(formulaRun.answer?.length ?? 0)} chars in ${String(formulaRun.elapsedMs)} ms`,
-    );
+    if (want('formula')) {
+      const found = await findMathPassage(page, math.page);
+      if (found === null) throw new Error('no page offered a usable passage of notation');
+      const formulaPage = found.page;
+      const formula = found.run;
+      const symbolsInSelection = (formula.text.match(/[∀-⋿Ͱ-Ͽ∑√×±≤≥∈∂∇]/g) ?? []).length;
+      const formulaRun = await ask(page, {
+        pageNumber: formulaPage,
+        mode: 'formula',
+        run: formula,
+        label: '公式解释',
+      });
+      check(
+        'formula: the selection really contained symbols',
+        symbolsInSelection > 0,
+        `${String(symbolsInSelection)} symbols in ${String(formula.text.length)} chars`,
+      );
+      check(
+        'formula: the model answered',
+        formulaRun.status === 200 && (formulaRun.answer?.length ?? 0) > 0,
+        formulaRun.status === 200
+          ? `${String(formulaRun.answer?.length ?? 0)} chars in ${String(formulaRun.elapsedMs)} ms`
+          : `HTTP ${String(formulaRun.status)} after ${String(formulaRun.elapsedMs)} ms — ${String(formulaRun.error)}`,
+      );
+    }
 
     // ---- Test 3: translation, on page 1 again --------------------------
-    await gotoPage(page, 1);
-    const translation = pickRun(await spanInfo(page, 1), { wantMath: false, maxChars: 400 });
-    if (translation === null) throw new Error('no usable passage to translate');
-    const translate = await ask(page, {
-      pageNumber: 1,
-      mode: 'translate',
-      run: translation,
-      label: '英文翻译',
-    });
-    check(
-      'translate: the model answered',
-      translate.status === 200 && (translate.answer?.length ?? 0) > 0,
-      `${String(translate.answer?.length ?? 0)} chars in ${String(translate.elapsedMs)} ms`,
-    );
-    const chinese = (translate.answer?.match(/[一-鿿]/g) ?? []).length;
-    check(
-      'translate: the answer is actually Chinese',
-      chinese > 10,
-      `${String(chinese)} CJK characters`,
-    );
+    if (want('translate')) {
+      await gotoPage(page, 1);
+      const translation = pickRun(await spanInfo(page, 1), { wantMath: false, maxChars: 400 });
+      if (translation === null) throw new Error('no usable passage to translate');
+      const translate = await ask(page, {
+        pageNumber: 1,
+        mode: 'translate',
+        run: translation,
+        label: '英文翻译',
+      });
+      check(
+        'translate: the model answered',
+        translate.status === 200 && (translate.answer?.length ?? 0) > 0,
+        `${String(translate.answer?.length ?? 0)} chars in ${String(translate.elapsedMs)} ms`,
+      );
+      const chinese = (translate.answer?.match(/[一-鿿]/g) ?? []).length;
+      check(
+        'translate: the answer is actually Chinese',
+        chinese > 10,
+        `${String(chinese)} CJK characters`,
+      );
+    }
 
     // ---- What this run cost --------------------------------------------
     const totalIn = calls.reduce((sum, call) => sum + (call.usage?.promptTokens ?? 0), 0);
@@ -546,12 +592,15 @@ async function main() {
   const totalIn = calls.reduce((sum, call) => sum + (call.usage?.promptTokens ?? 0), 0);
   const totalOut = calls.reduce((sum, call) => sum + (call.usage?.completionTokens ?? 0), 0);
   await writeFile(
-    REPORT_FILE,
+    new URL(`docs/phase4.1-live-api${only === null ? '' : `-${only}`}-report.json`, ROOT),
     `${JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
         provider: 'deepseek (live)',
         model: calls[0]?.model ?? null,
+        cases: only === null ? CASES : [only],
+        outputCeiling: serviceLimits.answerTokens ?? null,
+        reasoning: reasoningSetting,
         callsMade: spent,
         callBudget: CALL_BUDGET,
         tokens: { prompt: totalIn, completion: totalOut },
