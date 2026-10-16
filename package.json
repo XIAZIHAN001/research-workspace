@@ -24,6 +24,7 @@
     "verify:annotations": "node scripts/verify/annotations.mjs",
     "verify:ai": "node scripts/verify/ai-reading.mjs",
     "verify:real": "node scripts/verify/real-paper.mjs",
+    "verify:live": "node scripts/verify/live-api.mjs",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },
   "dependencies": {
