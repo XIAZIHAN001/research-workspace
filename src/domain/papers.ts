@@ -247,6 +247,13 @@ export type PaperReferenceOutcome =
   /** The input cannot describe a paper (a blank title). */
   | { status: 'invalid' };
 
+/** Result of adding a paper to the knowledge base without attaching it to a project. */
+export type AddPaperOutcome =
+  /** The paper is in the knowledge base: either an existing record was reused, or a new one. */
+  | { status: 'added'; paper: Paper }
+  | { status: 'conflict'; papers: Paper[] }
+  | { status: 'invalid' };
+
 /**
  * Resolves external identifiers to the paper they identify.
  *

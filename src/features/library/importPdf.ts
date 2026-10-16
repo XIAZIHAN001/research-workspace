@@ -87,8 +87,10 @@ export async function preparePdfImport(
   let pageCount: number | null;
   try {
     // Structural checks only prove the header; parsing proves the file is readable, and
-    // gives the page count the reader will show.
-    pageCount = (await opts.probe(bytes)).pageCount;
+    // gives the page count the reader will show. The bytes are handed over as a copy
+    // because pdf.js transfers the buffer to its worker, which would leave `bytes`
+    // detached — and `bytes` still has to be hashed already and stored below.
+    pageCount = (await opts.probe(bytes.slice())).pageCount;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return {

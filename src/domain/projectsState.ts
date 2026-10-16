@@ -22,6 +22,8 @@ export type ProjectsAction =
   | { type: 'add'; project: Project; paper: Paper }
   /** Links a paper to a project. `paper` is registered when it is not known yet. */
   | { type: 'linkPaper'; projectId: string; paper: Paper; now: number }
+  /** Adds a paper to the knowledge base without attaching it to any project. */
+  | { type: 'registerPaper'; paper: Paper }
   | { type: 'unlinkPaper'; projectId: string; paperId: string; now: number }
   /**
    * Changes one paper's own metadata, PDF binding or reading position. Never creates,
@@ -72,6 +74,11 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
             : p,
         ),
       };
+    }
+
+    case 'registerPaper': {
+      const papers = withPaper(state.papers, action.paper);
+      return papers === state.papers ? state : { ...state, papers };
     }
 
     case 'unlinkPaper': {

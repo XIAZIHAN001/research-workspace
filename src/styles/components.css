@@ -628,3 +628,171 @@ button.row-main:active {
   border-top: 1px solid var(--ring);
   color: var(--text-3);
 }
+
+/* --- Papers inside a project ---------------------------------------------- */
+
+.project-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-title {
+  margin-right: auto;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.section-count {
+  color: var(--text-3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+.paper-row-main {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.paper-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.paper-row-meta,
+.paper-row-note {
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.paper-row-file {
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.paper-row-file[data-has-pdf='true'] {
+  color: var(--text-2);
+}
+
+.paper-row-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.paper-row-link {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.paper-row-link .input {
+  height: 30px;
+  max-width: 9rem;
+  font-size: 12px;
+}
+
+/* --- Library -------------------------------------------------------------- */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-title {
+  margin-right: auto;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.library-count {
+  color: var(--text-3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+}
+
+.library-search .input {
+  flex: 1;
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-empty {
+  color: var(--text-2);
+}
+
+/* --- Form rows ------------------------------------------------------------ */
+
+.field-row {
+  display: flex;
+  gap: 10px;
+}
+
+.field-row .field {
+  flex: 1;
+}
+
+.field-narrow {
+  flex: 0 0 6rem;
+}

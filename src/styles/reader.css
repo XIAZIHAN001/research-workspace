@@ -1,0 +1,172 @@
+/* Reader surface: one compact tool bar over a single column of pages. */
+
+.reader {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 12px 0;
+}
+
+.reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+.reader-title {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-page,
+.reader-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reader-page-jump input {
+  width: 4.2rem;
+  padding: 4px 6px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.reader-page-total,
+.reader-zoom-value {
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-zoom-value {
+  min-width: 3.2rem;
+  text-align: right;
+}
+
+.reader-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  padding: 24px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.reader-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  scrollbar-gutter: stable;
+}
+
+.reader-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.reader-column {
+  position: relative;
+}
+
+.reader-slot {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* A page stays white paper in both themes: the canvas is transparent where the PDF has no
+   ink, so a dark backdrop would show through the page. */
+.pdf-page {
+  position: relative;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #ffffff;
+  box-shadow: var(--elev-rest);
+}
+
+.pdf-canvas {
+  display: block;
+}
+
+.pdf-page-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 12px;
+  background: var(--sheet);
+  color: var(--danger);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* pdf.js text layer, so the page can be selected and copied. The library positions every
+   span from the PDF's own text content; these rules only give it a place to live and the
+   scale custom properties it expects. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer span,
+.textLayer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer ::selection {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+}

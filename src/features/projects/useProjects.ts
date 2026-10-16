@@ -1,7 +1,11 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import {
+  applyPaperEdit,
   createPaper,
   resolvePaperIdentity,
+  type AddPaperOutcome,
+  type PaperEdit,
+  type PaperEditResult,
   type PaperInput,
   type PaperReferenceOutcome,
 } from '../../domain/papers';
@@ -47,6 +51,46 @@ export function useProjects(store: ProjectsStore) {
       },
       unlinkPaper(projectId: string, paperId: string): void {
         store.dispatch({ type: 'unlinkPaper', projectId, paperId, now: Date.now() });
+      },
+      /**
+       * Links a paper that is already in the knowledge base to a project. Distinct from
+       * `referencePaper`, which decides identity first: this one only adds a reference.
+       */
+      linkPaper(projectId: string, paperId: string): void {
+        const { papers } = store.getSnapshot().state;
+        const paper = papers[paperId];
+        if (paper === undefined) return;
+        store.dispatch({ type: 'linkPaper', projectId, paper, now: Date.now() });
+      },
+      /**
+       * Adds a paper to the knowledge base on its own, without attaching it to a project.
+       *
+       * Returns the paper that now holds this identity: the existing one when a DOI or
+       * arXiv id already identifies it, otherwise a new record. Identifiers that point at
+       * different papers are reported as a conflict and nothing is written.
+       */
+      addPaper(input: PaperInput): AddPaperOutcome {
+        const { papers } = store.getSnapshot().state;
+        const identity = resolvePaperIdentity(papers, input);
+        if (identity.kind === 'conflict') return { status: 'conflict', papers: identity.papers };
+        if (identity.kind === 'match') return { status: 'added', paper: identity.paper };
+
+        const paper = createPaper(input, makeId, Date.now());
+        if (paper === null) return { status: 'invalid' };
+        store.dispatch({ type: 'registerPaper', paper });
+        return { status: 'added', paper };
+      },
+      /**
+       * Changes one paper's metadata, PDF binding or reading position. Returns why an edit
+       * was refused instead of applying part of it.
+       */
+      updatePaper(paperId: string, edit: PaperEdit): PaperEditResult {
+        // Checked against the same rule the reducer applies, so the caller is told the
+        // outcome while the store stays the single place that decides it.
+        const result = applyPaperEdit(store.getSnapshot().state.papers, paperId, edit, Date.now());
+        if (!result.ok) return result;
+        store.dispatch({ type: 'updatePaper', paperId, edit, now: Date.now() });
+        return result;
       },
       rename(id: string, name: string): void {
         store.dispatch({ type: 'rename', id, name, now: Date.now() });

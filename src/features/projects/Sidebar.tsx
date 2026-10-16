@@ -1,4 +1,4 @@
-import { House, PanelLeftClose, Plus, Settings2 } from 'lucide-react';
+import { House, Library, PanelLeftClose, Plus, Settings2 } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Project } from '../../domain/project';
 import { ThemeSwitch } from '../theme/ThemeSwitch';
@@ -16,11 +16,13 @@ interface SidebarProps {
   projects: Project[];
   selectedId: string | null;
   homeActive: boolean;
+  libraryActive: boolean;
   now: number;
   managing: boolean;
   renamingId: string | null;
   themePref: ThemePref;
   onHome: () => void;
+  onLibrary: () => void;
   onCollapse: () => void;
   onCreate: () => void;
   onSelect: (id: string) => void;
@@ -33,7 +35,8 @@ interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { projects, selectedId, homeActive, now, managing, renamingId, open } = props;
+  const { projects, selectedId, homeActive, libraryActive, now, managing, renamingId, open } =
+    props;
 
   // updatedAt is the "last touched" clock; reading sessions will bump it once a reader exists.
   const recent = useMemo(
@@ -75,6 +78,17 @@ export function Sidebar(props: SidebarProps) {
         >
           <House size={15} aria-hidden="true" />
           <span>首页</span>
+        </button>
+
+        <button
+          type="button"
+          {...glowProps}
+          className="nav-item spot"
+          aria-current={libraryActive ? 'page' : undefined}
+          onClick={props.onLibrary}
+        >
+          <Library size={15} aria-hidden="true" />
+          <span>论文库</span>
         </button>
 
         {recent.length > 0 && (

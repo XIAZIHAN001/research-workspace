@@ -10,3 +10,18 @@ export function formatRelativeDay(then: number, now: number): string {
   if (days < 365) return `${Math.floor(days / 30)} 个月前`;
   return `${Math.floor(days / 365)} 年前`;
 }
+
+const UNITS = ['B', 'KB', 'MB', 'GB'] as const;
+
+/** File size for a dense row: "820 KB". Never more than one decimal place. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '未知大小';
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < UNITS.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${String(rounded)} ${UNITS[unit] ?? 'B'}`;
+}

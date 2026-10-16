@@ -191,4 +191,26 @@ describe('preparePdfImport', () => {
     });
     expect(hash).toHaveBeenCalledWith(PDF_BYTES);
   });
+  it('survives a probe that takes ownership of the bytes it is given', async () => {
+    // pdf.js transfers the buffer to its worker. The file must still be hashed and stored
+    // in full afterwards, which is why the probe is handed a copy.
+    const { blobs, log } = fakeBlobs();
+    const detachingProbe: ProbePdf = (bytes) => {
+      const seen = bytes.length;
+      // Same thing pdf.js does: hand the buffer to the worker and lose it here.
+      structuredClone(bytes.buffer, { transfer: [bytes.buffer] });
+      expect(bytes.byteLength).toBe(0);
+      return Promise.resolve({ pageCount: seen > 0 ? 3 : 0 });
+    };
+    const result = await preparePdfImport(deps(blobs), makeFile(), {
+      probe: detachingProbe,
+      papers: {},
+    });
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') throw new Error(result.reason);
+    expect(result.prepared.pdf.bytes).toBe(PDF_BYTES.length);
+    expect(result.prepared.pdf.pageCount).toBe(3);
+    expect(log.stored.get(HASH)?.length).toBe(PDF_BYTES.length);
+  });
 });

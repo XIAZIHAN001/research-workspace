@@ -8,6 +8,7 @@ import './styles/base.css';
 import './styles/glass.css';
 import './styles/layout.css';
 import './styles/components.css';
+import './styles/reader.css';
 
 const container = document.getElementById('root');
 if (container === null) throw new Error('Missing #root element');
