@@ -63,16 +63,25 @@ export const LIMITS = {
   historyChars: 2000,
   /**
    * Total generation budget, not just the answer's: in thinking mode this ceiling covers the
-   * reasoning tokens as well. 4096 leaves room for a reasoned explanation and is still a hard
-   * bound on what one request can cost.
+   * reasoning tokens as well.
+   *
+   * 4096 was not enough. Measured against the live API on a real paper: a prose explanation
+   * spent 2689 of it thinking and still fitted, while a question about an equation spent the
+   * whole 4096 reasoning and returned no answer at all. 8192 leaves room for an answer after a
+   * think of that size, and is still a hard bound on what one request can cost.
    */
-  answerTokens: 4096,
+  answerTokens: 8192,
   /** Requests allowed per minute, per process. A runaway loop costs money; this caps it. */
   requestsPerMinute: 30,
   concurrentRequests: 4,
 };
 
-export const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * A thinking-mode call is not quick. The same live run measured 21 s for a prose explanation and
+ * 25 s for a formula question that then ran out of budget at 4096 tokens; one that is allowed
+ * 8192 can take about a minute, and cutting it off at 60 s would turn a slow answer into none.
+ */
+export const DEFAULT_TIMEOUT_MS = 120_000;
 
 function readInt(value, fallback, { min, max }) {
   if (value === undefined || value === '') return fallback;
@@ -128,6 +137,8 @@ export function readConfig(env = process.env) {
     thinking,
     reasoningEffort,
     timeoutMs: readInt(env.AI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, { min: 1000, max: 600_000 }),
+    /** Overrides the generation ceiling; bounded so a typo cannot ask for a million tokens. */
+    answerTokens: readInt(env.AI_MAX_OUTPUT_TOKENS, LIMITS.answerTokens, { min: 256, max: 32_000 }),
     allowedOrigins: extraOrigins,
     /** Where the mock provider's answers come from; see providers/mock.mjs. */
     logRequests: env.AI_LOG_REQUESTS !== '0',

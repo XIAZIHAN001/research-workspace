@@ -34,7 +34,8 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 | `DEEPSEEK_THINKING`         | `enabled`                  | `enabled` 或 `disabled`                         |
 | `DEEPSEEK_REASONING_EFFORT` | `low`                      | `none` / `low` / `high` / `max`                 |
 | `AI_PORT`                   | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置  |
-| `AI_TIMEOUT_MS`             | `60000`                    | 单次请求超时                                    |
+| `AI_TIMEOUT_MS`             | `120000`                   | 单次请求超时                                    |
+| `AI_MAX_OUTPUT_TOKENS`      | `8192`                     | 生成上限（**含推理**），256–32000               |
 | `AI_ALLOWED_ORIGINS`        | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许 |
 | `AI_LOG_REQUESTS`           | 开启                       | 设 `0` 关闭访问日志                             |
 
@@ -51,9 +52,23 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 - 服务端**显式发送** `thinking` 与 `reasoning_effort`，不依赖上游默认值；
 - 默认档位取 `low`（够用、延迟与花费有界），可用 `DEEPSEEK_REASONING_EFFORT` 调整；
 - `DEEPSEEK_THINKING=disabled` 会把档位强制为 `none`，避免同时发出两个互相矛盾的意思；
-- 生成预算（`LIMITS.answerTokens`，4096）是**推理 + 正文**的总量；
+- 生成预算（`AI_MAX_OUTPUT_TOKENS`，默认 8192）是**推理 + 正文**的总量；
 - 真的耗尽时返回 `incomplete` 类错误并说明原因，而不是把空回答当成正常结果；
 - 用量里的 `reasoning_tokens` 是 `completion_tokens` 的**子集**，不是额外相加。
+
+### 这些默认值是被真实调用改过的
+
+首次真实联调（CC BY 4.0 论文，档位 `low`）测到：
+
+| 问题类型                         | 耗时   | 输出 token | 其中推理 | 结果                                    |
+| -------------------------------- | ------ | ---------- | -------- | --------------------------------------- |
+| 原文解释                         | 21.0 s | 3802       | 2689     | 成功，7 条引用全部通过校验              |
+| 公式解释（一个被切碎的公式片段） | 25.5 s | —          | —        | **失败**：4096 全部被推理吃掉，没有正文 |
+| 英文翻译                         | 7.4 s  | 1116       | 871      | 成功                                    |
+
+于是：预算从 4096 提到 **8192**，超时从 60 s 提到 **120 s**。
+第二行那个失败正是这道防线存在的理由——旧代码会把空串当成正常回答显示成一片空白，
+现在它会明确说是推理占了预算。
 
 ## 边界
 

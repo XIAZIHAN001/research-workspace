@@ -45,7 +45,18 @@ describe('readConfig', () => {
     expect(readConfig({ AI_PORT: '9999' }).port).toBe(9999);
     expect(readConfig({ AI_PORT: '-1' }).port).toBe(DEFAULT_PORT);
     expect(readConfig({ AI_PORT: 'abc' }).port).toBe(DEFAULT_PORT);
-    expect(readConfig({ AI_TIMEOUT_MS: '10' }).timeoutMs).toBe(60_000);
+    expect(readConfig({ AI_TIMEOUT_MS: '10' }).timeoutMs).toBe(120_000);
+  });
+
+  it('bounds the generation ceiling, which thinking mode spends from too', () => {
+    // The default was raised from 4096 after a live formula question spent all of it reasoning
+    // and returned no answer.
+    expect(readConfig({}).answerTokens).toBe(8192);
+    expect(readConfig({ AI_MAX_OUTPUT_TOKENS: '16384' }).answerTokens).toBe(16_384);
+    // A typo must not be able to ask for a million tokens.
+    expect(readConfig({ AI_MAX_OUTPUT_TOKENS: '1000000' }).answerTokens).toBe(8192);
+    expect(readConfig({ AI_MAX_OUTPUT_TOKENS: '0' }).answerTokens).toBe(8192);
+    expect(readConfig({ AI_MAX_OUTPUT_TOKENS: 'abc' }).answerTokens).toBe(8192);
   });
 
   it('strips trailing slashes from the base URL so paths join correctly', () => {

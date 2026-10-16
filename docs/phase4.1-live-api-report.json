@@ -1,0 +1,205 @@
+{
+  "generatedAt": "2026-10-16T15:15:33.940Z",
+  "provider": "deepseek (live)",
+  "model": "deepseek-flash",
+  "callsMade": 3,
+  "callBudget": 4,
+  "tokens": {
+    "prompt": 2010,
+    "completion": 4918
+  },
+  "estimatedCostUsd": 0.003252,
+  "passed": 9,
+  "failed": 3,
+  "results": [
+    {
+      "name": "setup: the CC BY 4.0 paper is open",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "explain: the model answered and the app parsed it",
+      "passed": true,
+      "detail": "1294 chars in 20993 ms"
+    },
+    {
+      "name": "explain: the answer cites text that is really in what was sent",
+      "passed": false,
+      "detail": "7 verified, 0 rejected"
+    },
+    {
+      "name": "explain: usage, model and thinking budget were reported",
+      "passed": true,
+      "detail": "in 1001 / out 3802 (reasoning 2689)"
+    },
+    {
+      "name": "explain: the answer is not the passage echoed back",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "formula: the selection really contained symbols",
+      "passed": true,
+      "detail": "3 symbols in 43 chars"
+    },
+    {
+      "name": "formula: the model answered",
+      "passed": false,
+      "detail": "0 chars in 25461 ms"
+    },
+    {
+      "name": "translate: the model answered",
+      "passed": true,
+      "detail": "310 chars in 7444 ms"
+    },
+    {
+      "name": "translate: the answer is actually Chinese",
+      "passed": true,
+      "detail": "123 CJK characters"
+    },
+    {
+      "name": "budget: the run stayed inside the approved number of calls",
+      "passed": true,
+      "detail": "3 of 4 used, 2010 in / 4918 out"
+    },
+    {
+      "name": "safety: no credential appears anywhere in what was captured",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: the page reported no errors of its own",
+      "passed": false,
+      "detail": "console: Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+    }
+  ],
+  "calls": [
+    {
+      "label": "原文解释",
+      "page": 1,
+      "mode": "explain",
+      "question": null,
+      "selectionChars": 172,
+      "selectionExcerpt": "yielding further gains in several settings.Initial canvasFollow the examples:Meeting January 5:M5JanReview March 3:R3Mar",
+      "status": 200,
+      "elapsedMs": 20993,
+      "answer": "作者在这里说的是：在他们测试的 few-shot prompting 基准和软件重构案例研究中，演示示例（demonstrations）能提高填充（infilling）准确率；而用示例做指导（example guidance）在若干设置下还能带来额外提升 [1]。紧接着，选段进入 Figure 1 的初始画布，标出两个演示：Meeting January 5 对应 M 5 Jan，Review March 3 对应 R 3 Mar [2]。\n\n要理解这句话，需要知道本文的设定。作者提出的是“多目标少样本提示 + 扩散语言模型（DLM）”：示例引导模型在一个共享画布中填充多个被掩码的区域 [3]。这里的“共享画布”是关键——所有待填充位置在同一段文本里互相可见。Figure 1 的说明进一步指出，DLM 会逐步填充两个掩码输出，一个位置已揭示的 token 可以影响另一个位置的后续预测 [4]。这正好对应选段中“follow the examples”下面列出的两个演示：它们把事件名和日期映射成首字母、日号、月份缩写。符号上，M、R、W、D 是事件名首字母；5 Jan、3 Mar、7 Apr、30 Jun 是日号和月份缩写；[M] 是待填充的掩码 token。\n\n逻辑关系是：演示给出转换规则（例如“Meeting January 5”变成“M 5 Jan”），模型要在同一画布中把另外两个事件（Workshop April 7、Deadline June 30）也按同样规则填出来。原文后续展示了逐轮填充：第一轮后 Workshop 行先填出 7 Apr，Deadline 行填出 D [M] Jun；第二轮后 Workshop 行补成 W 7 Apr，Deadline 行补成 D 30 Jun [7]。作者用这个例子说明，共享画布让两个填充位置能互相提供上下文。选段最后说 demonstrations 提高 infilling 准确率、example guidance 再带来增益，就是这类设置下的实验结论。\n\n补充背景（不是原文直接结论）：自回归语言模型从左到右生成，做这种同时依赖左右上下文的编辑会比较别扭；原文也提到“such edits often depend on both left and right context, making generation with causal autoregressive models awkward” [5]。扩散语言模型可以并行或迭代地填多个掩码，所以更适合这种“多目标填充”任务。\n\n需要注意：选段本身没有给出具体的准确率数字、基准名称或软件重构案例的细节；要核对结论强度，需要看正文的实验部分。另外，提取文本有截断和空格缺失的痕迹，例如 before 段开头“uage Models”像是“Language Models”被截掉，before 段末尾“that favors”之后句子不完整 [6]，selection 段中“settings.Initial”之间也缺空格。这些地方不应猜测原文写了什么。",
+      "citations": [
+        {
+          "n": 1,
+          "passageId": "selection",
+          "page": 1,
+          "quote": "Across few-shot prompting benchmarks and software refactoring case studies, we find that demonstrations improve infilling accuracy, with example guidance yielding further gains in several settings.",
+          "selection": true
+        },
+        {
+          "n": 2,
+          "passageId": "selection",
+          "page": 1,
+          "quote": "Initial canvas Follow the examples: Meeting January 5: M 5 Jan Review March 3: R 3 Mar",
+          "selection": true
+        },
+        {
+          "n": 3,
+          "passageId": "before",
+          "page": 1,
+          "quote": "We therefore introduce multi-target few-shot prompting with diffusion language models, where examples guide the infilling of multiple masked regions within a shared canvas.",
+          "selection": false
+        },
+        {
+          "n": 4,
+          "passageId": "after",
+          "page": 1,
+          "quote": "Figure 1: Multi-target few-shot prompting with a DLM. Demonstrations map event names and dates to initials, days, and abbreviated months. The DLM progressively fills two masked outputs within a shared canvas; tokens revealed at one site can inform subsequent predictions at the other.",
+          "selection": false
+        },
+        {
+          "n": 5,
+          "passageId": "before",
+          "page": 1,
+          "quote": "such edits often depend on both left and right context, making generation with causal autoregressive models awkward.",
+          "selection": false
+        },
+        {
+          "n": 6,
+          "passageId": "before",
+          "page": 1,
+          "quote": "To address the known challenge of reliably following demonstrations in few-shot prompting, we further leverage selective masking of the canvas to derive a likelihood-ratio reward that favors",
+          "selection": false
+        },
+        {
+          "n": 7,
+          "passageId": "after",
+          "page": 1,
+          "quote": "After round 1 Follow the examples: Meeting January 5: M 5 Jan Review March 3: R 3 Mar Workshop April 7: [M] 7 Apr Deadline June 30: D [M] Jun After round 2 Follow the examples: Meeting January 5: M 5 Jan Review March 3: R 3 Mar Workshop April 7: W 7 Apr Deadline June 30: D 30 Jun",
+          "selection": false
+        }
+      ],
+      "rejectedCitations": 0,
+      "usage": {
+        "promptTokens": 1001,
+        "completionTokens": 3802,
+        "reasoningTokens": 2689,
+        "cachedPromptTokens": 0
+      },
+      "warnings": [],
+      "model": "deepseek-flash",
+      "provider": "deepseek",
+      "error": null
+    },
+    {
+      "label": "公式解释",
+      "page": 7,
+      "mode": "formula",
+      "question": null,
+      "selectionChars": 43,
+      "selectionExcerpt": "Equation(4)uniquely solvesQβ= arg maxQ{βEU∼",
+      "status": 502,
+      "elapsedMs": 25461,
+      "answer": null,
+      "citations": null,
+      "rejectedCitations": null,
+      "usage": null,
+      "warnings": null,
+      "model": null,
+      "provider": null,
+      "error": "模型在写完回答之前就用完了生成预算。思考模式的推理过程占用同一份额度，可以在 server/README.md 里降低推理档位或提高上限。"
+    },
+    {
+      "label": "英文翻译",
+      "page": 1,
+      "mode": "translate",
+      "question": null,
+      "selectionChars": 185,
+      "selectionExcerpt": "yielding further gains in several settings.Initial canvasFollow the examples:Meeting January 5:M5JanReview March 3:R3Mar",
+      "status": 200,
+      "elapsedMs": 7444,
+      "answer": "由示例支持的 infills（填充结果）。在 few-shot prompting（少样本提示）基准测试与软件重构案例研究中，我们发现 demonstrations（示例演示）能提升 infilling（填充）的准确率，而示例引导在若干设定下还能带来进一步的收益。初始画布 遵照示例：\nMeeting January 5: M 5 Jan\nReview March 3: R 3 Mar\nWorkshop April 7:\n\n（说明：原文提取结果中，正文句子与图注/画布文字「Initial canvas Follow the examples: ...」之间没有分隔，疑似多栏排版导致拼接；以上按原样照译，未作调整。）",
+      "citations": [
+        {
+          "n": 1,
+          "passageId": "selection",
+          "page": 1,
+          "quote": "example-supported infills. Across few-shot prompting benchmarks and software refactoring case studies, we find that demonstrations improve infilling accuracy, with example guidance yielding further gains in several settings.Initial canvas Follow the examples: Meeting January 5: M 5 Jan Review March 3: R 3 Mar Workshop April 7:",
+          "selection": true
+        }
+      ],
+      "rejectedCitations": 0,
+      "usage": {
+        "promptTokens": 1009,
+        "completionTokens": 1116,
+        "reasoningTokens": 871,
+        "cachedPromptTokens": 384
+      },
+      "warnings": [
+        "有的引文没有在回答正文里被引用，已单独列出。"
+      ],
+      "model": "deepseek-flash",
+      "provider": "deepseek",
+      "error": null
+    }
+  ],
+  "consoleIssues": [
+    "console: Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ]
+}

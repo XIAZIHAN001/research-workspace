@@ -120,7 +120,7 @@ export function createAiServer({
       const outcome = await chosen.complete({
         system,
         messages,
-        maxTokens: LIMITS.answerTokens,
+        maxTokens: config.answerTokens ?? LIMITS.answerTokens,
         signal: controller.signal,
         meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
       });
