@@ -25,16 +25,16 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 
 ### 环境变量
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `AI_PROVIDER` | `mock` | `mock` 或 `deepseek` |
-| `DEEPSEEK_API_KEY` | 空 | 仅从环境变量读取，不进前端、不进仓库 |
-| `DEEPSEEK_MODEL` | `deepseek-flash` | 官方当前型号名；也可填 `deepseek-v4-pro` |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 必须是 https |
-| `AI_PORT` | `8787` | 监听端口；监听地址固定为 `127.0.0.1`，不可配置 |
-| `AI_TIMEOUT_MS` | `60000` | 单次请求超时 |
-| `AI_ALLOWED_ORIGINS` | 空 | 额外允许的 Origin（逗号分隔）；回环来源始终允许 |
-| `AI_LOG_REQUESTS` | 开启 | 设 `0` 关闭访问日志 |
+| 变量                 | 默认值                     | 说明                                            |
+| -------------------- | -------------------------- | ----------------------------------------------- |
+| `AI_PROVIDER`        | `mock`                     | `mock` 或 `deepseek`                            |
+| `DEEPSEEK_API_KEY`   | 空                         | 仅从环境变量读取，不进前端、不进仓库            |
+| `DEEPSEEK_MODEL`     | `deepseek-flash`           | 官方当前型号名；也可填 `deepseek-v4-pro`        |
+| `DEEPSEEK_BASE_URL`  | `https://api.deepseek.com` | 必须是 https                                    |
+| `AI_PORT`            | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置  |
+| `AI_TIMEOUT_MS`      | `60000`                    | 单次请求超时                                    |
+| `AI_ALLOWED_ORIGINS` | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许 |
+| `AI_LOG_REQUESTS`    | 开启                       | 设 `0` 关闭访问日志                             |
 
 模型名与请求格式核对自官方文档 `api-docs.deepseek.com`（`POST /chat/completions`、
 `Authorization: Bearer`、`choices[0].message.content`）。使用在线提供方时以 JSON 输出模式
@@ -58,11 +58,11 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 mock provider 会识别问题里的几个标记，用来在浏览器验收里走到每条失败路径
 （真实模型上它们只是普通文字）：
 
-| 标记 | 行为 |
-| --- | --- |
-| `[[mock:error]]` | 返回模型服务错误 |
-| `[[mock:timeout]]` | 一直不返回，直到调用方超时或取消 |
-| `[[mock:bad-citation]]` | 返回编造的引文与不存在的段落 id |
-| `[[mock:plain-text]]` | 不返回 JSON |
-| `[[mock:ungrounded]]` | 明确表示依据不足 |
-| `[[mock:html]]` | 回答里带 `<img onerror>` 与 `<script>` |
+| 标记                    | 行为                                   |
+| ----------------------- | -------------------------------------- |
+| `[[mock:error]]`        | 返回模型服务错误                       |
+| `[[mock:timeout]]`      | 一直不返回，直到调用方超时或取消       |
+| `[[mock:bad-citation]]` | 返回编造的引文与不存在的段落 id        |
+| `[[mock:plain-text]]`   | 不返回 JSON                            |
+| `[[mock:ungrounded]]`   | 明确表示依据不足                       |
+| `[[mock:html]]`         | 回答里带 `<img onerror>` 与 `<script>` |
