@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T11:57:14.696Z",
+  "generatedAt": "2026-10-16T12:01:20.856Z",
   "passed": 26,
   "failed": 0,
   "results": [
@@ -81,7 +81,7 @@
     {
       "name": "library: the project picker takes the chosen project",
       "passed": true,
-      "detail": "picker on 73485104…"
+      "detail": "picker on 20cae3ff…"
     },
     {
       "name": "reuse: opening the same paper from another project shows the same notes",
