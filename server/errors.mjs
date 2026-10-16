@@ -14,8 +14,22 @@ export class ProviderError extends Error {
   }
 }
 
-/** Codes the browser understands. `cancel` is never produced here — it comes from the request. */
-export const PROVIDER_CODES = ['timeout', 'auth', 'rate-limit', 'upstream', 'network', 'config'];
+/**
+ * Codes the browser understands, each mapping to a different thing for the reader to do:
+ * wait (rate limit), top up (balance), report it (invalid request), try again smaller
+ * (incomplete), or stop trying. `cancel` is never produced here — it comes from the request.
+ */
+export const PROVIDER_CODES = [
+  'timeout',
+  'auth',
+  'rate-limit',
+  'insufficient-balance',
+  'invalid-request',
+  'incomplete',
+  'upstream',
+  'network',
+  'config',
+];
 
 export class RequestError extends Error {
   constructor(status, message) {

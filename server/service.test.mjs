@@ -247,3 +247,91 @@ describe('the service as a whole', () => {
     expect(health.status).toBe(200);
   });
 });
+
+/**
+ * The question behind all of these: can anything other than the reader's own page make this
+ * service spend money? Every test here counts how many times the provider actually ran, because
+ * "the request was refused" only matters if the refusal happened *before* the billable call.
+ */
+describe('the service as a boundary for money', () => {
+  function countingProvider() {
+    const calls = [];
+    return {
+      calls,
+      provider: {
+        name: 'deepseek',
+        model: 'deepseek-flash',
+        label: 'DeepSeek deepseek-flash',
+        reasoning: '思考模式 low',
+        complete: async () => {
+          calls.push(Date.now());
+          return { text: '{"answer":"ok","citations":[]}', usage: null, truncated: false };
+        },
+      },
+    };
+  }
+
+  const LIVE = { provider: 'deepseek', apiKey: 'sk-live-must-not-leak', thinking: 'enabled' };
+
+  it('refuses a page from another origin without calling the provider', async () => {
+    const { calls, provider } = countingProvider();
+    const { base } = await service({ provider, config: LIVE });
+    const response = await postJson(base, '/api/ai/ask', validAsk(), {
+      Origin: 'https://evil.example',
+    });
+    expect(response.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a rebinding attempt without calling the provider', async () => {
+    const { calls, provider } = countingProvider();
+    const { base } = await service({ provider, config: LIVE });
+    const response = await rawRequest(base, '/api/ai/health', {
+      headers: { Host: 'evil.example' },
+    });
+    expect(response.status).toBe(403);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses an oversized body without calling the provider', async () => {
+    const { calls, provider } = countingProvider();
+    const { base } = await service({ provider, config: LIVE });
+    await postJson(base, '/api/ai/ask', 'x'.repeat(300 * 1024));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('calls the provider exactly once for one question, however long it takes', async () => {
+    const { calls, provider } = countingProvider();
+    const { base } = await service({ provider, config: LIVE });
+    await postJson(base, '/api/ai/ask', validAsk());
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(calls).toHaveLength(1);
+  });
+
+  it('never puts the credential into the health payload', async () => {
+    const { provider } = countingProvider();
+    const { base } = await service({ provider, config: LIVE });
+    const body = await (await fetch(`${base}/api/ai/health`)).text();
+    expect(body).not.toContain('sk-live-must-not-leak');
+    // …and it does say what that provider will spend, so the reader can judge the cost.
+    expect(JSON.parse(body)).toMatchObject({ online: true, reasoning: '思考模式 low' });
+  });
+
+  it('never puts the credential or the paper text into the log', async () => {
+    const written = [];
+    const { provider } = countingProvider();
+    const { base } = await service({
+      provider,
+      config: LIVE,
+      log: {
+        request: (entry) => written.push(JSON.stringify(entry)),
+        note: (message) => written.push(JSON.stringify({ message })),
+      },
+    });
+    await postJson(base, '/api/ai/ask', validAsk());
+    const log = written.join('\n');
+    expect(log).not.toContain('sk-live-must-not-leak');
+    expect(log).not.toContain('invariant to the ordering');
+    expect(log).toContain('"passages"');
+  });
+});

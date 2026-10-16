@@ -55,6 +55,10 @@ describe('createDeepSeekProvider', () => {
     expect(calls[0].body.model).toBe('deepseek-flash');
     expect(calls[0].body.stream).toBe(false);
     expect(calls[0].body.max_tokens).toBe(512);
+    // Thinking is on upstream by default at effort `high`, and reasoning tokens come out of the
+    // same budget as the answer, so both settings are sent rather than inherited.
+    expect(calls[0].body.thinking).toEqual({ type: 'enabled' });
+    expect(calls[0].body.reasoning_effort).toBe('low');
     // JSON mode is only useful if the prompt asks for JSON too, which the system message does.
     expect(calls[0].body.response_format).toEqual({ type: 'json_object' });
     expect(calls[0].body.messages[0]).toEqual({ role: 'system', content: 'SYS' });
@@ -66,7 +70,14 @@ describe('createDeepSeekProvider', () => {
     const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
     const result = await provider.complete({ system: 'S', messages: [], meta: {} });
     expect(result.text).toBe('{"answer":"ok","citations":[]}');
-    expect(result.usage).toEqual({ promptTokens: 1200, completionTokens: 80 });
+    // Absent fields are reported as absent rather than as zero: "no reasoning was reported" and
+    // "no reasoning was used" are different claims, and only the first one is known here.
+    expect(result.usage).toEqual({
+      promptTokens: 1200,
+      completionTokens: 80,
+      reasoningTokens: null,
+      cachedPromptTokens: null,
+    });
     expect(result.truncated).toBe(false);
   });
 
@@ -91,7 +102,12 @@ describe('createDeepSeekProvider', () => {
     [401, 'auth'],
     [403, 'auth'],
     [429, 'rate-limit'],
-    [402, 'rate-limit'],
+    // 402 is an empty account, not a busy one: waiting does not fix it, so it says so.
+    [402, 'insufficient-balance'],
+    // 400/422 mean the parameters we built were rejected — a defect on our side rather than
+    // something wrong at the model service.
+    [400, 'invalid-request'],
+    [422, 'invalid-request'],
     [500, 'upstream'],
     [503, 'upstream'],
   ])('maps HTTP %i to the %s category', async (status, code) => {
@@ -174,5 +190,133 @@ describe('createDeepSeekProvider', () => {
     await expect(provider.complete({ system: 'S', messages: [], meta: {} })).rejects.toMatchObject({
       code: 'upstream',
     });
+  });
+
+  /**
+   * Thinking mode spends from the same budget as the answer, so the failure it produces — a long
+   * think, no answer, `finish_reason: length` — has to be recognisable on its own instead of
+   * looking like a broken service.
+   */
+  it('names the empty-answer case that thinking mode causes', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      okBody('', {
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'length',
+            message: { role: 'assistant', content: '', reasoning_content: 'thinking…' },
+          },
+        ],
+      }),
+    );
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    const failure = await provider
+      .complete({ system: 'S', messages: [], meta: {} })
+      .catch((error) => error);
+    expect(failure).toBeInstanceOf(ProviderError);
+    expect(failure.code).toBe('incomplete');
+    expect(failure.message).toContain('推理');
+  });
+
+  it('treats a service-side interruption as an incomplete answer', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      okBody('partial', {
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'insufficient_system_resource',
+            message: { role: 'assistant', content: 'partial' },
+          },
+        ],
+      }),
+    );
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    const result = await provider.complete({ system: 'S', messages: [], meta: {} });
+    expect(result.truncated).toBe(true);
+    expect(result.stopped).toBe('insufficient_system_resource');
+  });
+
+  it('says so when content was filtered away rather than calling it a service error', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      okBody('', {
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'content_filter',
+            message: { role: 'assistant', content: '' },
+          },
+        ],
+      }),
+    );
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    const failure = await provider
+      .complete({ system: 'S', messages: [], meta: {} })
+      .catch((error) => error);
+    expect(failure.code).toBe('upstream');
+    expect(failure.message).toContain('内容策略');
+  });
+
+  /** `reasoning_content` is the thinking. It is never the reply, under any circumstance. */
+  it('never returns the reasoning as if it were the answer', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      okBody('the answer', {
+        choices: [
+          {
+            index: 0,
+            finish_reason: 'stop',
+            message: {
+              role: 'assistant',
+              content: 'the answer',
+              reasoning_content: 'SECRET CHAIN OF THOUGHT',
+            },
+          },
+        ],
+      }),
+    );
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    const result = await provider.complete({ system: 'S', messages: [], meta: {} });
+    expect(result.text).toBe('the answer');
+    expect(result.text).not.toContain('SECRET');
+  });
+
+  it('records the reasoning tokens separately from the answer tokens', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      okBody('{"answer":"x"}', {
+        usage: {
+          prompt_tokens: 900,
+          completion_tokens: 1500,
+          prompt_cache_hit_tokens: 600,
+          completion_tokens_details: { reasoning_tokens: 1100 },
+        },
+      }),
+    );
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    const result = await provider.complete({ system: 'S', messages: [], meta: {} });
+    expect(result.usage).toEqual({
+      promptTokens: 900,
+      completionTokens: 1500,
+      reasoningTokens: 1100,
+      cachedPromptTokens: 600,
+    });
+  });
+
+  it('reports no truncation when the service gives no reason', async () => {
+    const { fetchImpl } = stubFetch(() =>
+      okBody('{"answer":"x"}', {
+        choices: [{ index: 0, message: { role: 'assistant', content: '{"answer":"x"}' } }],
+      }),
+    );
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    const result = await provider.complete({ system: 'S', messages: [], meta: {} });
+    expect(result.truncated).toBe(false);
+    expect(result.stopped).toBeNull();
+  });
+
+  /** A failing billable call is reported once. Asking again is the reader's decision, not ours. */
+  it('does not retry a failed request', async () => {
+    const { fetchImpl, calls } = stubFetch(() => new Response('{}', { status: 500 }));
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    await provider.complete({ system: 'S', messages: [], meta: {} }).catch(() => null);
+    expect(calls).toHaveLength(1);
   });
 });

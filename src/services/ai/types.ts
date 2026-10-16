@@ -68,7 +68,20 @@ export interface AiAnswer {
   groundedInText: boolean | null;
   citations: AiCitation[];
   warnings: string[];
-  usage: { promptTokens: number | null; completionTokens: number | null } | null;
+  usage: AiUsage | null;
+}
+
+/**
+ * What the call cost, as the provider reported it.
+ *
+ * `reasoningTokens` is a subset of `completionTokens`, not an addition to it: in thinking mode
+ * the reasoning comes out of the same generation budget as the answer.
+ */
+export interface AiUsage {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  reasoningTokens?: number | null;
+  cachedPromptTokens?: number | null;
 }
 
 export type AiFailureKind =
@@ -77,6 +90,12 @@ export type AiFailureKind =
   | 'cancelled'
   | 'busy'
   | 'rate-limit'
+  /** The account is out of credit: waiting will not help. */
+  | 'insufficient-balance'
+  /** The service itself rejected the parameters we built — a defect on our side, not the reader's. */
+  | 'invalid-request'
+  /** Generation stopped early (usually the token budget, which thinking spends from too). */
+  | 'incomplete'
   | 'auth'
   | 'upstream'
   | 'bad-request'
@@ -92,6 +111,8 @@ export interface AiHealth {
   provider: string;
   label: string;
   model: string;
+  /** What the provider will spend per call, in its own terms; null for the offline provider. */
+  reasoning: string | null;
   online: boolean;
   limits: {
     passages: number;

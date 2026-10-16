@@ -33,6 +33,25 @@ export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 /** DeepSeek's current published model names, checked against api-docs.deepseek.com. */
 export const KNOWN_DEEPSEEK_MODELS = ['deepseek-flash', 'deepseek-v4-pro'];
 
+/**
+ * Thinking mode, which upstream defaults to *on* at effort `high`.
+ *
+ * That default matters here for a reason worth writing down: `reasoning_tokens` count towards
+ * `max_tokens`, so a long think can consume the whole generation budget and leave `content`
+ * empty or cut off. The service therefore sends both settings explicitly rather than inheriting
+ * someone else's default, and budgets the token ceiling for reasoning plus answer together.
+ *
+ * `reasoning_effort` can also switch thinking back on — the documented values are
+ * `none` (disables it), `low`, `high` and `max` (all enable it). Sending `thinking: disabled`
+ * together with an effort that enables it would be contradictory, so a disabled thinking mode
+ * forces `none`.
+ */
+export const THINKING_TYPES = ['enabled', 'disabled'];
+export const REASONING_EFFORTS = ['none', 'low', 'high', 'max'];
+
+/** The effort used when thinking is on and nothing was configured: enough to help, bounded. */
+export const DEFAULT_REASONING_EFFORT = 'low';
+
 /** Bounds on what a single request may carry. Deliberately far below "a whole paper". */
 export const LIMITS = {
   bodyBytes: 256 * 1024,
@@ -42,7 +61,12 @@ export const LIMITS = {
   questionChars: 1000,
   historyTurns: 6,
   historyChars: 2000,
-  answerTokens: 2048,
+  /**
+   * Total generation budget, not just the answer's: in thinking mode this ceiling covers the
+   * reasoning tokens as well. 4096 leaves room for a reasoned explanation and is still a hard
+   * bound on what one request can cost.
+   */
+  answerTokens: 4096,
   /** Requests allowed per minute, per process. A runaway loop costs money; this caps it. */
   requestsPerMinute: 30,
   concurrentRequests: 4,
@@ -86,6 +110,14 @@ export function readConfig(env = process.env) {
     .map((value) => value.trim())
     .filter((value) => value !== '');
 
+  // An effort that enables thinking would contradict a disabled thinking mode, so the two are
+  // resolved here rather than sent upstream as a request that means two different things.
+  const thinking = env.DEEPSEEK_THINKING === 'disabled' ? 'disabled' : 'enabled';
+  const requestedEffort = REASONING_EFFORTS.includes(env.DEEPSEEK_REASONING_EFFORT)
+    ? env.DEEPSEEK_REASONING_EFFORT
+    : DEFAULT_REASONING_EFFORT;
+  const reasoningEffort = thinking === 'disabled' ? 'none' : requestedEffort;
+
   return {
     port: readInt(env.AI_PORT, DEFAULT_PORT, { min: 1, max: 65535 }),
     provider,
@@ -93,6 +125,8 @@ export function readConfig(env = process.env) {
     apiKey: typeof env.DEEPSEEK_API_KEY === 'string' ? env.DEEPSEEK_API_KEY.trim() : '',
     baseUrl: (env.DEEPSEEK_BASE_URL ?? DEFAULT_DEEPSEEK_BASE_URL).replace(/\/+$/, ''),
     model: isValidModelName(env.DEEPSEEK_MODEL) ? env.DEEPSEEK_MODEL : KNOWN_DEEPSEEK_MODELS[0],
+    thinking,
+    reasoningEffort,
     timeoutMs: readInt(env.AI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, { min: 1000, max: 600_000 }),
     allowedOrigins: extraOrigins,
     /** Where the mock provider's answers come from; see providers/mock.mjs. */

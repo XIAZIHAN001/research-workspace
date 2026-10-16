@@ -32,7 +32,7 @@ function isRecord(value) {
  * citations — which is safe, because an unverified citation is worse than none.
  */
 export function parseModelOutput(raw) {
-  if (typeof raw !== 'string') return { ok: false, text: '' };
+  if (typeof raw !== 'string') return { ok: false, text: '', sawJsonObject: false };
   const trimmed = raw.trim();
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
   const candidates = [];
@@ -43,16 +43,21 @@ export function parseModelOutput(raw) {
   if (firstBrace >= 0 && lastBrace > firstBrace)
     candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
 
+  // The difference between "answered in prose" and "answered with JSON that has no answer in it"
+  // decides what the reader is shown: the first is worth reading, the second is not.
+  let sawJsonObject = false;
   for (const candidate of candidates) {
     try {
       const parsed = JSON.parse(candidate);
-      if (isRecord(parsed) && typeof parsed.answer === 'string')
+      if (!isRecord(parsed)) continue;
+      sawJsonObject = true;
+      if (typeof parsed.answer === 'string')
         return { ok: true, text: parsed.answer, value: parsed };
     } catch {
       // try the next shape
     }
   }
-  return { ok: false, text: trimmed };
+  return { ok: false, text: trimmed, sawJsonObject };
 }
 
 /**
@@ -67,19 +72,24 @@ export function verifyAnswer(rawText, passages, { truncated = false } = {}) {
 
   const parsed = parseModelOutput(rawText);
   if (!parsed.ok) {
+    // A model that answered in prose is still worth reading; a model that returned JSON with no
+    // answer field has nothing to show, and showing the raw JSON instead would only look like an
+    // answer. Both lose their citations, because nothing can be verified against a shape that
+    // was never agreed.
+    const reason = parsed.sawJsonObject
+      ? '模型返回的是 JSON，但里面没有可用的 answer 文字字段，这次没有可显示的回答。'
+      : '模型没有按约定返回 JSON，因此没有可校验的引用；下面的内容是原文照录。';
     return {
-      answer: parsed.text.slice(0, MAX_ANSWER_CHARS),
+      answer: parsed.sawJsonObject ? '' : parsed.text.slice(0, MAX_ANSWER_CHARS),
       groundedInText: null,
       citations: [],
-      warnings: [
-        ...warnings,
-        '模型没有按约定返回 JSON，因此没有可校验的引用；下面的内容是原文照录。',
-      ],
+      warnings: [...warnings, reason],
     };
   }
 
   const answer = parsed.text.slice(0, MAX_ANSWER_CHARS);
   if (parsed.text.length > MAX_ANSWER_CHARS) warnings.push('回答过长，已截断。');
+  if (parsed.text.trim() === '') warnings.push('模型返回了空的回答正文。');
 
   const byId = new Map(passages.map((passage) => [passage.id, passage]));
   const groundedInText =

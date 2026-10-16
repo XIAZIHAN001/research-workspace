@@ -356,8 +356,12 @@ async function main() {
   page.on('crash', () => {
     consoleIssues.push('page crashed');
   });
+  // A disconnect during the run is a crash worth reporting; the one that `browser.close()`
+  // causes at the end is the run finishing, and recording it as a problem would be a false
+  // alarm sitting in the report forever.
+  let closing = false;
   browser.on('disconnected', () => {
-    consoleIssues.push('browser disconnected');
+    if (!closing) consoleIssues.push('browser disconnected during the run');
   });
 
   try {
@@ -593,6 +597,7 @@ run failed: ${String(error)}
 `);
     throw error;
   } finally {
+    closing = true;
     await browser.close();
     server.kill();
   }

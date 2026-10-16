@@ -78,6 +78,72 @@ describe('configProblems', () => {
   });
 });
 
+describe('thinking mode', () => {
+  it('is explicit rather than inherited from upstream defaults', () => {
+    const config = readConfig({});
+    // Upstream defaults to thinking enabled at effort `high`, and reasoning spends from the same
+    // token budget as the answer, so the service decides this itself.
+    expect(config.thinking).toBe('enabled');
+    expect(config.reasoningEffort).toBe('low');
+  });
+
+  it('can be turned off, and then cannot contradict itself about the effort', () => {
+    expect(readConfig({ DEEPSEEK_THINKING: 'disabled' }).thinking).toBe('disabled');
+    expect(readConfig({ DEEPSEEK_THINKING: 'disabled' }).reasoningEffort).toBe('none');
+    // Asking for no thinking and a high effort at the same time means two different things, so
+    // the thinking switch wins and the effort is reported as what will actually be sent.
+    const contradictory = readConfig({
+      DEEPSEEK_THINKING: 'disabled',
+      DEEPSEEK_REASONING_EFFORT: 'high',
+    });
+    expect(contradictory.reasoningEffort).toBe('none');
+  });
+
+  it('accepts only the documented effort levels', () => {
+    expect(readConfig({ DEEPSEEK_REASONING_EFFORT: 'high' }).reasoningEffort).toBe('high');
+    expect(readConfig({ DEEPSEEK_REASONING_EFFORT: 'max' }).reasoningEffort).toBe('max');
+    expect(readConfig({ DEEPSEEK_REASONING_EFFORT: 'none' }).reasoningEffort).toBe('none');
+    for (const nonsense of ['extreme', '', 'HIGH']) {
+      expect(readConfig({ DEEPSEEK_REASONING_EFFORT: nonsense }).reasoningEffort).toBe('low');
+    }
+  });
+});
+
+describe('credential boundaries', () => {
+  /**
+   * The service is documented to read exactly one credential. This asserts the other direction:
+   * that nothing else in the environment — least of all another tool's stored credentials —
+   * reaches the configuration object at all.
+   */
+  it('reads no credential other than the one it documents', () => {
+    const config = readConfig({
+      DEEPSEEK_API_KEY: 'the-only-one-it-should-read',
+      ANTHROPIC_API_KEY: 'sk-ant-must-not-be-read',
+      OPENAI_API_KEY: 'sk-openai-must-not-be-read',
+      CLAUDE_CODE_OAUTH_TOKEN: 'must-not-be-read',
+      AWS_SECRET_ACCESS_KEY: 'must-not-be-read',
+      GITHUB_TOKEN: 'must-not-be-read',
+    });
+    expect(config.apiKey).toBe('the-only-one-it-should-read');
+    const serialized = JSON.stringify(config);
+    for (const foreign of [
+      'sk-ant-must-not-be-read',
+      'sk-openai-must-not-be-read',
+      'must-not-be-read',
+    ]) {
+      expect(serialized).not.toContain(foreign);
+    }
+  });
+
+  it('keeps the key in exactly one field, and nowhere else', () => {
+    const secret = 'sk-distinctive-value-9f2a';
+    const config = readConfig({ DEEPSEEK_API_KEY: secret });
+    // Counted rather than inspected, so a future field that happened to copy the key would
+    // show up here instead of passing a hand-written list of field names.
+    expect(JSON.stringify(config).split(secret)).toHaveLength(2);
+  });
+});
+
 describe('isLoopbackOrigin', () => {
   it('accepts only loopback origins', () => {
     for (const origin of [

@@ -31,7 +31,10 @@ const MESSAGES: Record<AiFailureKind, string> = {
   timeout: '模型在限定时间内没有返回。已有的高亮和笔记不受影响，可以重试。',
   cancelled: '已取消这次提问。',
   busy: '本地服务同时在处理的请求太多，请稍后再试。',
-  'rate-limit': '请求太频繁或额度受限，请稍后再试。',
+  'rate-limit': '模型服务表示频率或并发受限，请稍后再试。',
+  'insufficient-balance': '模型服务账户余额不足，充值后才能继续；重试不会有用。',
+  'invalid-request': '本地服务构造的请求被模型服务拒绝了，这是应用的配置问题，不是你的操作问题。',
+  incomplete: '模型没有写完回答就停了（思考模式的推理会占用同一份生成预算）。',
   auth: '模型服务拒绝了这次请求（凭据无效或没有权限）。',
   upstream: '模型服务返回了错误，这次没有得到回答。',
   'bad-request': '这次请求的内容不符合服务的要求，没有发送出去。',
@@ -45,6 +48,9 @@ function describeFailure(kind: AiFailureKind, override?: string): AiFailure {
 function kindFor(status: number, code: unknown): AiFailureKind {
   if (code === 'busy') return 'busy';
   if (code === 'timeout' || status === 504) return 'timeout';
+  if (code === 'incomplete') return 'incomplete';
+  if (code === 'insufficient-balance') return 'insufficient-balance';
+  if (code === 'invalid-request') return 'invalid-request';
   if (code === 'rate-limit' || status === 429) return 'rate-limit';
   if (code === 'auth') return 'auth';
   if (code === 'bad-request' || status === 400 || status === 413) return 'bad-request';

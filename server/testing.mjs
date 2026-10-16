@@ -40,7 +40,9 @@ export async function startTestService(deps) {
   const { createAiServer } = await import('./index.mjs');
   const { readConfig } = await import('./config.mjs');
   const config = { ...readConfig({}), logRequests: false, ...(deps?.config ?? {}) };
-  const { server, health } = createAiServer({ config, ...deps });
+  // `config` goes last: it is the merged one, and letting `deps.config` win would hand the
+  // service a partial configuration with fields like `allowedOrigins` missing.
+  const { server, health } = createAiServer({ ...deps, config });
   await new Promise((resolve) => {
     server.listen(0, '127.0.0.1', resolve);
   });

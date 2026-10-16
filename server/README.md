@@ -25,20 +25,35 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 
 ### 环境变量
 
-| 变量                 | 默认值                     | 说明                                            |
-| -------------------- | -------------------------- | ----------------------------------------------- |
-| `AI_PROVIDER`        | `mock`                     | `mock` 或 `deepseek`                            |
-| `DEEPSEEK_API_KEY`   | 空                         | 仅从环境变量读取，不进前端、不进仓库            |
-| `DEEPSEEK_MODEL`     | `deepseek-flash`           | 官方当前型号名；也可填 `deepseek-v4-pro`        |
-| `DEEPSEEK_BASE_URL`  | `https://api.deepseek.com` | 必须是 https                                    |
-| `AI_PORT`            | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置  |
-| `AI_TIMEOUT_MS`      | `60000`                    | 单次请求超时                                    |
-| `AI_ALLOWED_ORIGINS` | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许 |
-| `AI_LOG_REQUESTS`    | 开启                       | 设 `0` 关闭访问日志                             |
+| 变量                        | 默认值                     | 说明                                            |
+| --------------------------- | -------------------------- | ----------------------------------------------- |
+| `AI_PROVIDER`               | `mock`                     | `mock` 或 `deepseek`                            |
+| `DEEPSEEK_API_KEY`          | 空                         | 仅从环境变量读取，不进前端、不进仓库            |
+| `DEEPSEEK_MODEL`            | `deepseek-flash`           | 官方当前型号名；也可填 `deepseek-v4-pro`        |
+| `DEEPSEEK_BASE_URL`         | `https://api.deepseek.com` | 必须是 https                                    |
+| `DEEPSEEK_THINKING`         | `enabled`                  | `enabled` 或 `disabled`                         |
+| `DEEPSEEK_REASONING_EFFORT` | `low`                      | `none` / `low` / `high` / `max`                 |
+| `AI_PORT`                   | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置  |
+| `AI_TIMEOUT_MS`             | `60000`                    | 单次请求超时                                    |
+| `AI_ALLOWED_ORIGINS`        | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许 |
+| `AI_LOG_REQUESTS`           | 开启                       | 设 `0` 关闭访问日志                             |
 
 模型名与请求格式核对自官方文档 `api-docs.deepseek.com`（`POST /chat/completions`、
 `Authorization: Bearer`、`choices[0].message.content`）。使用在线提供方时以 JSON 输出模式
 请求，因为引用校验需要可解析的结构。
+
+### 思考模式与生成预算
+
+官方默认是**开启思考模式、推理档位 `high`**。这件事在本项目里必须显式处理，因为
+**推理 token 与回答正文共用同一份 `max_tokens`**：一次长时间的思考可以把预算耗尽，
+于是 `content` 为空或只有半句。所以：
+
+- 服务端**显式发送** `thinking` 与 `reasoning_effort`，不依赖上游默认值；
+- 默认档位取 `low`（够用、延迟与花费有界），可用 `DEEPSEEK_REASONING_EFFORT` 调整；
+- `DEEPSEEK_THINKING=disabled` 会把档位强制为 `none`，避免同时发出两个互相矛盾的意思；
+- 生成预算（`LIMITS.answerTokens`，4096）是**推理 + 正文**的总量；
+- 真的耗尽时返回 `incomplete` 类错误并说明原因，而不是把空回答当成正常结果；
+- 用量里的 `reasoning_tokens` 是 `completion_tokens` 的**子集**，不是额外相加。
 
 ## 边界
 
@@ -52,6 +67,22 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
   并且数据块分隔符会在拼接前被消解。
 - 引用一律校验：段落 id 必须是本次发出去的，引文必须是该段落逐字的子串；
   页码只取自服务端自己的段落记录，从不采信模型给出的页码。
+
+## 引用校验保证什么、不保证什么
+
+这是三个不同的问题，只有第一个是机器能查的：
+
+| 问题                               | 谁来判                 | 本服务的态度                                                       |
+| ---------------------------------- | ---------------------- | ------------------------------------------------------------------ |
+| 引用文字是否真的来自本次提供的原文 | **本服务**（逐字比对） | 保证。不合格的引用会被丢弃并计数，绝不显示成可点链接               |
+| 原文是否支持这句话的结论           | 读者                   | **不检查**。用第二个模型给第一个模型打分，只是把不可验证换了个位置 |
+| 结论本身是否正确                   | 读者                   | **不检查**，也检查不了                                             |
+
+因此界面在引用下方会写明：「以上引用已核对：引文确实逐字来自本次发送给模型的原文。
+引文是否支持这里的结论、以及结论本身是否正确，不在这道校验的范围内。」
+
+`groundedInText` 是**模型的自我判断**，界面照实转述并标明这是它的自述，
+不是被核对过的事实。
 
 ## 测试时用到的故障开关
 

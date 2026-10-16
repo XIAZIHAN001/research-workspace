@@ -55,6 +55,8 @@ export function createAiServer({
     provider: chosen.name,
     label: chosen.label,
     model: chosen.model,
+    /** What the call will spend, in the provider's own terms; null for the offline provider. */
+    reasoning: chosen.reasoning ?? null,
     /** True when a call reaches a paid service. The interface says so before anything is sent. */
     online: chosen.name !== 'mock',
     limits: {

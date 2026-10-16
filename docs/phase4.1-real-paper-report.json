@@ -1,0 +1,245 @@
+{
+  "generatedAt": "2026-10-16T14:47:56.804Z",
+  "status": "real papers verified",
+  "papers": [
+    {
+      "arxivId": "2610.22294",
+      "licence": "CC BY 4.0",
+      "note": "33 pages, two columns, equations and figures"
+    },
+    {
+      "arxivId": "2610.22350",
+      "licence": "CC BY 4.0",
+      "note": "14 pages, two columns, 8 figures, 4 tables"
+    }
+  ],
+  "passed": 28,
+  "failed": 0,
+  "results": [
+    {
+      "name": "arXiv:2610.22294: imported and opened",
+      "passed": true,
+      "detail": "1418 KB, 33 pages, open as “2610.22294”"
+    },
+    {
+      "name": "arXiv:2610.22294: the first page renders ink and extracts text",
+      "passed": true,
+      "detail": "2007 chars, 4.3% of the page is ink"
+    },
+    {
+      "name": "arXiv:2610.22294: the text layer sits on top of the glyphs it claims to be",
+      "passed": true,
+      "detail": "60/60 spans have ink under them"
+    },
+    {
+      "name": "arXiv:2610.22294: the layout is two columns",
+      "passed": true,
+      "detail": "span boxes span 703px of a 914px page"
+    },
+    {
+      "name": "arXiv:2610.22294: a single-column run of spans exists to select",
+      "passed": true,
+      "detail": "spans 20–23"
+    },
+    {
+      "name": "arXiv:2610.22294: a cross-line selection stays inside one column",
+      "passed": true,
+      "detail": "8 line boxes, 49% of the page wide"
+    },
+    {
+      "name": "arXiv:2610.22294: the captured selection is the text the browser selected",
+      "passed": true,
+      "detail": "13 words, 97 chars"
+    },
+    {
+      "name": "arXiv:2610.22294: the highlight is stored against the paper and the file",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "arXiv:2610.22294: the highlight is on the same words after a reload",
+      "passed": true,
+      "detail": "6 boxes before, 6 after (page 1 of “2610.22294”, 6 highlights, 1 notes in the panel)"
+    },
+    {
+      "name": "arXiv:2610.22294: the highlight is on the same words after zooming",
+      "passed": true,
+      "detail": "worst drift 0.0‰ of the page"
+    },
+    {
+      "name": "arXiv:2610.22294: page 7 extracts text the same way",
+      "passed": true,
+      "detail": "3021 chars, 0 unmapped glyphs"
+    },
+    {
+      "name": "arXiv:2610.22294: the extraction has no ligature or replacement artefacts",
+      "passed": true,
+      "detail": "0 ligatures, 0 unmapped on page 1"
+    },
+    {
+      "name": "arXiv:2610.22294: every page of the document extracts without unmapped glyphs",
+      "passed": true,
+      "detail": "33 pages, 95486 chars, 345 maths symbols, 0 unmapped, 0 empty"
+    },
+    {
+      "name": "arXiv:2610.22350: imported and opened",
+      "passed": true,
+      "detail": "5097 KB, 14 pages, open as “2610.22350”"
+    },
+    {
+      "name": "arXiv:2610.22350: the first page renders ink and extracts text",
+      "passed": true,
+      "detail": "2199 chars, 13.0% of the page is ink"
+    },
+    {
+      "name": "arXiv:2610.22350: the text layer sits on top of the glyphs it claims to be",
+      "passed": true,
+      "detail": "71/71 spans have ink under them"
+    },
+    {
+      "name": "arXiv:2610.22350: the layout is two columns",
+      "passed": true,
+      "detail": "span boxes span 748px of a 914px page"
+    },
+    {
+      "name": "arXiv:2610.22350: a single-column run of spans exists to select",
+      "passed": true,
+      "detail": "spans 62–69"
+    },
+    {
+      "name": "arXiv:2610.22350: a cross-line selection stays inside one column",
+      "passed": true,
+      "detail": "14 line boxes, 33% of the page wide"
+    },
+    {
+      "name": "arXiv:2610.22350: the captured selection is the text the browser selected",
+      "passed": true,
+      "detail": "8 words, 50 chars"
+    },
+    {
+      "name": "arXiv:2610.22350: the highlight is stored against the paper and the file",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "arXiv:2610.22350: the highlight is on the same words after a reload",
+      "passed": true,
+      "detail": "14 boxes before, 14 after (page 1 of “2610.22350”, 14 highlights, 1 notes in the panel)"
+    },
+    {
+      "name": "arXiv:2610.22350: the highlight is on the same words after zooming",
+      "passed": true,
+      "detail": "worst drift 0.0‰ of the page"
+    },
+    {
+      "name": "arXiv:2610.22350: page 5 extracts text the same way",
+      "passed": true,
+      "detail": "3376 chars, 0 unmapped glyphs"
+    },
+    {
+      "name": "arXiv:2610.22350: the extraction has no ligature or replacement artefacts",
+      "passed": true,
+      "detail": "0 ligatures, 0 unmapped on page 1"
+    },
+    {
+      "name": "arXiv:2610.22350: every page of the document extracts without unmapped glyphs",
+      "passed": true,
+      "detail": "14 pages, 58787 chars, 63 maths symbols, 0 unmapped, 0 empty"
+    },
+    {
+      "name": "papers: the corpus is real research prose, with mathematics in it",
+      "passed": true,
+      "detail": "2610.22294: 345 maths symbols in 95486 chars, 2610.22350: 63 maths symbols in 58787 chars"
+    },
+    {
+      "name": "console: no errors, warnings or page exceptions",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "measurements": {
+    "arXiv:2610.22294": {
+      "page1": {
+        "spans": 79,
+        "lines": 28,
+        "centreSpread": 703.2664184570312,
+        "pageWidth": 914,
+        "chars": 2007,
+        "ligatures": 0,
+        "unmapped": 0,
+        "maths": 0,
+        "ink": {
+          "spansChecked": 60,
+          "spansWithInk": 60,
+          "pageInk": 0.04340083010289277
+        }
+      },
+      "laterPage": {
+        "page": 7,
+        "spans": 288,
+        "lines": 58,
+        "centreSpread": 657.1766052246094,
+        "pageWidth": 918,
+        "chars": 3021,
+        "ligatures": 0,
+        "unmapped": 0,
+        "maths": 21,
+        "ink": {
+          "spansChecked": 101,
+          "spansWithInk": 101,
+          "pageInk": 0.062238213654335656
+        }
+      },
+      "corpus": {
+        "pages": 33,
+        "chars": 95486,
+        "maths": 345,
+        "unmapped": 0,
+        "ligatures": 0,
+        "emptyPages": 0
+      }
+    },
+    "arXiv:2610.22350": {
+      "page1": {
+        "spans": 134,
+        "lines": 32,
+        "centreSpread": 748.2265625,
+        "pageWidth": 914,
+        "chars": 2199,
+        "ligatures": 0,
+        "unmapped": 0,
+        "maths": 2,
+        "ink": {
+          "spansChecked": 71,
+          "spansWithInk": 71,
+          "pageInk": 0.12979130959074867
+        }
+      },
+      "laterPage": {
+        "page": 5,
+        "spans": 110,
+        "lines": 42,
+        "centreSpread": 893.3474731445312,
+        "pageWidth": 1190.546875,
+        "chars": 3376,
+        "ligatures": 0,
+        "unmapped": 0,
+        "maths": 7,
+        "ink": {
+          "spansChecked": 41,
+          "spansWithInk": 41,
+          "pageInk": 0.07417726448868317
+        }
+      },
+      "corpus": {
+        "pages": 14,
+        "chars": 58787,
+        "maths": 63,
+        "unmapped": 0,
+        "ligatures": 0,
+        "emptyPages": 0
+      }
+    }
+  },
+  "consoleIssues": []
+}

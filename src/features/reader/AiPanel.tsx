@@ -70,6 +70,28 @@ function AnswerBody({
   );
 }
 
+/**
+ * The answer body, or a plain statement that there is none.
+ *
+ * An empty answer can arrive several ways — the model thought until the budget ran out, or
+ * returned JSON without an `answer` field — and in every one of them an empty box would look
+ * like a panel that failed to load. This says what happened instead.
+ */
+function AnswerOrNothing({
+  answer,
+  citations,
+  onJump,
+}: {
+  answer: string;
+  citations: AiCitation[];
+  onJump: (citation: AiCitation) => void;
+}) {
+  if (answer.trim() === '') {
+    return <p className="ai-warn">这次没有得到可显示的回答正文。</p>;
+  }
+  return <AnswerBody answer={answer} citations={citations} onJump={onJump} />;
+}
+
 export function AiPanel({
   session,
   busy,
@@ -105,7 +127,7 @@ export function AiPanel({
     health === null
       ? '还没有连上本地 AI 服务（npm run ai:serve）。'
       : health.online
-        ? `回答来自 ${health.label}：会调用在线模型，可能产生费用。`
+        ? `回答来自 ${health.label}${health.reasoning === null ? '' : ` · ${health.reasoning}`}：会调用在线模型，可能产生费用。`
         : `回答来自 ${health.label}：不会发起任何在线调用。`;
 
   return (
@@ -211,7 +233,7 @@ export function AiPanel({
                       </button>
                     </div>
                     {showTranslation && (
-                      <AnswerBody
+                      <AnswerOrNothing
                         answer={turn.answer.answer}
                         citations={turn.answer.citations}
                         onJump={onJumpToCitation}
@@ -222,7 +244,7 @@ export function AiPanel({
               )}
 
               {turn.answer !== null && turn.mode !== 'translate' && (
-                <AnswerBody
+                <AnswerOrNothing
                   answer={turn.answer.answer}
                   citations={turn.answer.citations}
                   onJump={onJumpToCitation}
@@ -234,7 +256,8 @@ export function AiPanel({
                   {turn.answer.groundedInText === false && (
                     <p className="ai-warn" role="status">
                       <TriangleAlert size={13} aria-hidden="true" />
-                      模型认为提供的原文不足以完整回答这个问题，请注意分辨哪些是补充内容。
+                      模型自己认为提供的原文不足以完整回答这个问题。这是它的自述，不是被核对过的事实，
+                      请注意分辨哪些是补充内容。
                     </p>
                   )}
                   {turn.answer.warnings.map((warning) => (
@@ -247,6 +270,8 @@ export function AiPanel({
                     出处：第 {session.source.anchor.page} 页 · {turn.answer.providerLabel}
                     {turn.answer.usage?.completionTokens != null &&
                       ` · 输出 ${String(turn.answer.usage.completionTokens)} tokens`}
+                    {turn.answer.usage?.reasoningTokens != null &&
+                      `（其中推理 ${String(turn.answer.usage.reasoningTokens)}）`}
                   </p>
                   <div className="ai-turn-actions">
                     <button
@@ -276,21 +301,28 @@ export function AiPanel({
                     </button>
                   </div>
                   {turn.answer.citations.length > 0 && (
-                    <ul className="ai-citations">
-                      {turn.answer.citations.map((citation) => (
-                        <li key={citation.n}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onJumpToCitation(citation);
-                            }}
-                          >
-                            [{citation.n}] 第 {citation.page} 页
-                          </button>
-                          <span>{citation.quote}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <ul className="ai-citations">
+                        {turn.answer.citations.map((citation) => (
+                          <li key={citation.n}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onJumpToCitation(citation);
+                              }}
+                            >
+                              [{citation.n}] 第 {citation.page} 页
+                            </button>
+                            <span>{citation.quote}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {/* Saying exactly what was checked, because "verified" is easy to over-read. */}
+                      <p className="ai-caveat">
+                        以上引用已核对：引文确实逐字来自本次发送给模型的原文。
+                        引文是否支持这里的结论、以及结论本身是否正确，不在这道校验的范围内。
+                      </p>
+                    </>
                   )}
                 </>
               )}

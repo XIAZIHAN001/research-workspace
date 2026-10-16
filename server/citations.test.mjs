@@ -178,3 +178,111 @@ describe('verifyAnswer', () => {
     expect(result.citations).toEqual([]);
   });
 });
+
+describe('verifyAnswer: answers that cannot be used', () => {
+  it('says an empty answer is empty rather than showing a blank panel', () => {
+    const result = verifyAnswer(jsonOf({ answer: '', citations: [] }), PASSAGES);
+    expect(result.answer).toBe('');
+    expect(result.warnings.join(' ')).toContain('空的回答');
+  });
+
+  it('says when the JSON had no answer field at all', () => {
+    const result = verifyAnswer(jsonOf({ citations: [], note: 'oops' }), PASSAGES);
+    expect(result.answer).toBe('');
+    expect(result.warnings.join(' ')).toContain('没有可用的 answer');
+    expect(result.citations).toEqual([]);
+  });
+
+  it.each([
+    ['a number', { answer: 42 }],
+    ['null', { answer: null }],
+    ['an object', { answer: { text: 'x' } }],
+    ['an array', { answer: ['x'] }],
+  ])('refuses an answer field that is %s', (_label, shape) => {
+    const result = verifyAnswer(jsonOf(shape), PASSAGES);
+    expect(result.answer).toBe('');
+    expect(result.citations).toEqual([]);
+    expect(result.warnings.join(' ')).toContain('没有可用的 answer');
+  });
+
+  it('treats a non-boolean groundedInText as no claim rather than as false', () => {
+    // `false` means the model said the text was insufficient; `"no"` means nothing usable at
+    // all. Reporting the second as the first would put words in the model's mouth.
+    expect(
+      verifyAnswer(jsonOf({ answer: 'x', groundedInText: 'no' }), PASSAGES).groundedInText,
+    ).toBe(null);
+    expect(
+      verifyAnswer(jsonOf({ answer: 'x', groundedInText: false }), PASSAGES).groundedInText,
+    ).toBe(false);
+  });
+
+  it.each([
+    ['a bare string', ['nope']],
+    ['an empty object', [{}]],
+    ['a string citation number', [{ n: '1', passageId: 'selection', quote: 'scaled dot-product' }]],
+    ['a missing quote', [{ n: 1, passageId: 'selection' }]],
+    ['a non-string quote', [{ n: 1, passageId: 'selection', quote: 7 }]],
+  ])('drops a citation entry that is %s', (_label, citations) => {
+    const result = verifyAnswer(jsonOf({ answer: '见 [1]。', citations }), PASSAGES);
+    expect(result.citations).toEqual([]);
+  });
+});
+
+/**
+ * What this module does *not* check, written down as tests so the boundary cannot quietly move.
+ *
+ * Three different questions get asked about an answer, and only the first one is machine-checked
+ * here:
+ *
+ *   1. Is the quotation real?          — checked, byte for byte, against the passages sent.
+ *   2. Does the text support the claim? — not checked. Judging that needs a reader, or a second
+ *                                         model whose judgement would itself be unverified.
+ *   3. Is the claim true?               — not checked, and not checkable by this service.
+ *
+ * The tests below are the honest measure of that: answers that cite genuine text while drawing a
+ * conclusion it does not support come back fully "verified", because from this layer's point of
+ * view they are. The interface says so in as many words — see the caveat asserted in
+ * `AiPanel.test.tsx`.
+ */
+describe('verifyAnswer: what citation checking does not claim', () => {
+  it('accepts a real quotation attached to a conclusion the passage never makes', () => {
+    const result = verifyAnswer(
+      jsonOf({
+        answer: '作者证明注意力机制在所有任务上都优于卷积 [1]。',
+        groundedInText: true,
+        citations: [{ n: 1, passageId: 'selection', quote: 'normalised across the key dimension' }],
+      }),
+      PASSAGES,
+    );
+    // The quotation is genuinely there, so nothing here objects — and the passage says nothing
+    // about convolutions at all. Only a reader can catch this.
+    expect(result.citations).toHaveLength(1);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('accepts a real quotation attached to a derivation that is nowhere in the text', () => {
+    const result = verifyAnswer(
+      jsonOf({
+        answer: '由此可得 Var(x) = E[x²] − (E[x])²，代入即得方差不随序列长度增长 [1]。',
+        groundedInText: true,
+        citations: [{ n: 1, passageId: 'ctx-1', quote: 'scaled dot-product attention' }],
+      }),
+      PASSAGES,
+    );
+    expect(result.citations).toHaveLength(1);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('is pure by construction, so there is nowhere to call a grader from', () => {
+    const result = verifyAnswer(jsonOf({ answer: 'x', citations: [] }), PASSAGES);
+    // A plain value, not a promise: nothing in this module reaches outside the process, which is
+    // what makes "no second model call grades the first" a property rather than a promise.
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(Object.keys(result).sort()).toEqual([
+      'answer',
+      'citations',
+      'groundedInText',
+      'warnings',
+    ]);
+  });
+});

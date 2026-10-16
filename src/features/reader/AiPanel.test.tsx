@@ -69,6 +69,7 @@ const HEALTH: AiHealth = {
   provider: 'mock',
   label: '本地模拟（未连接在线模型）',
   model: 'mock-1',
+  reasoning: null,
   online: false,
   limits: {
     passages: 8,
@@ -160,6 +161,8 @@ describe('AiPanel', () => {
   it('says so when the model itself judged the evidence insufficient', () => {
     setup({ session: session({ answer: answer({ groundedInText: false, citations: [] }) }) });
     expect(screen.getByText(/原文不足以完整回答/)).toBeInTheDocument();
+    // It must read as the model's own claim, never as something this app checked.
+    expect(screen.getByText(/这是它的自述，不是被核对过的事实/)).toBeInTheDocument();
   });
 
   it('offers to save an answer as a note, and confirms it did', async () => {

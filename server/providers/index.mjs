@@ -15,6 +15,8 @@ export function createProvider(config, { fetchImpl } = {}) {
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       model: config.model,
+      thinking: config.thinking,
+      reasoningEffort: config.reasoningEffort,
       timeoutMs: config.timeoutMs,
       ...(fetchImpl === undefined ? {} : { fetchImpl }),
     });
