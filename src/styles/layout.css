@@ -1,0 +1,136 @@
+/* Soft color pools sit behind everything so the glass has something to pick up. */
+.app {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  padding: 10px;
+  background:
+    radial-gradient(60% 55% at 12% 8%, var(--pool-a), transparent 70%),
+    radial-gradient(55% 60% at 92% 20%, var(--pool-b), transparent 70%),
+    radial-gradient(70% 60% at 60% 105%, var(--pool-c), transparent 70%), var(--bg-base);
+  transition:
+    grid-template-columns var(--dur-slow) var(--ease-out),
+    gap var(--dur-slow) var(--ease-out);
+}
+
+.app[data-sidebar='closed'] {
+  grid-template-columns: 0 minmax(0, 1fr);
+  gap: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  transition:
+    opacity var(--dur) var(--ease-out),
+    visibility 0s,
+    var(--glow-t);
+}
+
+.sidebar > * {
+  min-width: calc(var(--sidebar-w) - 2px);
+}
+
+.app[data-sidebar='closed'] .sidebar {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}
+
+/* The reading surface stays calm: one quiet sheet, no glass, no glow, a very short lift. */
+.main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-radius: var(--r-lg);
+  background: var(--sheet);
+  box-shadow:
+    0 0 0 1px var(--sheet-edge),
+    var(--sheet-shadow);
+}
+
+.main > .reopen {
+  position: fixed;
+  top: 22px;
+  left: 22px;
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--glass-fill-strong);
+}
+
+.main > .banner {
+  align-self: center;
+  margin: 14px 56px 0;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font-size: 13px;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  padding: 0;
+  border: 0;
+  background: var(--scrim);
+  animation: fade-in var(--dur) var(--ease-out);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Narrow windows: the sidebar floats over the page instead of taking a column. */
+.app[data-narrow='true'],
+.app[data-narrow='true'][data-sidebar='closed'] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+/* Side padding is the first thing to give back, so a paper title is not squeezed to one word a line. */
+.app[data-narrow='true'] .project {
+  padding: 68px 22px 36px;
+}
+
+.app[data-narrow='true'] .home {
+  padding-inline: 20px;
+}
+
+.app[data-narrow='true'] .sidebar {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
+  z-index: 20;
+  width: min(var(--sidebar-w), calc(100% - 20px));
+  transform: translateX(0);
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    opacity var(--dur) var(--ease-out),
+    visibility 0s;
+}
+
+.app[data-narrow='true'][data-sidebar='closed'] .sidebar {
+  transform: translateX(calc(-100% - 24px));
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    opacity var(--dur) var(--ease-out),
+    visibility 0s linear var(--dur-slow);
+}

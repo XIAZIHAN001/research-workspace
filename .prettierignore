@@ -1,0 +1,10 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/
+.cache/
+package-lock.json
+docs/screenshots/
+# Machine-written acceptance output: `npm run verify` rewrites these verbatim.
+docs/*verification-report.json

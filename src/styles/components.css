@@ -1,0 +1,630 @@
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--ring);
+  border-radius: var(--r-sm);
+  background: var(--pill-fill);
+  color: var(--text);
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.btn:hover {
+  background: var(--glass-fill-strong);
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hi);
+}
+
+.btn-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: var(--danger-ink);
+  font-weight: 600;
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 88%, black);
+}
+
+.btn-quiet {
+  height: 28px;
+  padding: 0 8px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.btn-quiet:hover,
+.btn-quiet[aria-pressed='true'] {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.btn-quiet[aria-pressed='true'] {
+  background: var(--row-active);
+}
+
+.icon-btn {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.icon-btn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+/* ---------- sidebar ---------- */
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 6px 14px;
+}
+
+.brand {
+  color: var(--text-2);
+  font: 600 13px/1 var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+.sidebar-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 4px 8px 8px;
+  overflow-y: auto;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 10px;
+}
+
+.group-title {
+  padding: 4px 10px;
+  color: var(--text-3);
+  font: 600 12px/1.2 var(--font-ui);
+}
+
+.group-head > .group-title {
+  padding: 0;
+}
+
+.group-empty {
+  padding: 6px 10px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.nav-item,
+.row-main {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background-color: transparent;
+  color: var(--text-2);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    padding var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    var(--glow-t);
+}
+
+.nav-item:hover,
+.row-main:hover {
+  background-color: var(--row-hover);
+  color: var(--text);
+}
+
+/* Press feedback. Not on the rename field's wrapper, which is a div, not a button. */
+.nav-item:active,
+button.row-main:active {
+  transform: scale(0.985);
+}
+
+/* Selected: a tinted lens with a thin lit edge and a soft glow, plus a light bar at its left. */
+.nav-item[aria-current],
+.row[data-selected='true'] .row-main {
+  background-color: var(--row-active);
+  box-shadow:
+    inset 0 0 0 1px var(--select-edge),
+    0 0 16px -7px var(--select-glow);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nav-item::before,
+.row-main::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--select-glow);
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.3);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur) var(--ease-spring);
+}
+
+.nav-item[aria-current]::before,
+.row[data-selected='true'] .row-main::before {
+  opacity: 1;
+  transform: translateY(-50%);
+}
+
+.row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.row-actions {
+  position: absolute;
+  right: 3px;
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transform: translateX(4px);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur) var(--ease-out);
+}
+
+.row:hover .row-actions,
+.row:focus-within .row-actions,
+.rows[data-managing='true'] .row-actions {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.row:hover .row-main,
+.row:focus-within .row-main,
+.rows[data-managing='true'] .row-main {
+  padding-right: 62px;
+}
+
+.row-main:has(.inline-input) {
+  padding-right: 8px;
+}
+
+/* The base plate: a slightly denser tier under the list, so the sidebar reads as layers. */
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--ring);
+  background: var(--foot-tint);
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--row-hover);
+}
+
+.seg {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.seg:hover {
+  color: var(--text);
+}
+
+.seg[aria-pressed='true'] {
+  background: var(--pill-fill);
+  color: var(--text);
+  box-shadow:
+    0 0 0 0.5px var(--hairline),
+    inset 0 1px 0 var(--inner-hi);
+}
+
+/* ---------- forms and dialogs ---------- */
+.dialog.glass {
+  --lift: var(--elev-float);
+  position: fixed;
+  width: min(440px, calc(100vw - 32px));
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-lg);
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: var(--scrim);
+  animation: fade-in var(--dur) var(--ease-out);
+}
+
+.dialog[open] {
+  animation: dialog-in var(--dur-slow) var(--ease-spring);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 16px;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialog-head h2 {
+  font: 600 16px/1.3 var(--font-display);
+}
+
+.dialog-text {
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--pill-fill);
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.input::placeholder {
+  color: var(--text-3);
+}
+
+.inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--pill-fill);
+}
+
+.inline-input:focus-visible {
+  outline-offset: 0;
+}
+
+.hint {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.hint-error {
+  color: var(--danger);
+}
+
+/* ---------- home ---------- */
+.home {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 48px 32px 72px;
+  text-align: center;
+}
+
+/* isolation keeps the halo (z-index -1) above the page sheet but behind the ring. */
+.avatar-block {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* One diffuse light behind the figure. The glass ring blurs it, which is the whole effect. */
+.avatar-block::before {
+  content: '';
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  z-index: -1;
+  width: 216px;
+  height: 216px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--halo), transparent);
+  translate: -50% 0;
+  pointer-events: none;
+}
+
+.avatar-ring {
+  width: 148px;
+  height: 148px;
+  padding: 6px;
+  border-radius: 50%;
+  animation: avatar-in var(--dur-slow) var(--ease-spring) both;
+}
+
+@keyframes avatar-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+.avatar-btn {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* A hairline just inside the edge, so any picture (even a pale one) sits cleanly in the ring. */
+.avatar-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--avatar-edge);
+  pointer-events: none;
+}
+
+.avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--dur-slow) var(--ease-spring);
+}
+
+.avatar-btn:hover .avatar-img,
+.avatar-btn:focus-visible .avatar-img {
+  transform: scale(1.04);
+}
+
+.avatar-btn:active .avatar-img {
+  transform: scale(0.98);
+  transition-duration: var(--dur-fast);
+}
+
+.avatar-hint {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 16px 0 9px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.58));
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-out);
+}
+
+.avatar-btn:hover .avatar-hint,
+.avatar-btn:focus-visible .avatar-hint {
+  opacity: 1;
+  transform: none;
+}
+
+/* A short greeting set large, one quieter line under it. The h1 holds both, so it reads whole. */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(30em, 100%);
+  animation: fade-in var(--dur-slow) var(--ease-out) 90ms both;
+}
+
+.welcome-lead {
+  font: 600 34px/1.25 var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.welcome-body {
+  max-width: 24em;
+  color: var(--text-2);
+  font: 400 16px/1.7 var(--font-ui);
+  overflow-wrap: anywhere;
+  /* Greedy wrapping, not balance: balancing a short CJK line splits words ("今天" -> "今 / 天"). */
+  text-wrap: pretty;
+}
+
+/* A provider that answers with a sentence instead of a greeting: keep it small and in one block. */
+.welcome[data-long='true'] .welcome-lead {
+  max-width: 26em;
+  font: 500 20px/1.6 var(--font-display);
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+/* The open button quotes a paper title that may be 80 characters; clip it, never grow past the page. */
+.home .btn {
+  max-width: min(100%, 30em);
+}
+
+.btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- project page ---------- */
+.project {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 72px 40px 48px;
+}
+
+/* Three lines at most; the full title is always in the "核心论文" row below. */
+.project-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font: 600 clamp(22px, 5.4vw, 28px) / 1.3 var(--font-display);
+  text-wrap: balance;
+}
+
+.project-title[data-long='true'] {
+  font-size: clamp(19px, 4.6vw, 22px);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px 28px;
+}
+
+.facts > div {
+  display: contents;
+}
+
+.facts dt {
+  color: var(--text-3);
+}
+
+.facts dd {
+  overflow-wrap: anywhere;
+}
+
+.project-note {
+  padding-top: 14px;
+  border-top: 1px solid var(--ring);
+  color: var(--text-3);
+}

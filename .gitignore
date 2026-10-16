@@ -1,0 +1,25 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/
+
+# Local caches, logs and machine-specific paths
+.cache/
+.rw-local.json
+
+# Secrets and machine-specific configuration — never commit these
+.env
+.env.*
+*.local
+*.pem
+*.key
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

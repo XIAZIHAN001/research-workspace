@@ -1,0 +1,546 @@
+import { describe, expect, it } from 'vitest';
+import { MAX_NAME_LENGTH } from './normalize';
+import type { Paper } from './papers';
+import type { Project } from './project';
+import {
+  EMPTY_STATE,
+  projectsReducer,
+  type ProjectsAction,
+  type ProjectsState,
+} from './projectsState';
+
+function makePaper(id: string, overrides: Partial<Paper> = {}): Paper {
+  return {
+    id,
+    title: `Paper ${id}`,
+    authors: [],
+    createdAt: 100,
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+function makeProject(id: string, overrides: Partial<Project> = {}): Project {
+  return {
+    id,
+    name: `Project ${id}`,
+    corePaperId: `paper-${id}`,
+    relatedPaperIds: [],
+    createdAt: 100,
+    updatedAt: 100,
+    ...overrides,
+  };
+}
+
+/** Registry holding the core paper of every project in the list. */
+function papersOf(projects: Project[]): Record<string, Paper> {
+  return Object.fromEntries(projects.map((p) => [p.corePaperId, makePaper(p.corePaperId)]));
+}
+
+function makeState(ids: string[], selectedId: string | null = ids[0] ?? null): ProjectsState {
+  const projects = ids.map((id) => makeProject(id));
+  return { projects, papers: papersOf(projects), selectedId };
+}
+
+const idsOf = (state: ProjectsState): string[] => state.projects.map((p) => p.id);
+
+const byId = (state: ProjectsState, id: string): Project | undefined =>
+  state.projects.find((p) => p.id === id);
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+describe('EMPTY_STATE', () => {
+  it('has no projects, no papers and no selection', () => {
+    expect(EMPTY_STATE).toStrictEqual({ projects: [], papers: {}, selectedId: null });
+  });
+});
+
+describe('projectsReducer', () => {
+  describe('hydrate', () => {
+    it('replaces the whole state with the given one', () => {
+      const incoming = makeState(['x', 'y'], 'y');
+      const next = projectsReducer(makeState(['a']), { type: 'hydrate', state: incoming });
+      expect(next).toBe(incoming);
+    });
+
+    it('can reset to the empty state', () => {
+      const next = projectsReducer(makeState(['a', 'b']), { type: 'hydrate', state: EMPTY_STATE });
+      expect(next).toStrictEqual({ projects: [], papers: {}, selectedId: null });
+    });
+  });
+
+  describe('add', () => {
+    it('puts the new project first and selects it', () => {
+      const state = makeState(['a', 'b'], 'b');
+      const added = makeProject('c');
+      const next = projectsReducer(state, {
+        type: 'add',
+        project: added,
+        paper: makePaper('paper-c'),
+      });
+      expect(idsOf(next)).toStrictEqual(['c', 'a', 'b']);
+      expect(next.projects[0]).toBe(added);
+      expect(next.selectedId).toBe('c');
+    });
+
+    it('registers the paper the project is built around', () => {
+      const paper = makePaper('paper-c', { title: 'Attention', doi: '10.1000/abc' });
+      const next = projectsReducer(EMPTY_STATE, { type: 'add', project: makeProject('c'), paper });
+      expect(next.papers['paper-c']).toBe(paper);
+      expect(next.projects[0]?.corePaperId).toBe('paper-c');
+    });
+
+    it('keeps the registered paper when the id is already known', () => {
+      const state = makeState(['a']);
+      const stale = makePaper('paper-a', { title: 'Stale title' });
+      const next = projectsReducer(state, {
+        type: 'add',
+        project: makeProject('c'),
+        paper: stale,
+      });
+      expect(next.papers['paper-a']).toBe(state.papers['paper-a']);
+      expect(next.papers['paper-a']?.title).toBe('Paper paper-a');
+    });
+
+    it('works on an empty state', () => {
+      const added = makeProject('first');
+      const paper = makePaper('paper-first');
+      const next = projectsReducer(EMPTY_STATE, { type: 'add', project: added, paper });
+      expect(next).toStrictEqual({
+        projects: [added],
+        papers: { 'paper-first': paper },
+        selectedId: 'first',
+      });
+      expect(EMPTY_STATE).toStrictEqual({ projects: [], papers: {}, selectedId: null });
+    });
+
+    it('keeps the existing projects, papers and their references', () => {
+      const state = makeState(['a', 'b']);
+      const next = projectsReducer(state, {
+        type: 'add',
+        project: makeProject('c'),
+        paper: makePaper('paper-c'),
+      });
+      expect(next.projects.slice(1)).toStrictEqual(state.projects);
+      expect(next.projects[1]).toBe(state.projects[0]);
+      expect(next.projects[2]).toBe(state.projects[1]);
+      expect(next.papers['paper-a']).toBe(state.papers['paper-a']);
+    });
+  });
+
+  describe('linkPaper', () => {
+    it('appends the paper and registers it', () => {
+      const state = makeState(['a']);
+      const paper = makePaper('shared');
+      const next = projectsReducer(state, { type: 'linkPaper', projectId: 'a', paper, now: 999 });
+      expect(byId(next, 'a')).toStrictEqual({
+        ...makeProject('a'),
+        relatedPaperIds: ['shared'],
+        updatedAt: 999,
+      });
+      expect(next.papers.shared).toBe(paper);
+    });
+
+    it('lets two projects share one paper without duplicating it', () => {
+      const paper = makePaper('shared');
+      const first = projectsReducer(makeState(['a', 'b']), {
+        type: 'linkPaper',
+        projectId: 'a',
+        paper,
+        now: 1,
+      });
+      const second = projectsReducer(first, { type: 'linkPaper', projectId: 'b', paper, now: 2 });
+      expect(byId(second, 'a')?.relatedPaperIds).toStrictEqual(['shared']);
+      expect(byId(second, 'b')?.relatedPaperIds).toStrictEqual(['shared']);
+      expect(Object.keys(second.papers)).toStrictEqual(['paper-a', 'paper-b', 'shared']);
+    });
+
+    it('keeps the registered copy of a paper another project already linked', () => {
+      const paper = makePaper('shared');
+      const state = projectsReducer(makeState(['a']), {
+        type: 'linkPaper',
+        projectId: 'a',
+        paper,
+        now: 1,
+      });
+      const next = projectsReducer(state, {
+        type: 'linkPaper',
+        projectId: 'b',
+        paper: { ...paper, title: 'Different metadata' },
+        now: 2,
+      });
+      expect(next.papers.shared).toBe(paper);
+    });
+
+    it('leaves the other projects and the selection alone', () => {
+      const state = makeState(['a', 'b', 'c'], 'c');
+      const next = projectsReducer(state, {
+        type: 'linkPaper',
+        projectId: 'b',
+        paper: makePaper('shared'),
+        now: 5,
+      });
+      expect(idsOf(next)).toStrictEqual(['a', 'b', 'c']);
+      expect(next.selectedId).toBe('c');
+      expect(next.projects[0]).toBe(state.projects[0]);
+      expect(next.projects[2]).toBe(state.projects[2]);
+    });
+
+    it('returns the same state when the project is unknown', () => {
+      const state = makeState(['a']);
+      expect(
+        projectsReducer(state, {
+          type: 'linkPaper',
+          projectId: 'nope',
+          paper: makePaper('shared'),
+          now: 1,
+        }),
+      ).toBe(state);
+    });
+
+    it('returns the same state when the paper is already linked', () => {
+      const state = projectsReducer(makeState(['a']), {
+        type: 'linkPaper',
+        projectId: 'a',
+        paper: makePaper('shared'),
+        now: 1,
+      });
+      expect(
+        projectsReducer(state, {
+          type: 'linkPaper',
+          projectId: 'a',
+          paper: makePaper('shared'),
+          now: 2,
+        }),
+      ).toBe(state);
+    });
+
+    it('returns the same state when the paper is the core paper of the project', () => {
+      const state = makeState(['a']);
+      expect(
+        projectsReducer(state, {
+          type: 'linkPaper',
+          projectId: 'a',
+          paper: makePaper('paper-a'),
+          now: 1,
+        }),
+      ).toBe(state);
+    });
+  });
+
+  describe('unlinkPaper', () => {
+    function linked(): ProjectsState {
+      return projectsReducer(makeState(['a']), {
+        type: 'linkPaper',
+        projectId: 'a',
+        paper: makePaper('shared'),
+        now: 1,
+      });
+    }
+
+    it('drops the link and stamps updatedAt', () => {
+      const next = projectsReducer(linked(), {
+        type: 'unlinkPaper',
+        projectId: 'a',
+        paperId: 'shared',
+        now: 999,
+      });
+      expect(byId(next, 'a')).toStrictEqual({
+        ...makeProject('a'),
+        relatedPaperIds: [],
+        updatedAt: 999,
+      });
+    });
+
+    it('keeps the paper in the registry, because another project may still use it', () => {
+      const next = projectsReducer(linked(), {
+        type: 'unlinkPaper',
+        projectId: 'a',
+        paperId: 'shared',
+        now: 999,
+      });
+      expect(next.papers.shared).toBeDefined();
+    });
+
+    it.each([
+      { label: 'the project is unknown', projectId: 'nope', paperId: 'shared' },
+      { label: 'the paper was never linked', projectId: 'a', paperId: 'other' },
+      { label: 'the paper is the core paper', projectId: 'a', paperId: 'paper-a' },
+    ])('returns the same state when $label', ({ projectId, paperId }) => {
+      const state = linked();
+      expect(projectsReducer(state, { type: 'unlinkPaper', projectId, paperId, now: 9 })).toBe(
+        state,
+      );
+    });
+  });
+
+  describe('rename', () => {
+    it('applies the normalized name and stamps updatedAt', () => {
+      const state = makeState(['a', 'b']);
+      const next = projectsReducer(state, {
+        type: 'rename',
+        id: 'b',
+        name: '  New   name ',
+        now: 999,
+      });
+      expect(byId(next, 'b')).toStrictEqual({
+        ...makeProject('b'),
+        name: 'New name',
+        updatedAt: 999,
+      });
+    });
+
+    it('leaves createdAt, other projects and the selection alone', () => {
+      const state = makeState(['a', 'b', 'c'], 'c');
+      const next = projectsReducer(state, { type: 'rename', id: 'b', name: 'Renamed', now: 999 });
+      expect(byId(next, 'b')?.createdAt).toBe(100);
+      expect(next.projects[0]).toBe(state.projects[0]);
+      expect(next.projects[2]).toBe(state.projects[2]);
+      expect(idsOf(next)).toStrictEqual(['a', 'b', 'c']);
+      expect(next.selectedId).toBe('c');
+    });
+
+    it('leaves the paper the project is built around untouched', () => {
+      const state = makeState(['a']);
+      const next = projectsReducer(state, { type: 'rename', id: 'a', name: 'Renamed', now: 999 });
+      expect(next.papers['paper-a']).toBe(state.papers['paper-a']);
+      expect(byId(next, 'a')?.corePaperId).toBe('paper-a');
+    });
+
+    it('allows a name that another project already uses', () => {
+      const state = makeState(['a', 'b']);
+      const next = projectsReducer(state, { type: 'rename', id: 'a', name: 'Project b', now: 7 });
+      expect(byId(next, 'a')).toMatchObject({ name: 'Project b', updatedAt: 7 });
+      expect(byId(next, 'b')).toBe(state.projects[1]);
+    });
+
+    it('truncates over-long names to the shared limit', () => {
+      const next = projectsReducer(makeState(['a']), {
+        type: 'rename',
+        id: 'a',
+        name: 'n'.repeat(MAX_NAME_LENGTH + 10),
+        now: 5,
+      });
+      expect(byId(next, 'a')?.name).toBe('n'.repeat(MAX_NAME_LENGTH));
+    });
+
+    it.each([
+      { label: 'empty', name: '' },
+      { label: 'whitespace-only', name: ' \t\n ' },
+    ])('returns the same state for a $label name', ({ name }) => {
+      const state = makeState(['a', 'b']);
+      expect(projectsReducer(state, { type: 'rename', id: 'a', name, now: 5 })).toBe(state);
+    });
+  });
+
+  describe('remove', () => {
+    it('drops the project and keeps the selection when another one was selected', () => {
+      const state = makeState(['a', 'b', 'c'], 'c');
+      const next = projectsReducer(state, { type: 'remove', id: 'a' });
+      expect(idsOf(next)).toStrictEqual(['b', 'c']);
+      expect(next.selectedId).toBe('c');
+    });
+
+    it('selects the project that slides into the vacated slot', () => {
+      const state = makeState(['a', 'b', 'c'], 'b');
+      const next = projectsReducer(state, { type: 'remove', id: 'b' });
+      expect(idsOf(next)).toStrictEqual(['a', 'c']);
+      expect(next.selectedId).toBe('c');
+    });
+
+    it('selects the first project when the first one was selected and removed', () => {
+      const state = makeState(['a', 'b', 'c'], 'a');
+      const next = projectsReducer(state, { type: 'remove', id: 'a' });
+      expect(idsOf(next)).toStrictEqual(['b', 'c']);
+      expect(next.selectedId).toBe('b');
+    });
+
+    it('falls back to the project above when the last one was selected and removed', () => {
+      const state = makeState(['a', 'b', 'c'], 'c');
+      const next = projectsReducer(state, { type: 'remove', id: 'c' });
+      expect(idsOf(next)).toStrictEqual(['a', 'b']);
+      expect(next.selectedId).toBe('b');
+    });
+
+    it('clears the selection when the only project is removed', () => {
+      const state = makeState(['a'], 'a');
+      const next = projectsReducer(state, { type: 'remove', id: 'a' });
+      expect(next).toStrictEqual({ projects: [], papers: state.papers, selectedId: null });
+    });
+
+    it('keeps every paper in the registry', () => {
+      const shared = makePaper('shared');
+      const state = projectsReducer(
+        projectsReducer(makeState(['a', 'b']), {
+          type: 'linkPaper',
+          projectId: 'a',
+          paper: shared,
+          now: 1,
+        }),
+        { type: 'linkPaper', projectId: 'b', paper: shared, now: 2 },
+      );
+      const next = projectsReducer(state, { type: 'remove', id: 'a' });
+      expect(next.papers.shared).toBe(shared);
+      expect(byId(next, 'b')?.relatedPaperIds).toStrictEqual(['shared']);
+      expect(next.papers['paper-a']).toBe(state.papers['paper-a']);
+    });
+
+    it('keeps a null selection when an unselected project is removed', () => {
+      const next = projectsReducer(makeState(['a', 'b'], null), { type: 'remove', id: 'a' });
+      expect(idsOf(next)).toStrictEqual(['b']);
+      expect(next.selectedId).toBeNull();
+    });
+
+    it('returns the same state for an unknown id', () => {
+      const state = makeState(['a', 'b']);
+      expect(projectsReducer(state, { type: 'remove', id: 'nope' })).toBe(state);
+    });
+
+    it('returns the same state when there is nothing to remove from', () => {
+      expect(projectsReducer(EMPTY_STATE, { type: 'remove', id: 'a' })).toBe(EMPTY_STATE);
+    });
+  });
+
+  describe('select', () => {
+    it('selects an existing project without reordering the list', () => {
+      const state = makeState(['a', 'b', 'c'], 'a');
+      const next = projectsReducer(state, { type: 'select', id: 'c' });
+      expect(next.selectedId).toBe('c');
+      expect(idsOf(next)).toStrictEqual(['a', 'b', 'c']);
+      expect(next.projects).toBe(state.projects);
+    });
+
+    it('selects a project when nothing was selected before', () => {
+      const next = projectsReducer(makeState(['a', 'b'], null), { type: 'select', id: 'b' });
+      expect(next.selectedId).toBe('b');
+    });
+
+    it('returns the same state for an unknown id', () => {
+      const state = makeState(['a', 'b'], 'a');
+      expect(projectsReducer(state, { type: 'select', id: 'nope' })).toBe(state);
+    });
+
+    it('returns the same state when the list is empty', () => {
+      expect(projectsReducer(EMPTY_STATE, { type: 'select', id: 'a' })).toBe(EMPTY_STATE);
+    });
+  });
+
+  describe('no-op actions', () => {
+    // The store compares references to decide whether to persist and notify,
+    // so every no-op must hand back the very same state object.
+    it.each<{ label: string; action: ProjectsAction }>([
+      {
+        label: 'rename with an unknown id',
+        action: { type: 'rename', id: 'nope', name: 'Other', now: 9 },
+      },
+      {
+        label: 'rename to the current name',
+        action: { type: 'rename', id: 'a', name: 'Project a', now: 9 },
+      },
+      {
+        label: 'rename to the current name with extra whitespace',
+        action: { type: 'rename', id: 'a', name: '  Project   a ', now: 9 },
+      },
+      { label: 'rename to a blank name', action: { type: 'rename', id: 'a', name: '   ', now: 9 } },
+      { label: 'select of the already selected project', action: { type: 'select', id: 'a' } },
+      { label: 'select of an unknown id', action: { type: 'select', id: 'nope' } },
+      { label: 'remove of an unknown id', action: { type: 'remove', id: 'nope' } },
+      {
+        label: 'link of a paper that is not in a project',
+        action: { type: 'linkPaper', projectId: 'nope', paper: makePaper('shared'), now: 9 },
+      },
+      {
+        label: 'link of a project its own core paper',
+        action: { type: 'linkPaper', projectId: 'a', paper: makePaper('paper-a'), now: 9 },
+      },
+      {
+        label: 'unlink of a paper that is not linked',
+        action: { type: 'unlinkPaper', projectId: 'a', paperId: 'shared', now: 9 },
+      },
+    ])('returns the same state reference for $label', ({ action }) => {
+      const state = makeState(['a', 'b'], 'a');
+      expect(projectsReducer(state, action)).toBe(state);
+    });
+  });
+
+  describe('purity', () => {
+    const actions: ProjectsAction[] = [
+      { type: 'hydrate', state: makeState(['x']) },
+      { type: 'add', project: makeProject('c'), paper: makePaper('paper-c') },
+      { type: 'linkPaper', projectId: 'b', paper: makePaper('shared'), now: 9 },
+      { type: 'unlinkPaper', projectId: 'a', paperId: 'paper-a', now: 9 },
+      { type: 'rename', id: 'b', name: 'Renamed', now: 9 },
+      { type: 'remove', id: 'a' },
+      { type: 'select', id: 'b' },
+    ];
+
+    it.each(actions)('does not mutate its input for a $type action', (action) => {
+      const state = deepFreeze(makeState(['a', 'b'], 'a'));
+      const before = structuredClone(state);
+      expect(() => projectsReducer(state, action)).not.toThrow();
+      expect(state).toStrictEqual(before);
+    });
+  });
+
+  describe('sequences of actions', () => {
+    it('keeps the selection valid through add, select and remove', () => {
+      const actionsInOrder: ProjectsAction[] = [
+        { type: 'add', project: makeProject('a'), paper: makePaper('paper-a') },
+        { type: 'add', project: makeProject('b'), paper: makePaper('paper-b') },
+        { type: 'add', project: makeProject('c'), paper: makePaper('paper-c') },
+        { type: 'select', id: 'b' },
+        { type: 'remove', id: 'b' },
+        { type: 'remove', id: 'a' },
+      ];
+      const states = actionsInOrder.reduce<ProjectsState[]>(
+        (history, action) => [...history, projectsReducer(history.at(-1) ?? EMPTY_STATE, action)],
+        [],
+      );
+      for (const state of states) {
+        expect(state.selectedId === null || byId(state, state.selectedId) !== undefined).toBe(true);
+      }
+      const last = states.at(-1);
+      expect(last?.projects).toStrictEqual([makeProject('c')]);
+      expect(last?.selectedId).toBe('c');
+      // Papers outlive the projects that introduced them.
+      expect(Object.keys(last?.papers ?? {}).sort()).toStrictEqual([
+        'paper-a',
+        'paper-b',
+        'paper-c',
+      ]);
+    });
+
+    it('keeps every project→paper reference resolvable through link and remove', () => {
+      const shared = makePaper('shared');
+      const actionsInOrder: ProjectsAction[] = [
+        { type: 'add', project: makeProject('a'), paper: makePaper('paper-a') },
+        { type: 'add', project: makeProject('b'), paper: makePaper('paper-b') },
+        { type: 'linkPaper', projectId: 'b', paper: shared, now: 3 },
+        { type: 'unlinkPaper', projectId: 'b', paperId: 'shared', now: 4 },
+        { type: 'linkPaper', projectId: 'a', paper: shared, now: 5 },
+        { type: 'remove', id: 'b' },
+      ];
+      const states = actionsInOrder.reduce<ProjectsState[]>(
+        (history, action) => [...history, projectsReducer(history.at(-1) ?? EMPTY_STATE, action)],
+        [],
+      );
+      for (const state of states) {
+        for (const project of state.projects) {
+          expect(state.papers[project.corePaperId]).toBeDefined();
+          for (const paperId of project.relatedPaperIds) {
+            expect(state.papers[paperId]).toBeDefined();
+          }
+        }
+      }
+      const last = states.at(-1);
+      expect(byId(last as ProjectsState, 'a')?.relatedPaperIds).toStrictEqual(['shared']);
+      expect(last?.papers.shared).toBe(shared);
+    });
+  });
+});

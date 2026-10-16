@@ -1,0 +1,125 @@
+/* Registered so the pointer light can fade in and out instead of snapping. */
+/* Not inherited: each glowing element lights up only for its own pointer position. */
+@property --glow {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+:root {
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-display:
+    'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* spring.css replaces this with a sampled damped spring where linear() exists. */
+  --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
+
+  --sidebar-w: 264px;
+  --glass-blur: 22px;
+  /* Fade for the pointer light; append it to any transition list on a glowing element. */
+  --glow-t: --glow var(--dur) var(--ease-out);
+}
+
+/*
+ * Depth comes from light, not from shadow: a rim, one surface sheen, one tight lift.
+ * --elev-rest is for panels that sit in the layout; --elev-float is only for what floats.
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-base: #e8edf1;
+  --pool-a: rgb(52 152 168 / 0.3);
+  --pool-b: rgb(222 176 98 / 0.26);
+  --pool-c: rgb(96 128 214 / 0.16);
+  --sheet: rgb(255 255 255 / 0.76);
+  --sheet-edge: rgb(255 255 255 / 0.95);
+  --sheet-shadow: 0 6px 20px -14px rgb(20 40 60 / 0.2);
+
+  --text: #0f1b25;
+  --text-2: #3f4e5b;
+  --text-3: #4f5e6b;
+  --accent: #1d6b91;
+  --accent-hi: #165777;
+  --accent-ink: #ffffff;
+  --accent-soft: rgb(29 107 145 / 0.12);
+  --danger: #b3322b;
+  --danger-ink: #ffffff;
+  --field-edge: rgb(15 27 37 / 0.5);
+  --focus: #1d6b91;
+
+  --hairline: rgb(15 27 37 / 0.1);
+  --glass-fill: rgb(255 255 255 / 0.5);
+  --glass-fill-strong: rgb(255 255 255 / 0.8);
+  --sheen: rgb(255 255 255 / 0.5);
+  --rim-top: rgb(255 255 255 / 0.98);
+  --rim-mid: rgb(255 255 255 / 0.42);
+  --rim-low: rgb(255 255 255 / 0.2);
+  --inner-hi: rgb(255 255 255 / 0.8);
+  --elev-rest: 0 8px 24px -16px rgb(20 40 60 / 0.3);
+  --elev-float: 0 18px 40px -22px rgb(20 40 60 / 0.38);
+  --foot-tint: rgb(255 255 255 / 0.24);
+  --row-hover: rgb(15 27 37 / 0.05);
+  --row-active: rgb(29 107 145 / 0.12);
+  --select-edge: rgb(29 107 145 / 0.2);
+  --select-glow: rgb(29 107 145 / 0.5);
+  --halo: rgb(52 152 168 / 0.24);
+  --avatar-edge: rgb(255 255 255 / 0.6);
+  --spot-color: #1d6b91;
+  --spot-strength: 16%;
+  --pill-fill: rgb(255 255 255 / 0.86);
+  --ring: rgb(15 27 37 / 0.09);
+  --scrim: rgb(10 20 30 / 0.3);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg-base: #0a1118;
+  --pool-a: rgb(36 128 142 / 0.34);
+  --pool-b: rgb(92 98 210 / 0.26);
+  --pool-c: rgb(190 140 80 / 0.12);
+  --sheet: rgb(16 25 34 / 0.78);
+  --sheet-edge: rgb(255 255 255 / 0.08);
+  --sheet-shadow: 0 0 0 transparent;
+
+  --text: #eef3f7;
+  --text-2: #c3cdd7;
+  --text-3: #adb9c5;
+  --accent: #86c3e6;
+  --accent-hi: #a8d6f0;
+  --accent-ink: #06202f;
+  --accent-soft: rgb(134 195 230 / 0.16);
+  --danger: #f29b93;
+  --danger-ink: #2a0d0b;
+  --field-edge: rgb(255 255 255 / 0.42);
+  --focus: #86c3e6;
+
+  --hairline: rgb(0 0 0 / 0.45);
+  --glass-fill: rgb(255 255 255 / 0.065);
+  --glass-fill-strong: rgb(28 40 52 / 0.84);
+  --sheen: rgb(255 255 255 / 0.05);
+  --rim-top: rgb(255 255 255 / 0.36);
+  --rim-mid: rgb(255 255 255 / 0.1);
+  --rim-low: rgb(255 255 255 / 0.05);
+  --inner-hi: rgb(255 255 255 / 0.16);
+  --elev-rest: 0 10px 28px -18px rgb(0 0 0 / 0.6);
+  --elev-float: 0 20px 44px -22px rgb(0 0 0 / 0.75);
+  --foot-tint: rgb(0 0 0 / 0.14);
+  --row-hover: rgb(255 255 255 / 0.06);
+  --row-active: rgb(134 195 230 / 0.16);
+  --select-edge: rgb(134 195 230 / 0.28);
+  --select-glow: rgb(134 195 230 / 0.4);
+  --halo: rgb(104 168 230 / 0.2);
+  --avatar-edge: rgb(255 255 255 / 0.2);
+  --spot-color: #ffffff;
+  --spot-strength: 14%;
+  --pill-fill: rgb(255 255 255 / 0.1);
+  --ring: rgb(255 255 255 / 0.08);
+  --scrim: rgb(0 0 0 / 0.5);
+}

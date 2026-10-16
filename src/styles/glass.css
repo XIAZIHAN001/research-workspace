@@ -1,0 +1,65 @@
+/*
+ * Glass is a stack, not a blur: a tinted fill, one soft sheen falling from the top-left, a
+ * 1px rim whose light travels in from the same corner, and a hot spot that follows the
+ * pointer along the rim (see ui/glow.ts). Only navigation and floating parts use it.
+ *
+ * Depth is carried by the rim and the sheen. The drop shadow is a single tight lift:
+ * --elev-rest by default, --lift on the element to ask for another one.
+ */
+.glass {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(162deg, var(--sheen), transparent 42%), var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  box-shadow:
+    0 0 0 0.5px var(--hairline),
+    inset 0 1px 0 var(--inner-hi),
+    var(--lift, var(--elev-rest));
+}
+
+.glass::before {
+  /* --glow is registered as non-inherited; pull the owner's value into the pseudo-element. */
+  --glow: inherit;
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      170px circle at var(--mx, 50%) var(--my, 50%),
+      rgb(255 255 255 / calc(var(--glow) * 0.95)),
+      transparent 70%
+    ),
+    linear-gradient(150deg, var(--rim-top), var(--rim-mid) 28%, var(--rim-low) 62%, var(--rim-mid));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.glass-strong {
+  background: linear-gradient(162deg, var(--sheen), transparent 42%), var(--glass-fill-strong);
+}
+
+/* Light that follows the pointer across interactive rows. */
+[data-glow] {
+  transition: var(--glow-t);
+}
+
+/* Soft pointer spot for rows and buttons. Needs data-glow (glowProps) on the same element. */
+.spot {
+  background-image: radial-gradient(
+    120px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in srgb, var(--spot-color) calc(var(--glow) * var(--spot-strength)), transparent),
+    transparent 72%
+  );
+  background-repeat: no-repeat;
+}

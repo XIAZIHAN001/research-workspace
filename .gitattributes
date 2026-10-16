@@ -1,0 +1,9 @@
+# Normalize line endings in the repository and check files out with LF.
+# The project formats with Prettier (`endOfLine: "lf"`), so a CRLF working tree
+# would make every file fail `npm run check` on a Windows clone.
+* text=auto eol=lf
+
+# Binary assets: never touched by text conversion.
+*.png binary
+*.jpg binary
+*.ico binary
