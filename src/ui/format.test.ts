@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRelativeDay } from './format';
+import { formatBytes, formatRelativeDay } from './format';
 
 const DAY = 86_400_000;
 // Noon keeps every case away from midnight and from a daylight-saving hour shift.
@@ -35,5 +35,23 @@ describe('formatRelativeDay', () => {
     const lastNight = new Date(2026, 5, 14, 23, 59).getTime();
     const earlyMorning = new Date(2026, 5, 15, 0, 1).getTime();
     expect(formatRelativeDay(lastNight, earlyMorning)).toBe('昨天');
+  });
+});
+
+describe('formatBytes', () => {
+  it.each([
+    { label: 'bytes', bytes: 512, expected: '512 B' },
+    { label: 'zero', bytes: 0, expected: '0 B' },
+    { label: 'kilobytes', bytes: 2048, expected: '2 KB' },
+    { label: 'a rounded kilobyte', bytes: 1638, expected: '1.6 KB' },
+    { label: 'megabytes', bytes: 5 * 1024 * 1024, expected: '5 MB' },
+    { label: 'gigabytes', bytes: 3 * 1024 * 1024 * 1024, expected: '3 GB' },
+  ])('formats $label', ({ bytes, expected }) => {
+    expect(formatBytes(bytes)).toBe(expected);
+  });
+
+  it('does not invent a size for a number it cannot trust', () => {
+    expect(formatBytes(Number.NaN)).toBe('未知大小');
+    expect(formatBytes(-1)).toBe('未知大小');
   });
 });
