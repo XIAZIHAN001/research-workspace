@@ -1,3 +1,4 @@
+import { ANNOTATION_KINDS, type Annotation, type AnnotationKind } from './annotation';
 import type { Paper } from './papers';
 import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
@@ -7,8 +8,60 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /* ------------------------------------------------------------------ *
- * Current shape (schema version 3)
+ * Current shape (schema version 4)
  * ------------------------------------------------------------------ */
+
+/** A highlight whose shape does not survive validation is rejected, not guessed at. */
+function parseAnnotation(value: unknown): Annotation | null {
+  if (!isRecord(value)) return null;
+  const {
+    id,
+    paperId,
+    pdfSha256,
+    page,
+    quote,
+    prefix,
+    suffix,
+    rects,
+    kind,
+    note,
+    createdAt,
+    updatedAt,
+  } = value;
+  if (typeof id !== 'string' || id === '') return null;
+  if (typeof paperId !== 'string' || paperId === '') return null;
+  if (typeof pdfSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(pdfSha256)) return null;
+  if (typeof page !== 'number' || !Number.isInteger(page) || page < 1) return null;
+  if (typeof quote !== 'string' || quote === '') return null;
+  if (typeof prefix !== 'string' || typeof suffix !== 'string') return null;
+  if (typeof kind !== 'string' || !ANNOTATION_KINDS.includes(kind as AnnotationKind)) return null;
+  if (typeof note !== 'string') return null;
+  if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
+  if (!Array.isArray(rects)) return null;
+  const parsedRects: Annotation['rects'] = [];
+  for (const rect of rects) {
+    if (!isRecord(rect)) return null;
+    const { x, y, width, height } = rect;
+    if (typeof x !== 'number' || typeof y !== 'number') return null;
+    if (typeof width !== 'number' || typeof height !== 'number') return null;
+    parsedRects.push({ x, y, width, height });
+  }
+  if (parsedRects.length === 0) return null;
+  return {
+    id,
+    paperId,
+    pdfSha256,
+    page,
+    quote,
+    prefix,
+    suffix,
+    rects: parsedRects,
+    kind: kind as AnnotationKind,
+    note,
+    createdAt,
+    updatedAt,
+  };
+}
 
 /** A malformed PDF binding is dropped: rejecting the whole payload would hide the workspace. */
 function parsePaperPdf(value: unknown): PaperPdf | null {
@@ -97,9 +150,28 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
     if (project.relatedPaperIds.some((paperId) => papers[paperId] === undefined)) return null;
   }
 
+  // A payload written before highlights existed has no list at all; anything else that is not a
+  // list is corrupt rather than old.
+  const rawAnnotations = value.annotations;
+  const annotations: Annotation[] = [];
+  if (rawAnnotations !== undefined) {
+    if (!Array.isArray(rawAnnotations)) return null;
+    for (const entry of rawAnnotations) {
+      const annotation = parseAnnotation(entry);
+      if (annotation === null) return null;
+      // A highlight without its paper cannot be shown, and nothing this app writes can
+      // produce one, so it is treated as corruption rather than silently dropped.
+      if (papers[annotation.paperId] === undefined) return null;
+      annotations.push(annotation);
+    }
+    if (new Set(annotations.map((annotation) => annotation.id)).size !== annotations.length) {
+      return null;
+    }
+  }
+
   const known = projects.some((p) => p.id === value.selectedId);
   const selectedId = known ? (value.selectedId as string) : (projects[0]?.id ?? null);
-  return { projects, papers, selectedId };
+  return { projects, papers, annotations, selectedId };
 }
 
 /* ------------------------------------------------------------------ *

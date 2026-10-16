@@ -1,0 +1,160 @@
+/**
+ * A highlight a reader made in a paper, with the note they wrote about it.
+ *
+ * The record holds two things that are deliberately separate: an *anchor* (which file, which
+ * page, which text, and where on the page) and the *note* (what the reader wrote). Nothing in
+ * the anchor refers to the app's own rendering — no DOM nodes, no element ids, no React state
+ * — so it keeps its meaning when the page is re-rendered at another zoom, in another window,
+ * or by a later version of pdf.js.
+ */
+export interface NormalizedRect {
+  /** All four are fractions of the page box, so they survive zoom and window size. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type AnnotationKind = 'question' | 'insight' | 'note';
+
+export interface Annotation {
+  id: string;
+  /** The global paper this belongs to: notes follow the paper, not the project. */
+  paperId: string;
+  /** SHA-256 of the PDF the selection was made on. */
+  pdfSha256: string;
+  /** 1-based page number. */
+  page: number;
+  /** The selected text, whitespace-collapsed. */
+  quote: string;
+  /** A little of the text before the quote, for re-locating it unambiguously. */
+  prefix: string;
+  /** A little of the text after the quote. */
+  suffix: string;
+  /** Where the quote sits on the page, as fractions of the page box. */
+  rects: NormalizedRect[];
+  kind: AnnotationKind;
+  note: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** What the reader can write about a passage. */
+export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['question', 'insight', 'note'];
+
+export const ANNOTATION_KIND_LABEL: Record<AnnotationKind, string> = {
+  question: '疑问',
+  insight: '理解',
+  note: '记录',
+};
+
+/** Characters of context stored on each side of the quote. */
+export const CONTEXT_RADIUS = 40;
+
+export const MAX_QUOTE_LENGTH = 2000;
+export const MAX_NOTE_LENGTH = 4000;
+
+export interface AnnotationInput {
+  paperId: string;
+  pdfSha256: string;
+  page: number;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  rects: readonly NormalizedRect[];
+  kind: AnnotationKind;
+  note?: string;
+}
+
+/** Collapses the whitespace a PDF text layer puts between and inside lines. */
+export function normalizeQuote(text: string): string {
+  return collapseWhitespace(text).trim();
+}
+
+/**
+ * Collapses whitespace but keeps the ends.
+ *
+ * Context has to keep its boundary spaces: matching rewards how much of the stored text around
+ * a quote lines up with the page, and a trimmed context is one character out of step with the
+ * page text it came from — which is exactly enough to make every occurrence score zero.
+ */
+export function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ');
+}
+
+/** A box smaller than this is a rounding artefact, not a highlight. */
+const MIN_RECT = 0.002;
+
+/** Intersects every box with the page, so a stored highlight can never be drawn off the paper. */
+function normalizeRects(rects: readonly NormalizedRect[]): NormalizedRect[] {
+  const clamp = (value: number): number => Math.min(1, Math.max(0, value));
+  const kept: NormalizedRect[] = [];
+  for (const rect of rects) {
+    const left = clamp(rect.x);
+    const right = clamp(rect.x + rect.width);
+    const top = clamp(rect.y);
+    const bottom = clamp(rect.y + rect.height);
+    const width = right - left;
+    const height = bottom - top;
+    if (width > MIN_RECT && height > MIN_RECT) kept.push({ x: left, y: top, width, height });
+  }
+  return kept;
+}
+
+/**
+ * Builds an annotation. Returns null when the input cannot be anchored — an empty selection,
+ * a page below the first one, a file hash that is not a hash — because a record that cannot be
+ * found again is worse than a refusal that says so.
+ */
+export function createAnnotation(
+  input: AnnotationInput,
+  makeId: () => string,
+  now: number,
+): Annotation | null {
+  const quote = normalizeQuote(input.quote);
+  if (quote === '' || quote.length > MAX_QUOTE_LENGTH) return null;
+  if (!Number.isInteger(input.page) || input.page < 1) return null;
+  if (!/^[0-9a-f]{64}$/.test(input.pdfSha256)) return null;
+  const rects = normalizeRects(input.rects);
+  if (rects.length === 0) return null;
+
+  return {
+    id: makeId(),
+    paperId: input.paperId,
+    pdfSha256: input.pdfSha256,
+    page: input.page,
+    quote,
+    prefix: collapseWhitespace(input.prefix).slice(-CONTEXT_RADIUS),
+    suffix: collapseWhitespace(input.suffix).slice(0, CONTEXT_RADIUS),
+    rects,
+    kind: input.kind,
+    note: (input.note ?? '').slice(0, MAX_NOTE_LENGTH),
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** An edit touches what the reader wrote, never where the highlight is. */
+export interface AnnotationEdit {
+  note?: string;
+  kind?: AnnotationKind;
+}
+
+export function applyAnnotationEdit(
+  annotation: Annotation,
+  edit: AnnotationEdit,
+  now: number,
+): Annotation {
+  const note = edit.note === undefined ? annotation.note : edit.note.slice(0, MAX_NOTE_LENGTH);
+  const kind = edit.kind ?? annotation.kind;
+  if (note === annotation.note && kind === annotation.kind) return annotation;
+  return { ...annotation, note, kind, updatedAt: now };
+}
+
+/** Newest first, which is the order the notes panel lists them in. */
+export function sortAnnotations(annotations: readonly Annotation[]): Annotation[] {
+  return [...annotations].sort((one, other) => {
+    if (one.page !== other.page) return one.page - other.page;
+    return one.createdAt - other.createdAt;
+  });
+}

@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react';
+import type { Annotation, AnnotationEdit } from '../../domain/annotation';
 import {
   applyPaperEdit,
   createPaper,
@@ -92,6 +93,17 @@ export function useProjects(store: ProjectsStore) {
         store.dispatch({ type: 'updatePaper', paperId, edit, now: Date.now() });
         return result;
       },
+      /** Saves a highlight (and whatever was written with it) onto its paper. */
+      addAnnotation(annotation: Annotation): void {
+        store.dispatch({ type: 'addAnnotation', annotation });
+      },
+      /** Edits the note or its kind; the anchor is not editable. */
+      updateAnnotation(id: string, edit: AnnotationEdit): void {
+        store.dispatch({ type: 'updateAnnotation', id, edit, now: Date.now() });
+      },
+      removeAnnotation(id: string): void {
+        store.dispatch({ type: 'removeAnnotation', id });
+      },
       rename(id: string, name: string): void {
         store.dispatch({ type: 'rename', id, name, now: Date.now() });
       },
@@ -105,5 +117,13 @@ export function useProjects(store: ProjectsStore) {
     [store],
   );
 
-  return { projects: state.projects, papers: state.papers, selected, persisted, issue, actions };
+  return {
+    projects: state.projects,
+    papers: state.papers,
+    annotations: state.annotations,
+    selected,
+    persisted,
+    issue,
+    actions,
+  };
 }

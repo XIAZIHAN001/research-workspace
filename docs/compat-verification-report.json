@@ -1,0 +1,133 @@
+{
+  "generatedAt": "2026-10-16T11:58:07.270Z",
+  "passed": 13,
+  "failed": 0,
+  "results": [
+    {
+      "name": "two columns: every line becomes a span in the text layer",
+      "passed": true,
+      "detail": "12 spans"
+    },
+    {
+      "name": "two columns: extraction keeps each column together, left before right",
+      "passed": true,
+      "detail": "left@19 right@184 rightEnd@292"
+    },
+    {
+      "name": "two columns: a drag across five lines selects exactly those lines",
+      "passed": true,
+      "detail": "12 line boxes: \"\\nThe left column starts here and\\ncontinues on the next line so a\\nselection can span several lines\\nof the same column without\""
+    },
+    {
+      "name": "special characters survive into the text layer",
+      "passed": true,
+      "detail": "degree, plus-minus, times, divide, section"
+    },
+    {
+      "name": "typographic punctuation survives into the text layer",
+      "passed": true,
+      "detail": "en dash, em dash, ellipsis, curly quote"
+    },
+    {
+      "name": "a symbol-font run comes through as Greek letters",
+      "passed": true,
+      "detail": "αβγδ"
+    },
+    {
+      "name": "a non-embedded CJK font comes through as Chinese",
+      "passed": true,
+      "detail": "中文测试"
+    },
+    {
+      "name": "a sentence repeated on one page stays two separate occurrences",
+      "passed": true,
+      "detail": "2 occurrences"
+    },
+    {
+      "name": "the page with an image and a table still renders",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "a scanned page keeps its caption text and nothing else",
+      "passed": true,
+      "detail": "1 spans"
+    },
+    {
+      "name": "a page with no text layer renders, has no spans, and says why",
+      "passed": true,
+      "detail": "hint: 这一页没有可提取的文字（可能是扫描件），暂时无法高亮或记笔记。"
+    },
+    {
+      "name": "a 24 page document opens with the right page count",
+      "passed": true,
+      "detail": "/ 24"
+    },
+    {
+      "name": "a long document keeps only a few pages rendered at once",
+      "passed": true,
+      "detail": "2 canvases for 24 pages"
+    }
+  ],
+  "measurements": {
+    "twoColumn": {
+      "spanCount": 12,
+      "text": "A Two Column LayoutLEFT-HEADINGThe left column starts here andcontinues on the next line so aselection can span several linesof the same column withouttouching the other column at all.RIGHT-HEADINGThe right column carries its ownsentences, and they must not beinterleaved with the left columnwhen text is extracted in order."
+    },
+    "twoColumnSelection": {
+      "text": "\nThe left column starts here and\ncontinues on the next line so a\nselection can span several lines\nof the same column without",
+      "rectCount": 12,
+      "rects": [
+        {
+          "x": 484,
+          "y": 260,
+          "width": 0
+        },
+        {
+          "x": 320,
+          "y": 154,
+          "width": 0
+        },
+        {
+          "x": 391,
+          "y": 282,
+          "width": 189
+        },
+        {
+          "x": 391,
+          "y": 280,
+          "width": 189
+        },
+        {
+          "x": 320,
+          "y": 168,
+          "width": 0
+        },
+        {
+          "x": 391,
+          "y": 300,
+          "width": 186
+        }
+      ]
+    },
+    "richText": {
+      "spanCount": 17,
+      "text": "Characters, Scripts and FiguresUnits: -10 °C, ± 0.5, 3 × 4 ÷ 2, § 12Dashes: en–dash, em—dash, ellipsis… and “quotes”Symbols: © ® ™ μm and 15 %αβγδ中文测试REPEATED-SENTENCE-ALPHA on this page.REPEATED-SENTENCE-ALPHA on this page.Method AccuracyBaseline 81.3 %Ours 84.7 %"
+    },
+    "scanned": {
+      "spanCount": 1,
+      "text": "(This page is a photograph of a page.)",
+      "hint": null
+    },
+    "textless": {
+      "spanCount": 0,
+      "hint": "这一页没有可提取的文字（可能是扫描件），暂时无法高亮或记笔记。"
+    },
+    "long": {
+      "total": "/ 24",
+      "rendered": 2,
+      "firstPageHasMarker": true
+    }
+  },
+  "note": "All fixtures are generated files (see scripts/verify/sample-pdf.mjs). No real paper PDF was used."
+}

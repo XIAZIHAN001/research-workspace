@@ -170,3 +170,289 @@
 .textLayer ::selection {
   background: color-mix(in srgb, var(--accent) 38%, transparent);
 }
+
+/* Says why nothing can be selected on this page, without covering the page itself. */
+.pdf-page-hint {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 82%, transparent);
+  color: #ffffff;
+  font-size: 12px;
+}
+
+/* --- Highlights and notes ------------------------------------------------- */
+
+.reader-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 10px;
+  min-height: 0;
+}
+
+.reader-notice {
+  align-self: center;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill-strong);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/* Sits over the page but never in the way of selecting text. */
+.annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pdf-highlight {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+.pdf-highlight[data-kind='question'] {
+  background: rgb(232 178 62 / 0.4);
+}
+
+.pdf-highlight[data-kind='insight'] {
+  background: rgb(84 160 208 / 0.36);
+}
+
+.pdf-highlight[data-kind='note'] {
+  background: rgb(118 190 132 / 0.34);
+}
+
+.pdf-highlight[data-flash='true'] {
+  animation: highlight-pulse 1.6s ease-out;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-highlight[data-flash='true'] {
+    animation: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}
+
+/* The toolbar over a selection: two choices, no more. */
+.annotation-toolbar {
+  position: fixed;
+  z-index: 20;
+  max-width: min(340px, 90vw);
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  transform: translate(-50%, -100%);
+}
+
+.annotation-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.annotation-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(300px, 84vw);
+}
+
+.annotation-kinds {
+  display: flex;
+  gap: 4px;
+}
+
+.chip {
+  padding: 3px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--glass-fill);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--select-edge);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.annotation-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+/* The notes, beside the paper rather than instead of it. */
+.notes-panel {
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--glass-fill);
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.notes-title {
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notes-count {
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes-scroll {
+  overflow: auto;
+  padding: 8px;
+}
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notes-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.note-item {
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-left-width: 3px;
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+}
+
+.note-item[data-kind='question'] {
+  border-left-color: rgb(232 178 62);
+}
+
+.note-item[data-kind='insight'] {
+  border-left-color: rgb(84 160 208);
+}
+
+.note-item[data-kind='note'] {
+  border-left-color: rgb(118 190 132);
+}
+
+.note-item[data-active='true'] {
+  outline: 1px solid var(--accent);
+}
+
+.note-meta {
+  display: flex;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.note-kind {
+  font-weight: 600;
+}
+
+.note-quote {
+  margin: 4px 0;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.note-body {
+  margin: 4px 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.note-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notes-elsewhere {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.notes-subtitle {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.notes-warning {
+  margin: 4px 0 8px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* In a narrow window the panel covers the edge of the page instead of taking a column. */
+@media (max-width: 1100px) {
+  .notes-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 12;
+    width: min(320px, 88vw);
+    background: var(--glass-fill-strong);
+    box-shadow: var(--elev-float);
+    backdrop-filter: blur(var(--glass-blur));
+  }
+}

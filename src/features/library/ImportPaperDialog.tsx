@@ -67,6 +67,8 @@ function ImportForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<{ pdf: PaperPdf; duplicateOf: Paper } | null>(null);
+  /** Worth telling the reader, not worth stopping for: the same bytes, on another paper. */
+  const [duplicateNote, setDuplicateNote] = useState<string | null>(null);
 
   const fields = (): PaperInput => {
     const parsedYear = year.trim() === '' ? undefined : Number(year);
@@ -123,10 +125,15 @@ function ImportForm({
         return;
       }
       const { pdf, duplicateOf } = prepared.prepared;
-      // The same file is not automatically the same paper: ask before doing anything.
-      if (duplicateOf !== null) {
+      // Importing a paper: the same file is not automatically the same paper, so ask.
+      if (duplicateOf !== null && mode === 'new') {
         setPending({ pdf, duplicateOf });
         return;
+      }
+      // Attaching a file to a paper the reader already named is an explicit instruction; the
+      // fact that another paper shares the file is worth saying, not worth stopping the flow.
+      if (duplicateOf !== null) {
+        setDuplicateNote(`这份文件和《${duplicateOf.title}》用的是同一个文件。`);
       }
       write(pdf, null);
     } finally {
@@ -263,6 +270,8 @@ function ImportForm({
           </div>
         </div>
       )}
+
+      {duplicateNote !== null && <p className="hint">{duplicateNote}</p>}
 
       {error !== null && (
         <p className="hint hint-error" role="alert">

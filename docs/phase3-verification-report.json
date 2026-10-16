@@ -1,0 +1,1047 @@
+{
+  "generatedAt": "2026-10-16T11:58:54.839Z",
+  "browser": "155.0.4283.60",
+  "passed": 61,
+  "failed": 0,
+  "results": [
+    {
+      "name": "empty home: light theme, following the system",
+      "ok": true,
+      "detail": "{\"sidebar\":\"open\",\"narrow\":\"false\",\"inert\":false,\"theme\":\"light\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "motion is on by default",
+      "ok": true,
+      "detail": "transition-duration 0.2s"
+    },
+    {
+      "name": "light empty home: axe violations",
+      "ok": true,
+      "detail": "31 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "light empty home: text contrast",
+      "ok": true,
+      "detail": "9 runs, lowest 5.84"
+    },
+    {
+      "name": "light empty home: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "create dialog: modal, focus inside",
+      "ok": true,
+      "detail": "{\"open\":true,\"modal\":true,\"focusInside\":true,\"focusEscaped\":false,\"active\":\"\"}"
+    },
+    {
+      "name": "light create dialog: axe violations",
+      "ok": true,
+      "detail": "22 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "light create dialog: text contrast",
+      "ok": true,
+      "detail": "6 runs, lowest 5.85, 10 behind an overlay skipped"
+    },
+    {
+      "name": "light create dialog: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "create dialog: Tab never leaves the dialog",
+      "ok": true,
+      "detail": "0 escapes in 8 presses"
+    },
+    {
+      "name": "create dialog: Escape closes it and returns focus to the opener",
+      "ok": true,
+      "detail": "focus on 新建项目"
+    },
+    {
+      "name": "seven projects listed, three in \"最近更新\"",
+      "ok": true,
+      "detail": "7 rows, 3 recent"
+    },
+    {
+      "name": "light home: axe violations",
+      "ok": true,
+      "detail": "34 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "light home: text contrast",
+      "ok": true,
+      "detail": "23 runs, lowest 5.8"
+    },
+    {
+      "name": "light home: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pointer light fades in on hover and out on leave",
+      "ok": true,
+      "detail": "hover 1, away 0"
+    },
+    {
+      "name": "keyboard: every tab stop shows a focus indicator",
+      "ok": true,
+      "detail": "34 tab stops"
+    },
+    {
+      "name": "light project: axe violations",
+      "ok": true,
+      "detail": "32 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "light project: text contrast",
+      "ok": true,
+      "detail": "33 runs, lowest 5.8"
+    },
+    {
+      "name": "light project: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "manage mode exposes rename for every project",
+      "ok": true,
+      "detail": "7 rename buttons"
+    },
+    {
+      "name": "light manage mode: axe violations",
+      "ok": true,
+      "detail": "32 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "light manage mode: text contrast",
+      "ok": true,
+      "detail": "33 runs, lowest 5.8"
+    },
+    {
+      "name": "light manage mode: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "collapsed sidebar: the column goes away and its contents are inert",
+      "ok": true,
+      "detail": "{\"sidebar\":\"closed\",\"narrow\":\"false\",\"inert\":true,\"theme\":\"light\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "light sidebar collapsed: axe violations",
+      "ok": true,
+      "detail": "28 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "light sidebar collapsed: text contrast",
+      "ok": true,
+      "detail": "4 runs, lowest 8.25"
+    },
+    {
+      "name": "light sidebar collapsed: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "collapsed sidebar: expanding brings the same sidebar back",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark: explicit choice applies",
+      "ok": true,
+      "detail": "{\"sidebar\":\"open\",\"narrow\":\"false\",\"inert\":false,\"theme\":\"dark\",\"pref\":\"dark\"}"
+    },
+    {
+      "name": "dark project: axe violations",
+      "ok": true,
+      "detail": "32 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "dark project: text contrast",
+      "ok": true,
+      "detail": "33 runs, lowest 5.72"
+    },
+    {
+      "name": "dark project: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark home: axe violations",
+      "ok": true,
+      "detail": "34 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "dark home: text contrast",
+      "ok": true,
+      "detail": "23 runs, lowest 5.72"
+    },
+    {
+      "name": "dark home: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark create dialog: axe violations",
+      "ok": true,
+      "detail": "22 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "dark create dialog: text contrast",
+      "ok": true,
+      "detail": "6 runs, lowest 5.64, 25 behind an overlay skipped"
+    },
+    {
+      "name": "dark create dialog: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "delete confirm: modal, focus inside",
+      "ok": true,
+      "detail": "{\"open\":true,\"modal\":true,\"focusInside\":true,\"focusEscaped\":false,\"active\":\"取消\"}"
+    },
+    {
+      "name": "dark delete confirm: axe violations",
+      "ok": true,
+      "detail": "19 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "dark delete confirm: text contrast",
+      "ok": true,
+      "detail": "6 runs, lowest 8.52, 25 behind an overlay skipped"
+    },
+    {
+      "name": "dark delete confirm: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "delete confirm: Escape keeps the project",
+      "ok": true,
+      "detail": "7 rows"
+    },
+    {
+      "name": "reload keeps theme and projects",
+      "ok": true,
+      "detail": "dark/dark, 7 rows"
+    },
+    {
+      "name": "system dark: theme follows the OS",
+      "ok": true,
+      "detail": "{\"sidebar\":\"open\",\"narrow\":\"false\",\"inert\":false,\"theme\":\"dark\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "system dark: a live OS change applies without reload",
+      "ok": true,
+      "detail": "{\"sidebar\":\"open\",\"narrow\":\"false\",\"inert\":false,\"theme\":\"light\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "narrow: layout flag set at 700px",
+      "ok": true,
+      "detail": "{\"sidebar\":\"closed\",\"narrow\":\"true\",\"inert\":true,\"theme\":\"light\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "narrow: closed sidebar is inert",
+      "ok": true,
+      "detail": "{\"sidebar\":\"closed\",\"narrow\":\"true\",\"inert\":true,\"theme\":\"light\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "narrow closed: axe violations",
+      "ok": true,
+      "detail": "28 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "narrow closed: text contrast",
+      "ok": true,
+      "detail": "3 runs, lowest 5.89"
+    },
+    {
+      "name": "narrow closed: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "narrow: expand opens the overlay",
+      "ok": true,
+      "detail": "{\"sidebar\":\"open\",\"narrow\":\"true\",\"inert\":false,\"theme\":\"light\",\"pref\":\"system\"}"
+    },
+    {
+      "name": "narrow overlay: axe violations",
+      "ok": true,
+      "detail": "32 rules passed, 1 flagged for manual review"
+    },
+    {
+      "name": "narrow overlay: text contrast",
+      "ok": true,
+      "detail": "6 runs, lowest 4.93, 4 behind an overlay skipped"
+    },
+    {
+      "name": "narrow overlay: nothing outside the viewport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "narrow: Escape closes the overlay",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "narrow: the scrim closes the overlay",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "narrow: wide above the breakpoint",
+      "ok": true,
+      "detail": "{\"759\":\"true\",\"760\":\"false\",\"761\":\"false\",\"800\":\"false\"}"
+    },
+    {
+      "name": "reduced motion: transitions collapse to ~0",
+      "ok": true,
+      "detail": "transition-duration 1e-05s"
+    },
+    {
+      "name": "no console errors, warnings, page errors or failed requests",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "details": {
+    "light empty home": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 8,
+            "targets": [
+              ".brand",
+              "button[aria-current=\"page\"] > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 31
+      },
+      "contrast": {
+        "checked": 9,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "p.group-empty \"还没有项目。点击右上角的加号，从一篇论文开始。\"",
+            "ratio": 5.84,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "h2.group-title \"项目\"",
+            "ratio": 5.89,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "button.btn \"新建项目\"",
+            "ratio": 5.89,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span \"论文库\"",
+            "ratio": 7.49,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "light create dialog": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 6,
+            "targets": [
+              "#_r_0_",
+              ".field-label",
+              ".input"
+            ]
+          }
+        ],
+        "passes": 22
+      },
+      "contrast": {
+        "checked": 6,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "p.hint \"项目围绕这篇论文展开，之后可以再关联其他论文。\"",
+            "ratio": 5.85,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "button.btn \"创建项目\"",
+            "ratio": 5.89,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "input.input \"placeholder: 例如 Attentio\"",
+            "ratio": 6.56,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.field-label \"核心论文标题\"",
+            "ratio": 7.64,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 10,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "light home": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 21,
+            "targets": [
+              ".brand",
+              "button[aria-current=\"page\"] > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 34
+      },
+      "contrast": {
+        "checked": 23,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.8,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.84,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "h2.group-title \"最近更新\"",
+            "ratio": 5.86,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.88,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "tabStops": [
+      "收起侧栏",
+      "首页",
+      "论文库",
+      "Mastering the game of Go",
+      "An Image is Worth 16x16 ",
+      "Language Models are Few-",
+      "新建项目",
+      "Mastering the game of Go",
+      "重命名 Mastering the game of Go with deep neural networks and tree search",
+      "删除 Mastering the game of Go with deep neural networks and tree search",
+      "An Image is Worth 16x16 ",
+      "重命名 An Image is Worth 16x16 Words",
+      "删除 An Image is Worth 16x16 Words",
+      "Language Models are Few-",
+      "重命名 Language Models are Few-Shot Learners",
+      "删除 Language Models are Few-Shot Learners",
+      "Denoising Diffusion Prob",
+      "重命名 Denoising Diffusion Probabilistic Models",
+      "删除 Denoising Diffusion Probabilistic Models",
+      "Deep Residual Learning f",
+      "重命名 Deep Residual Learning for Image Recognition",
+      "删除 Deep Residual Learning for Image Recognition",
+      "BERT: Pre-training of De",
+      "重命名 BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "删除 BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "Attention Is All You Nee",
+      "重命名 Attention Is All You Need",
+      "删除 Attention Is All You Need",
+      "管理项目",
+      "跟随系统",
+      "浅色",
+      "深色",
+      "更换形象",
+      "打开《Mastering the game of"
+    ],
+    "light project": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 32,
+            "targets": [
+              ".brand",
+              "nav > .nav-item.spot[data-glow=\"\"]:nth-child(1) > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 32
+      },
+      "contrast": {
+        "checked": 33,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.8,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.84,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "h2.group-title \"最近更新\"",
+            "ratio": 5.86,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.88,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "light manage mode": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 32,
+            "targets": [
+              ".brand",
+              "nav > .nav-item.spot[data-glow=\"\"]:nth-child(1) > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 32
+      },
+      "contrast": {
+        "checked": 33,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.8,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.84,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "h2.group-title \"最近更新\"",
+            "ratio": 5.86,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 5.88,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "light sidebar collapsed": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 2,
+            "targets": [
+              ".welcome-lead",
+              ".welcome-body"
+            ]
+          }
+        ],
+        "passes": 28
+      },
+      "contrast": {
+        "checked": 4,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "span.welcome-body \"《Mastering the game of G\"",
+            "ratio": 8.25,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.welcome-lead \"晚上好\"",
+            "ratio": 16.6,
+            "need": 3,
+            "translucent": false
+          },
+          {
+            "label": "span.btn-label \"打开《\"",
+            "ratio": 17.3,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.btn-label \"Mastering the game of Go\"",
+            "ratio": 17.3,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "dark project": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 32,
+            "targets": [
+              ".brand",
+              "nav > .nav-item.spot[data-glow=\"\"]:nth-child(1) > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 32
+      },
+      "contrast": {
+        "checked": 33,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "h2.group-title \"最近更新\"",
+            "ratio": 5.72,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.brand \"Research Workspace\"",
+            "ratio": 5.99,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span \"首页\"",
+            "ratio": 6.19,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 6.22,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "dark home": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 21,
+            "targets": [
+              ".brand",
+              "button[aria-current=\"page\"] > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 34
+      },
+      "contrast": {
+        "checked": 23,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "h2.group-title \"最近更新\"",
+            "ratio": 5.72,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.brand \"Research Workspace\"",
+            "ratio": 5.99,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span \"首页\"",
+            "ratio": 6.14,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.row-meta \"今天\"",
+            "ratio": 6.22,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "dark create dialog": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 6,
+            "targets": [
+              "#_r_0_",
+              ".field-label",
+              ".input"
+            ]
+          }
+        ],
+        "passes": 22
+      },
+      "contrast": {
+        "checked": 6,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "input.input \"placeholder: 例如 Attentio\"",
+            "ratio": 5.64,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "p.hint \"项目围绕这篇论文展开，之后可以再关联其他论文。\"",
+            "ratio": 7.9,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "button.btn \"创建项目\"",
+            "ratio": 8.73,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.field-label \"核心论文标题\"",
+            "ratio": 9.19,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 25,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "dark delete confirm": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 4,
+            "targets": [
+              "#_r_3_",
+              "p",
+              "button[data-autofocus=\"true\"]"
+            ]
+          }
+        ],
+        "passes": 19
+      },
+      "contrast": {
+        "checked": 6,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "button.btn \"删除\"",
+            "ratio": 8.52,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "p \"确定删除《\"",
+            "ratio": 9.19,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "p \"Mastering the game of Go\"",
+            "ratio": 9.41,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "p \"》吗？项目记录会从本机移除，此操作无法撤销。\"",
+            "ratio": 9.55,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 25,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 1280,
+        "offenders": []
+      }
+    },
+    "narrow closed": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 2,
+            "targets": [
+              ".welcome-lead",
+              ".welcome-body"
+            ]
+          }
+        ],
+        "passes": 28
+      },
+      "contrast": {
+        "checked": 3,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "button.btn \"新建项目\"",
+            "ratio": 5.89,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.welcome-body \"新建第一个项目，从一篇想读懂的论文开始。\"",
+            "ratio": 8.25,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span.welcome-lead \"晚上好\"",
+            "ratio": 16.63,
+            "need": 3,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 0
+        }
+      },
+      "overflow": {
+        "width": 700,
+        "offenders": []
+      }
+    },
+    "narrow overlay": {
+      "axe": {
+        "violations": [],
+        "incomplete": [
+          {
+            "id": "color-contrast",
+            "impact": "serious",
+            "help": "Elements must meet minimum color contrast ratio thresholds",
+            "count": 9,
+            "targets": [
+              ".brand",
+              "button[aria-current=\"page\"] > span",
+              ".nav-item.spot[data-glow=\"\"]:nth-child(2) > span"
+            ]
+          }
+        ],
+        "passes": 32
+      },
+      "contrast": {
+        "checked": 6,
+        "failures": [],
+        "lowest": [
+          {
+            "label": "p.group-empty \"还没有项目。点击右上角的加号，从一篇论文开始。\"",
+            "ratio": 4.93,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "h2.group-title \"项目\"",
+            "ratio": 5.17,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "button.btn \"管理项目\"",
+            "ratio": 6.66,
+            "need": 4.5,
+            "translucent": false
+          },
+          {
+            "label": "span \"论文库\"",
+            "ratio": 6.69,
+            "need": 4.5,
+            "translucent": false
+          }
+        ],
+        "skipped": {
+          "modal": 0,
+          "scrim": 4
+        }
+      },
+      "overflow": {
+        "width": 700,
+        "offenders": []
+      }
+    },
+    "breakpointSweep": {
+      "759": "true",
+      "760": "false",
+      "761": "false",
+      "800": "false"
+    }
+  },
+  "shots": [
+    "01-light-home-empty.png",
+    "02-light-create-dialog.png",
+    "03-light-home-7.png",
+    "04-light-project.png",
+    "05-light-manage.png",
+    "12-light-sidebar-collapsed.png",
+    "06-dark-project.png",
+    "07-dark-home.png",
+    "08-dark-create-dialog.png",
+    "09-dark-confirm-delete.png",
+    "10-narrow-closed.png",
+    "11-narrow-overlay.png"
+  ]
+}

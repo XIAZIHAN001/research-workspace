@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(3);
+    expect(SCHEMA_VERSION).toBe(4);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -198,7 +198,12 @@ describe('migrateStoredPayload: current payloads', () => {
     createdAt: 1,
     updatedAt: 2,
   };
-  const state: ProjectsState = { projects: [project], papers: { pa, pb }, selectedId: 'a' };
+  const state: ProjectsState = {
+    projects: [project],
+    papers: { pa, pb },
+    annotations: [],
+    selectedId: 'a',
+  };
 
   it('round-trips through the persisted envelope', () => {
     const outcome = migrateStoredPayload(serializeProjects(state));
@@ -443,7 +448,7 @@ describe('migrateStoredPayload: a legacy id is not proof of identity', () => {
   });
 });
 
-describe('migrateStoredPayload: v2 → v3', () => {
+describe('migrateStoredPayload: v2 → current', () => {
   const PROJECT = {
     id: 'p1',
     name: 'Attention',
@@ -467,13 +472,14 @@ describe('migrateStoredPayload: v2 → v3', () => {
     selectedId: 'p1',
   });
 
-  it('bumps the version and changes nothing else', () => {
+  it('walks the version chain to the current one and changes nothing else', () => {
     const outcome = migrateStoredPayload(V2_PAYLOAD);
     expect(outcome.ok && outcome.from).toBe(2);
     if (!outcome.ok) throw new Error(outcome.detail);
     expect(outcome.state).toStrictEqual({
       projects: [PROJECT],
       papers: { pa: PAPER_V2 },
+      annotations: [],
       selectedId: 'p1',
     });
   });
@@ -517,14 +523,19 @@ describe('migrateStoredPayload: v2 → v3', () => {
     expect(outcome.ok === false && outcome.reason).toBe('invalid');
   });
 
-  it('reports a v4 payload as an unsupported version', () => {
+  it('reports a payload from the next version as unsupported', () => {
     const outcome = migrateStoredPayload(
-      JSON.stringify({ version: 4, projects: [], papers: {}, selectedId: null }),
+      JSON.stringify({
+        version: SCHEMA_VERSION + 1,
+        projects: [],
+        papers: {},
+        selectedId: null,
+      }),
     );
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.reason).toBe('unsupported-version');
     expect(outcome.ok === false && outcome.reason === 'unsupported-version' && outcome.found).toBe(
-      4,
+      SCHEMA_VERSION + 1,
     );
   });
 });

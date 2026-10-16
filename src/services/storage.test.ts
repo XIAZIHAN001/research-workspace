@@ -99,6 +99,7 @@ const SAMPLE_STATE: ProjectsState = {
     'paper-p2': makePaper('paper-p2', { title: 'ResNet' }),
     r1: makePaper('r1', { title: 'BERT' }),
   },
+  annotations: [],
   selectedId: 'p2',
 };
 
@@ -259,6 +260,7 @@ describe('saveProjects', () => {
       version: SCHEMA_VERSION,
       projects: SAMPLE_STATE.projects,
       papers: SAMPLE_STATE.papers,
+      annotations: SAMPLE_STATE.annotations,
       selectedId: SAMPLE_STATE.selectedId,
     });
   });

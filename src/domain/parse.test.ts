@@ -19,8 +19,13 @@ function rawProject(id: string, overrides: Raw = {}): Raw {
   };
 }
 
-function rawState(projects: unknown, papers: unknown, selectedId: unknown = null): Raw {
-  return { projects, papers, selectedId };
+function rawState(
+  projects: unknown,
+  papers: unknown,
+  selectedId: unknown = null,
+  annotations: unknown = [],
+): Raw {
+  return { projects, papers, annotations, selectedId };
 }
 
 /** A registry that matches the default project fixture. */
@@ -32,7 +37,7 @@ function without(source: Raw, key: string): Raw {
   return Object.fromEntries(Object.entries(source).filter(([name]) => name !== key));
 }
 
-describe('parseProjectsState (schema 2)', () => {
+describe('parseProjectsState (current schema)', () => {
   describe('well-formed input', () => {
     it('accepts a valid state and returns it', () => {
       const raw = rawState(
@@ -47,6 +52,7 @@ describe('parseProjectsState (schema 2)', () => {
       expect(parseProjectsState(rawState([], {}))).toStrictEqual({
         projects: [],
         papers: {},
+        annotations: [],
         selectedId: null,
       });
     });
@@ -195,11 +201,12 @@ describe('parseProjectsState (schema 2)', () => {
 
     it('is not fooled by prototype keys in the payload', () => {
       const payload: unknown = JSON.parse(
-        '{"projects":[],"papers":{},"selectedId":null,"__proto__":{"polluted":true}}',
+        '{"projects":[],"papers":{},"annotations":[],"selectedId":null,"__proto__":{"polluted":true}}',
       );
       expect(parseProjectsState(payload)).toStrictEqual({
         projects: [],
         papers: {},
+        annotations: [],
         selectedId: null,
       });
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();

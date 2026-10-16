@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Annotation } from './annotation';
 import { MAX_NAME_LENGTH } from './normalize';
 import type { Paper } from './papers';
 import type { Project } from './project';
@@ -39,7 +40,7 @@ function papersOf(projects: Project[]): Record<string, Paper> {
 
 function makeState(ids: string[], selectedId: string | null = ids[0] ?? null): ProjectsState {
   const projects = ids.map((id) => makeProject(id));
-  return { projects, papers: papersOf(projects), selectedId };
+  return { projects, papers: papersOf(projects), annotations: [], selectedId };
 }
 
 const idsOf = (state: ProjectsState): string[] => state.projects.map((p) => p.id);
@@ -56,8 +57,13 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('EMPTY_STATE', () => {
-  it('has no projects, no papers and no selection', () => {
-    expect(EMPTY_STATE).toStrictEqual({ projects: [], papers: {}, selectedId: null });
+  it('has no projects, no papers, no annotations and no selection', () => {
+    expect(EMPTY_STATE).toStrictEqual({
+      projects: [],
+      papers: {},
+      annotations: [],
+      selectedId: null,
+    });
   });
 });
 
@@ -71,7 +77,12 @@ describe('projectsReducer', () => {
 
     it('can reset to the empty state', () => {
       const next = projectsReducer(makeState(['a', 'b']), { type: 'hydrate', state: EMPTY_STATE });
-      expect(next).toStrictEqual({ projects: [], papers: {}, selectedId: null });
+      expect(next).toStrictEqual({
+        projects: [],
+        papers: {},
+        annotations: [],
+        selectedId: null,
+      });
     });
   });
 
@@ -115,9 +126,15 @@ describe('projectsReducer', () => {
       expect(next).toStrictEqual({
         projects: [added],
         papers: { 'paper-first': paper },
+        annotations: [],
         selectedId: 'first',
       });
-      expect(EMPTY_STATE).toStrictEqual({ projects: [], papers: {}, selectedId: null });
+      expect(EMPTY_STATE).toStrictEqual({
+        projects: [],
+        papers: {},
+        annotations: [],
+        selectedId: null,
+      });
     });
 
     it('keeps the existing projects, papers and their references', () => {
@@ -371,7 +388,12 @@ describe('projectsReducer', () => {
     it('clears the selection when the only project is removed', () => {
       const state = makeState(['a'], 'a');
       const next = projectsReducer(state, { type: 'remove', id: 'a' });
-      expect(next).toStrictEqual({ projects: [], papers: state.papers, selectedId: null });
+      expect(next).toStrictEqual({
+        projects: [],
+        papers: state.papers,
+        annotations: state.annotations,
+        selectedId: null,
+      });
     });
 
     it('keeps every paper in the registry', () => {
@@ -640,6 +662,142 @@ describe('projectsReducer: updatePaper', () => {
         paperId: 'paper-a',
         edit: { pdf: PDF, reading: { page: 2, updatedAt: 3 } },
         now: 9,
+      }),
+    ).not.toThrow();
+    expect(state).toStrictEqual(before);
+  });
+});
+
+describe('projectsReducer: annotations belong to the paper, not the project', () => {
+  const SHA = 'c'.repeat(64);
+
+  function makeAnnotation(
+    id: string,
+    paperId: string,
+    overrides: Partial<Annotation> = {},
+  ): Annotation {
+    return {
+      id,
+      paperId,
+      pdfSha256: SHA,
+      page: 1,
+      quote: `quote ${id}`,
+      prefix: 'before ',
+      suffix: ' after',
+      rects: [{ x: 0.1, y: 0.1, width: 0.2, height: 0.02 }],
+      kind: 'note',
+      note: '',
+      createdAt: 10,
+      updatedAt: 10,
+      ...overrides,
+    };
+  }
+
+  function stateWithAnnotation(): ProjectsState {
+    const state = makeState(['a', 'b']);
+    return {
+      ...state,
+      annotations: [makeAnnotation('one', 'paper-a'), makeAnnotation('two', 'paper-b')],
+    };
+  }
+
+  it('keeps its own list in creation order', () => {
+    const next = projectsReducer(stateWithAnnotation(), {
+      type: 'addAnnotation',
+      annotation: makeAnnotation('three', 'paper-a', { kind: 'question' }),
+    });
+    expect(next.annotations.map((annotation) => annotation.id)).toStrictEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+  });
+
+  it('ignores an annotation id that is already there', () => {
+    const state = stateWithAnnotation();
+    expect(
+      projectsReducer(state, {
+        type: 'addAnnotation',
+        annotation: makeAnnotation('one', 'paper-a'),
+      }),
+    ).toBe(state);
+  });
+
+  it('edits what was written and stamps the time, leaving the anchor alone', () => {
+    const state = stateWithAnnotation();
+    const next = projectsReducer(state, {
+      type: 'updateAnnotation',
+      id: 'one',
+      edit: { note: 'a thought', kind: 'insight' },
+      now: 55,
+    });
+    const updated = next.annotations.find((annotation) => annotation.id === 'one');
+    expect(updated).toMatchObject({ note: 'a thought', kind: 'insight', updatedAt: 55, page: 1 });
+    expect(updated?.quote).toBe('quote one');
+    expect(next.annotations.find((annotation) => annotation.id === 'two')).toBe(
+      state.annotations[1],
+    );
+  });
+
+  it('returns the same state for an unknown annotation or an empty edit', () => {
+    const state = stateWithAnnotation();
+    expect(
+      projectsReducer(state, {
+        type: 'updateAnnotation',
+        id: 'ghost',
+        edit: { note: 'x' },
+        now: 1,
+      }),
+    ).toBe(state);
+    expect(
+      projectsReducer(state, {
+        type: 'updateAnnotation',
+        id: 'one',
+        edit: { note: '', kind: 'note' },
+        now: 1,
+      }),
+    ).toBe(state);
+  });
+
+  it('removes one annotation and leaves the rest', () => {
+    const next = projectsReducer(stateWithAnnotation(), { type: 'removeAnnotation', id: 'one' });
+    expect(next.annotations.map((annotation) => annotation.id)).toStrictEqual(['two']);
+  });
+
+  it('returns the same state when there is nothing to remove', () => {
+    const state = stateWithAnnotation();
+    expect(projectsReducer(state, { type: 'removeAnnotation', id: 'ghost' })).toBe(state);
+  });
+
+  it('survives the project being deleted', () => {
+    const next = projectsReducer(stateWithAnnotation(), { type: 'remove', id: 'a' });
+    expect(idsOf(next)).toStrictEqual(['b']);
+    expect(next.annotations.map((annotation) => annotation.id)).toStrictEqual(['one', 'two']);
+  });
+
+  it('survives the paper being renamed and re-linked elsewhere', () => {
+    const renamed = projectsReducer(stateWithAnnotation(), {
+      type: 'rename',
+      id: 'a',
+      name: 'Renamed',
+      now: 99,
+    });
+    const unlinked = projectsReducer(renamed, {
+      type: 'unlinkPaper',
+      projectId: 'b',
+      paperId: 'paper-b',
+      now: 99,
+    });
+    expect(unlinked.annotations).toStrictEqual(renamed.annotations);
+  });
+
+  it('does not mutate the state it is given', () => {
+    const state = deepFreeze(stateWithAnnotation());
+    const before = structuredClone(state);
+    expect(() =>
+      projectsReducer(state, {
+        type: 'addAnnotation',
+        annotation: makeAnnotation('three', 'paper-a'),
       }),
     ).not.toThrow();
     expect(state).toStrictEqual(before);

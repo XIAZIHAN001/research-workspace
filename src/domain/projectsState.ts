@@ -1,3 +1,4 @@
+import { applyAnnotationEdit, type Annotation, type AnnotationEdit } from './annotation';
 import { normalizeName } from './normalize';
 import { applyPaperEdit, type Paper, type PaperEdit } from './papers';
 import type { Project } from './project';
@@ -12,9 +13,20 @@ export interface ProjectsState {
    */
   papers: Record<string, Paper>;
   selectedId: string | null;
+  /**
+   * Highlights and notes, in creation order. They belong to a paper rather than to a project,
+   * so deleting a project never touches them — that is the whole reason they live here and not
+   * inside `Project`.
+   */
+  annotations: Annotation[];
 }
 
-export const EMPTY_STATE: ProjectsState = { projects: [], papers: {}, selectedId: null };
+export const EMPTY_STATE: ProjectsState = {
+  projects: [],
+  papers: {},
+  annotations: [],
+  selectedId: null,
+};
 
 export type ProjectsAction =
   | { type: 'hydrate'; state: ProjectsState }
@@ -31,6 +43,11 @@ export type ProjectsAction =
    * another paper already owns.
    */
   | { type: 'updatePaper'; paperId: string; edit: PaperEdit; now: number }
+  /** Adds a highlight to a paper. */
+  | { type: 'addAnnotation'; annotation: Annotation }
+  /** Changes what the reader wrote about a passage, never where the passage is. */
+  | { type: 'updateAnnotation'; id: string; edit: AnnotationEdit; now: number }
+  | { type: 'removeAnnotation'; id: string }
   | { type: 'rename'; id: string; name: string; now: number }
   | { type: 'remove'; id: string }
   | { type: 'select'; id: string };
@@ -50,6 +67,7 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
 
     case 'add':
       return {
+        ...state,
         projects: [action.project, ...state.projects],
         papers: withPaper(state.papers, action.paper),
         selectedId: action.project.id,
@@ -105,6 +123,32 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
       // all: the caller has already been told why, and the registry stays as it was.
       if (!result.ok || result.paper === state.papers[action.paperId]) return state;
       return { ...state, papers: { ...state.papers, [action.paperId]: result.paper } };
+    }
+
+    case 'addAnnotation': {
+      if (state.annotations.some((existing) => existing.id === action.annotation.id)) return state;
+      return { ...state, annotations: [...state.annotations, action.annotation] };
+    }
+
+    case 'updateAnnotation': {
+      const current = state.annotations.find((annotation) => annotation.id === action.id);
+      if (current === undefined) return state;
+      const updated = applyAnnotationEdit(current, action.edit, action.now);
+      if (updated === current) return state;
+      return {
+        ...state,
+        annotations: state.annotations.map((annotation) =>
+          annotation === current ? updated : annotation,
+        ),
+      };
+    }
+
+    case 'removeAnnotation': {
+      if (!state.annotations.some((annotation) => annotation.id === action.id)) return state;
+      return {
+        ...state,
+        annotations: state.annotations.filter((annotation) => annotation.id !== action.id),
+      };
     }
 
     case 'rename': {

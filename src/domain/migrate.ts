@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -146,13 +146,27 @@ function migrateV2ToV3(payload: Record<string, unknown>): Record<string, unknown
   return { ...payload, version: 3 };
 }
 
-const MIGRATIONS: Record<number, MigrationStep> = { 1: migrateV1ToV2, 2: migrateV2ToV3 };
+/**
+ * v3 → v4 added highlights and notes (`ProjectsState.annotations`). Nothing is rewritten: the
+ * new list starts empty, and it is written in the same document as the papers it belongs to.
+ */
+function migrateV3ToV4(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 4, annotations: [] };
+}
+
+const MIGRATIONS: Record<number, MigrationStep> = {
+  1: migrateV1ToV2,
+  2: migrateV2ToV3,
+  3: migrateV3ToV4,
+};
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {
   return JSON.stringify({
     version: SCHEMA_VERSION,
     projects: state.projects,
     papers: state.papers,
+    annotations: state.annotations,
     selectedId: state.selectedId,
   });
 }

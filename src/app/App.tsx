@@ -20,7 +20,9 @@ import { probePdf } from '../features/reader/pdfjs';
 import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
+import { createAnnotation } from '../domain/annotation';
 import type { PaperEdit } from '../domain/papers';
+import { makeId } from '../services/ids';
 import type { Project } from '../domain/project';
 import { daysBetween } from '../domain/time';
 import type { ProjectsStore } from '../services/projectsStore';
@@ -79,7 +81,7 @@ function loadIssueNotice(issue: LoadIssue): string {
 }
 
 export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe }: AppProps) {
-  const { projects, papers, selected, persisted, issue, actions } = useProjects(store);
+  const { projects, papers, annotations, selected, persisted, issue, actions } = useProjects(store);
   const theme = useTheme();
   const sidebar = useSidebar();
   const avatar = useAvatar();
@@ -105,6 +107,14 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
     [papers],
   );
   const readingPaper = readingPaperId === null ? null : (papers[readingPaperId] ?? null);
+  // Notes follow the paper, so every project that opens it sees the same ones.
+  const paperAnnotations = useMemo(
+    () =>
+      readingPaper === null
+        ? []
+        : annotations.filter((annotation) => annotation.paperId === readingPaper.id),
+    [annotations, readingPaper],
+  );
   const editingPaper = editingPaperId === null ? null : (papers[editingPaperId] ?? null);
 
   // `now` ticks once a minute. Only the values derived from it feed the memo, so the
@@ -334,6 +344,31 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
                   projectId: selected?.id ?? null,
                 });
               }}
+              annotations={paperAnnotations}
+              onCreateAnnotation={(anchor, draft) => {
+                const created = createAnnotation(
+                  {
+                    paperId: readingPaper.id,
+                    pdfSha256: readingPaper.pdf?.sha256 ?? '',
+                    page: anchor.page,
+                    quote: anchor.quote,
+                    prefix: anchor.prefix,
+                    suffix: anchor.suffix,
+                    rects: anchor.rects,
+                    kind: draft.kind,
+                    note: draft.note,
+                  },
+                  makeId,
+                  Date.now(),
+                );
+                // Nothing usable was selected; the reader has already said why.
+                if (created === null) return;
+                actions.addAnnotation(created);
+              }}
+              onEditAnnotation={actions.updateAnnotation}
+              onDeleteAnnotation={(annotation) => {
+                actions.removeAnnotation(annotation.id);
+              }}
             />
           </ReaderBoundary>
         ) : view === 'library' ? (
@@ -350,10 +385,18 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
               setImportRequest({ mode: 'new', paperId: null, projectId: selected?.id ?? null });
             }}
             onLinkToProject={(paperId, projectId) => {
-              actions.linkPaper(projectId, paperId);
               const project = projects.find((candidate) => candidate.id === projectId);
+              const title = papers[paperId]?.title ?? '';
+              // Linking a paper a project already has changes nothing, and saying "added" would
+              // be a small lie the reader would notice the next time they looked at the project.
+              const alreadyThere =
+                project !== undefined &&
+                (project.corePaperId === paperId || project.relatedPaperIds.includes(paperId));
+              actions.linkPaper(projectId, paperId);
               setNotice(
-                `已经把《${papers[paperId]?.title ?? ''}》加入《${project?.name ?? ''}》。`,
+                alreadyThere
+                  ? `《${title}》已经在《${project?.name ?? ''}》里了。`
+                  : `已经把《${title}》加入《${project?.name ?? ''}》。`,
               );
             }}
           />

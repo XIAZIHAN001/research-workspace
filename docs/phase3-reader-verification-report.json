@@ -1,0 +1,138 @@
+{
+  "generatedAt": "2026-10-16T11:58:26.391Z",
+  "passed": 26,
+  "failed": 0,
+  "results": [
+    {
+      "name": "import: title is prefilled from the file name",
+      "passed": true,
+      "detail": "sample paper"
+    },
+    {
+      "name": "import: the reader opens for the imported paper",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "render: page 1 canvas and text layer are present",
+      "passed": true,
+      "detail": "text layer: Sample Paper for the ReaderMARKER-PAGE-1…"
+    },
+    {
+      "name": "render: the canvas has a real size",
+      "passed": true,
+      "detail": "754x1067"
+    },
+    {
+      "name": "pages: the indicator starts at 1",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "pages: the next-page button moves to page 2",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "pages: jumping by number reaches page 3",
+      "passed": true,
+      "detail": "{\"indicator\":\"3\",\"scrollTop\":10,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"3281.02px\"}"
+    },
+    {
+      "name": "pages: the jumped-to page has its own text",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "zoom: zooming in makes the page bigger",
+      "passed": true,
+      "detail": "754 → 893"
+    },
+    {
+      "name": "zoom: fit-width returns to the container width",
+      "passed": true,
+      "detail": "754px"
+    },
+    {
+      "name": "render: the page canvas really has ink on it",
+      "passed": true,
+      "detail": "124 dark samples"
+    },
+    {
+      "name": "text: the page text can be selected and copied",
+      "passed": true,
+      "detail": "Sample Paper for the Reader MARKER-PAGE-2 This line exists s"
+    },
+    {
+      "name": "storage: the paper records the file hash and page count",
+      "passed": true,
+      "detail": "3 pages"
+    },
+    {
+      "name": "reading position: the page is written to the registry",
+      "passed": true,
+      "detail": "page 3"
+    },
+    {
+      "name": "pages: the indicator stays on the jumped-to page while it animates",
+      "passed": true,
+      "detail": "saw 2"
+    },
+    {
+      "name": "layout: the current page sits inside the visible area",
+      "passed": true,
+      "detail": "{\"scroll\":[296,76,812,815],\"page\":[320,92,754,1067],\"scrollTop\":1091}"
+    },
+    {
+      "name": "theme: the page stays white paper in dark mode",
+      "passed": true,
+      "detail": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "reopen: the reader returns to the page it left",
+      "passed": true,
+      "detail": "page 3"
+    },
+    {
+      "name": "reopen: the stored file loads again without picking it a second time",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "flow: no import dialog is left open after importing",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate: the same file asks before reusing a paper",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate: two papers can share one stored file",
+      "passed": true,
+      "detail": "2 papers, 1 stored file"
+    },
+    {
+      "name": "invalid file: it is refused with a plain explanation and nothing is stored",
+      "passed": true,
+      "detail": "这不是一个 PDF 文件（未找到 PDF 文件头）。"
+    },
+    {
+      "name": "library: every paper is listed",
+      "passed": true,
+      "detail": "3 rows"
+    },
+    {
+      "name": "storage unavailable: the user is told, and no PDF is recorded",
+      "passed": true,
+      "detail": "这个浏览器环境不支持本地文件库（IndexedDB 不可用）。"
+    },
+    {
+      "name": "console: no errors, warnings or page exceptions",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "consoleIssues": []
+}

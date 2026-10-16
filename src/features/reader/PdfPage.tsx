@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { Annotation } from '../../domain/annotation';
 import { isRenderCancelled, loadPdfjs, type PDFDocumentProxy } from './pdfjs';
 
 interface PdfPageProps {
@@ -10,6 +11,10 @@ interface PdfPageProps {
   active: boolean;
   /** Size to reserve while the page has not measured itself yet. */
   placeholder: { width: number; height: number };
+  /** Highlights made on this page, on this file. Their boxes are fractions of the page. */
+  annotations?: readonly Annotation[];
+  /** The annotation to draw attention to, right after the reader jumped to it. */
+  flashId?: string | null;
 }
 
 /** Above this the canvas stops growing: more pixels cost memory without being visible. */
@@ -26,10 +31,24 @@ const MAX_DEVICE_PIXEL_RATIO = 2;
  * It is positioned from the page's text content, never from where the canvas happens to sit,
  * so the same page lays out correctly at another zoom level or in another window.
  */
-export function PdfPage({ doc, pageNumber, scale, active, placeholder }: PdfPageProps) {
+export function PdfPage({
+  doc,
+  pageNumber,
+  scale,
+  active,
+  placeholder,
+  annotations = [],
+  flashId = null,
+}: PdfPageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [failed, setFailed] = useState(false);
+  /**
+   * A page can render perfectly and still have nothing to select — a scan, or an image of a
+   * page. Saying so is the honest answer: without a text layer there is nothing to anchor a
+   * highlight to, and the user should not have to guess why selection does not work.
+   */
+  const [hasNoText, setHasNoText] = useState(false);
 
   // Measure first: the column needs the page's real height even when it is not rendered.
   useEffect(() => {
@@ -96,6 +115,7 @@ export function PdfPage({ doc, pageNumber, scale, active, placeholder }: PdfPage
       });
       textLayer = layer;
       await layer.render();
+      setHasNoText((textContainer.textContent ?? '').trim() === '');
       setFailed(false);
     })().catch((error: unknown) => {
       if (cancelled || isRenderCancelled(error)) return;
@@ -120,6 +140,35 @@ export function PdfPage({ doc, pageNumber, scale, active, placeholder }: PdfPage
       style={{ width: `${width}px`, height: `${height}px` }}
     >
       <div ref={hostRef} className="pdf-host" />
+      {annotations.length > 0 && (
+        <div className="annotation-layer">
+          {annotations.map((annotation) => (
+            <Fragment key={annotation.id}>
+              {annotation.rects.map((rect, index) => (
+                <div
+                  // Boxes have no identity of their own; the annotation and their order do.
+                  key={`${annotation.id}-${String(index)}`}
+                  className="pdf-highlight"
+                  data-annotation={annotation.id}
+                  data-kind={annotation.kind}
+                  data-flash={annotation.id === flashId ? 'true' : undefined}
+                  style={{
+                    left: `${String(rect.x * 100)}%`,
+                    top: `${String(rect.y * 100)}%`,
+                    width: `${String(rect.width * 100)}%`,
+                    height: `${String(rect.height * 100)}%`,
+                  }}
+                />
+              ))}
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {hasNoText && !failed && (
+        <p className="pdf-page-hint">
+          这一页没有可提取的文字（可能是扫描件），暂时无法高亮或记笔记。
+        </p>
+      )}
       {failed && (
         <p className="pdf-page-error" role="status">
           第 {pageNumber} 页渲染失败。
