@@ -36,9 +36,16 @@ export type MigrationStep = (payload: Record<string, unknown>) => Record<string,
  *
  * Paper ids are carried over unchanged rather than regenerated, which is what makes this
  * migration deterministic: running it twice on the same payload produces byte-identical
- * output, so a failed write-back can be retried without inventing new identities.
- * Papers that only look alike (same title, no shared id) stay separate — the v1 data has
- * no DOI or arXiv id to justify merging them.
+ * output, so a failed write-back can be retried without inventing new identities. Papers
+ * that only look alike (same title, no shared id) stay separate — the v1 data has no DOI
+ * or arXiv id to justify merging them.
+ *
+ * A legacy id is a *project-local* identifier, so it is only evidence of identity when the
+ * records under it agree exactly. When two records share an id but disagree on title,
+ * authors or year, the id was reused (copied, hand-edited or partially restored data) and
+ * merging them would silently delete one paper's metadata while pointing both projects at
+ * the surviving record. Such records are split instead: the first keeps the legacy id, the
+ * rest get a derived id that depends only on the legacy id and their position.
  */
 function migrateV1ToV2(payload: Record<string, unknown>): Record<string, unknown> | null {
   const legacy = parseLegacyState(payload);
@@ -55,21 +62,32 @@ function migrateV1ToV2(payload: Record<string, unknown>): Record<string, unknown
   }
 
   const papers: Record<string, Paper> = {};
+  /** Per legacy id: the distinct records seen under it, keyed by an exact-metadata fingerprint. */
+  const records = new Map<string, Map<string, string>>();
+
   const register = (ref: LegacyPaperRef, since: number): string => {
-    if (papers[ref.id] === undefined) {
-      const paper: Paper = {
-        id: ref.id,
-        title: ref.title,
-        authors: [...ref.authors],
-        // The paper was never stamped in v1; the project that introduced it is the
-        // closest honest approximation, and it is stable across runs.
-        createdAt: since,
-        updatedAt: since,
-      };
-      if (typeof ref.year === 'number') paper.year = ref.year;
-      papers[ref.id] = paper;
-    }
-    return ref.id;
+    const seen = records.get(ref.id) ?? new Map<string, string>();
+    records.set(ref.id, seen);
+
+    const fingerprint = paperFingerprint(ref);
+    const known = seen.get(fingerprint);
+    if (known !== undefined) return known;
+
+    const paperId = takePaperId(ref.id, seen.size, papers);
+    seen.set(fingerprint, paperId);
+
+    const paper: Paper = {
+      id: paperId,
+      title: ref.title,
+      authors: [...ref.authors],
+      // The paper was never stamped in v1; the project that introduced it is the
+      // closest honest approximation, and it is stable across runs.
+      createdAt: since,
+      updatedAt: since,
+    };
+    if (typeof ref.year === 'number') paper.year = ref.year;
+    papers[paperId] = paper;
+    return paperId;
   };
 
   const projects: Project[] = legacy.projects.map((project) => {
@@ -94,6 +112,24 @@ function migrateV1ToV2(payload: Record<string, unknown>): Record<string, unknown
   });
 
   return { version: 2, projects, papers, selectedId: legacy.selectedId };
+}
+
+/** The metadata a legacy record carries, in a form two records can be compared by. */
+function paperFingerprint(ref: LegacyPaperRef): string {
+  return JSON.stringify([ref.title, ref.authors, ref.year ?? null]);
+}
+
+/**
+ * A free id for a record under `legacyId`: the legacy id itself for the first record under
+ * it, and a derived id for the ones split off it. Both paths keep looking while the id is
+ * taken, so a payload whose plain ids already look derived cannot make two records collide.
+ * The result depends only on the legacy id, the record's position and the traversal order,
+ * which is fixed — the same payload always produces the same ids.
+ */
+function takePaperId(legacyId: string, index: number, taken: Record<string, Paper>): string {
+  let candidate = index === 0 ? legacyId : `${legacyId}#${index}`;
+  while (taken[candidate] !== undefined) candidate = `${candidate}#`;
+  return candidate;
 }
 
 const MIGRATIONS: Record<number, MigrationStep> = { 1: migrateV1ToV2 };

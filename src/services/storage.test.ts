@@ -286,6 +286,7 @@ describe('loadProjectsWithReport', () => {
       state: EMPTY_STATE,
       issue: null,
       persisted: true,
+      recoveryCopy: 'not-needed',
     });
   });
 
@@ -296,6 +297,7 @@ describe('loadProjectsWithReport', () => {
       state: SAMPLE_STATE,
       issue: null,
       persisted: true,
+      recoveryCopy: 'not-needed',
     });
     expect(setItem).not.toHaveBeenCalled();
   });
@@ -350,7 +352,11 @@ describe('loadProjectsWithReport: migrating a Phase 0 payload', () => {
     const setItem = vi.spyOn(store, 'setItem');
     const second = loadProjectsWithReport(store);
     expect(setItem).not.toHaveBeenCalled();
-    expect(second).toStrictEqual(first);
+    expect(second.state).toStrictEqual(first.state);
+    expect(second.issue).toBeNull();
+    // The first load had to copy the original aside; the second found nothing to do.
+    expect(first.recoveryCopy).toBe('saved');
+    expect(second.recoveryCopy).toBe('not-needed');
   });
 
   it('is deterministic: two stores seeded alike end up byte-identical', () => {
@@ -414,5 +420,90 @@ describe('loadProjectsWithReport: payloads this build cannot use', () => {
     expect(issue?.kind).toBe('invalid');
     expect(store.data.get(PROJECTS_STORAGE_KEY)).toBe(raw);
     expect(store.data.get(PROJECTS_CORRUPT_KEY)).toBe(raw);
+  });
+});
+
+describe('loadProjectsWithReport: never destroys an earlier copy', () => {
+  const SLOT_2 = `${PROJECTS_CORRUPT_KEY}.2`;
+  const SLOT_3 = `${PROJECTS_CORRUPT_KEY}.3`;
+  const BACKUP_2 = `${PROJECTS_BACKUP_KEY}.2`;
+
+  it('does not overwrite a quarantine slot that holds different content', () => {
+    const store = createMemoryStore({
+      [PROJECTS_CORRUPT_KEY]: 'the older payload',
+      [PROJECTS_STORAGE_KEY]: '{oops',
+    });
+    const result = loadProjectsWithReport(store);
+    expect(store.data.get(PROJECTS_CORRUPT_KEY)).toBe('the older payload');
+    expect(store.data.get(SLOT_2)).toBe('{oops');
+    expect(result.recoveryCopy).toBe('saved');
+  });
+
+  it('does not write anything when the payload is already in a slot', () => {
+    const store = createMemoryStore({
+      [SLOT_2]: '{oops',
+      [PROJECTS_STORAGE_KEY]: '{oops',
+    });
+    const setItem = vi.spyOn(store, 'setItem');
+    const result = loadProjectsWithReport(store);
+    expect(setItem).not.toHaveBeenCalled();
+    expect(store.data.get(SLOT_2)).toBe('{oops');
+    expect(result.recoveryCopy).toBe('saved');
+  });
+
+  it('reports a failed copy, and stops, once every slot holds a different payload', () => {
+    const store = createMemoryStore({
+      [PROJECTS_CORRUPT_KEY]: 'first',
+      [SLOT_2]: 'second',
+      [SLOT_3]: 'third',
+      [PROJECTS_STORAGE_KEY]: '{oops',
+    });
+    const result = loadProjectsWithReport(store);
+    expect(result.recoveryCopy).toBe('failed');
+    expect(result.persisted).toBe(false);
+    expect(result.issue?.kind).toBe('unreadable');
+    // Nothing was overwritten, and the payload is still where it was read from.
+    expect(store.data.get(PROJECTS_CORRUPT_KEY)).toBe('first');
+    expect(store.data.get(SLOT_2)).toBe('second');
+    expect(store.data.get(SLOT_3)).toBe('third');
+    expect(store.data.get(PROJECTS_STORAGE_KEY)).toBe('{oops');
+  });
+
+  it('keeps the number of quarantine keys bounded', () => {
+    const store = createMemoryStore({ [PROJECTS_STORAGE_KEY]: 'payload 0' });
+    for (let round = 1; round <= 6; round += 1) {
+      store.data.set(PROJECTS_STORAGE_KEY, `payload ${String(round)}`);
+      loadProjectsWithReport(store);
+    }
+    const keys = [...store.data.keys()].filter((key) => key.startsWith(PROJECTS_CORRUPT_KEY));
+    expect(keys.sort()).toStrictEqual([PROJECTS_CORRUPT_KEY, SLOT_2, SLOT_3]);
+    // The oldest payload is the one that survives, not the newest.
+    expect(store.data.get(PROJECTS_CORRUPT_KEY)).toBe('payload 1');
+  });
+
+  it('does not overwrite an existing backup when it migrates a payload', () => {
+    const store = createMemoryStore({
+      [PROJECTS_BACKUP_KEY]: 'an earlier original',
+      [PROJECTS_STORAGE_KEY]: PHASE_0_PAYLOAD,
+    });
+    const result = loadProjectsWithReport(store);
+    expect(result.recoveryCopy).toBe('saved');
+    expect(store.data.get(PROJECTS_BACKUP_KEY)).toBe('an earlier original');
+    expect(store.data.get(BACKUP_2)).toBe(PHASE_0_PAYLOAD);
+  });
+
+  it('does not upgrade a payload whose original cannot be copied aside', () => {
+    const store = createMemoryStore({
+      [PROJECTS_BACKUP_KEY]: 'earlier original',
+      [BACKUP_2]: 'another original',
+      [`${PROJECTS_BACKUP_KEY}.3`]: 'a third original',
+      [PROJECTS_STORAGE_KEY]: PHASE_0_PAYLOAD,
+    });
+    const result = loadProjectsWithReport(store);
+    expect(result.recoveryCopy).toBe('failed');
+    expect(result.persisted).toBe(false);
+    // The v1 payload is still readable, and still exactly where it was.
+    expect(store.data.get(PROJECTS_STORAGE_KEY)).toBe(PHASE_0_PAYLOAD);
+    expect(result.state.projects).toHaveLength(2);
   });
 });

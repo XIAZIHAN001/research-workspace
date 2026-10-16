@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   authorCredit,
   createPaper,
-  findPaperByExternalId,
   normalizeArxivId,
   normalizeDoi,
+  resolvePaperIdentity,
   type Paper,
 } from './papers';
 
@@ -132,43 +132,82 @@ describe('createPaper', () => {
   });
 });
 
-describe('findPaperByExternalId', () => {
-  const registry: Record<string, Paper> = {
-    a: paper('a', { title: 'Attention', doi: '10.1000/abc' }),
-    b: paper('b', { title: 'Attention', arxivId: '2401.12345' }),
-    c: paper('c', { title: 'Attention' }),
-  };
+describe('resolvePaperIdentity', () => {
+  const byDoi = paper('a', { title: 'Attention', doi: '10.1000/abc' });
+  const byArxiv = paper('b', { title: 'Attention', arxivId: '2401.12345' });
+  const byNothing = paper('c', { title: 'Attention' });
+  const registry: Record<string, Paper> = { a: byDoi, b: byArxiv, c: byNothing };
 
-  it('finds a paper by DOI however the DOI was written', () => {
-    expect(findPaperByExternalId(registry, { doi: 'https://doi.org/10.1000/ABC' })?.id).toBe('a');
-  });
-
-  it('finds a paper by arXiv id however the id was written', () => {
-    expect(findPaperByExternalId(registry, { arxivId: 'arXiv:2401.12345v3' })?.id).toBe('b');
-  });
-
-  it('prefers the DOI match when both identifiers point at different papers', () => {
-    const found = findPaperByExternalId(registry, {
-      doi: '10.1000/abc',
-      arxivId: '2401.12345',
+  it('matches a paper by DOI however the DOI was written', () => {
+    expect(resolvePaperIdentity(registry, { doi: 'https://doi.org/10.1000/ABC' })).toStrictEqual({
+      kind: 'match',
+      paper: byDoi,
     });
-    expect(found?.id).toBe('a');
+  });
+
+  it('matches a paper by arXiv id however the id was written', () => {
+    expect(resolvePaperIdentity(registry, { arxivId: 'arXiv:2401.12345v3' })).toStrictEqual({
+      kind: 'match',
+      paper: byArxiv,
+    });
+  });
+
+  it('matches when both identifiers point at the same paper', () => {
+    const both = paper('both', { doi: '10.1000/abc', arxivId: '2401.12345' });
+    const resolved = resolvePaperIdentity(
+      { both },
+      {
+        doi: 'https://doi.org/10.1000/ABC',
+        arxivId: 'arXiv:2401.12345v2',
+      },
+    );
+    expect(resolved).toStrictEqual({ kind: 'match', paper: both });
+  });
+
+  it('reports a conflict when the identifiers point at different papers', () => {
+    const resolved = resolvePaperIdentity(registry, { doi: '10.1000/abc', arxivId: '2401.12345' });
+    expect(resolved).toStrictEqual({ kind: 'conflict', papers: [byDoi, byArxiv] });
+  });
+
+  it('reports a conflict when the registry files one identifier under two papers', () => {
+    const first = paper('one', { doi: '10.1000/abc' });
+    const second = paper('two', { doi: '10.1000/abc' });
+    expect(resolvePaperIdentity({ first, second }, { doi: '10.1000/abc' })).toStrictEqual({
+      kind: 'conflict',
+      papers: [first, second],
+    });
+  });
+
+  it('matches when only one of the two identifiers is known', () => {
+    expect(
+      resolvePaperIdentity(registry, { doi: '10.1000/abc', arxivId: '2401.99999' }),
+    ).toStrictEqual({ kind: 'match', paper: byDoi });
+    expect(
+      resolvePaperIdentity(registry, { doi: '10.9999/zzz', arxivId: '2401.12345' }),
+    ).toStrictEqual({ kind: 'match', paper: byArxiv });
   });
 
   it('matches nothing without a usable identifier, however familiar the title is', () => {
-    expect(findPaperByExternalId(registry, {})).toBeNull();
-    expect(findPaperByExternalId(registry, { doi: '  ', arxivId: null })).toBeNull();
+    expect(resolvePaperIdentity(registry, {})).toStrictEqual({ kind: 'none' });
+    expect(resolvePaperIdentity(registry, { doi: '  ', arxivId: null })).toStrictEqual({
+      kind: 'none',
+    });
   });
 
   it('matches nothing when the identifiers are unknown', () => {
-    expect(findPaperByExternalId(registry, { doi: '10.9999/zzz' })).toBeNull();
-    expect(findPaperByExternalId(registry, { arxivId: '2401.99999' })).toBeNull();
+    expect(resolvePaperIdentity(registry, { doi: '10.9999/zzz' })).toStrictEqual({ kind: 'none' });
+    expect(resolvePaperIdentity(registry, { arxivId: '2401.99999' })).toStrictEqual({
+      kind: 'none',
+    });
   });
 
-  it('is not fooled by a paper that only shares the identifier of a different kind', () => {
-    // `c` has neither identifier, so nothing can ever match it automatically.
-    const found = findPaperByExternalId(registry, { doi: '10.1000/abc', arxivId: '2401.12345' });
-    expect(found?.id).not.toBe('c');
+  it('never matches a paper that carries no identifier at all', () => {
+    // `byNothing` shares the other two papers' title but has nothing to be identified by.
+    const resolved = resolvePaperIdentity(registry, { doi: '10.1000/abc', arxivId: '2401.12345' });
+    expect(resolved.kind === 'conflict' && resolved.papers.map((p) => p.id)).toStrictEqual([
+      'a',
+      'b',
+    ]);
   });
 });
 

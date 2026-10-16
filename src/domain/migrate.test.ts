@@ -306,3 +306,136 @@ describe('migrateStoredPayload: a broken migration table', () => {
     expect(outcome.ok === false && outcome.detail).toContain('invalid state');
   });
 });
+
+describe('migrateStoredPayload: a legacy id is not proof of identity', () => {
+  const migrated = (raw: string): ProjectsState => {
+    const outcome = migrateStoredPayload(raw);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    return outcome.state;
+  };
+
+  /** Two projects whose core paper records carry the same id but different metadata. */
+  function sharedIdPayload(first: Raw, second: Raw): string {
+    return legacyPayload([
+      legacyProject('a', { corePaper: legacyPaper('shared', first) }),
+      legacyProject('b', { corePaper: legacyPaper('shared', second) }),
+    ]);
+  }
+
+  it('keeps records that share an id but disagree on the title apart', () => {
+    const state = migrated(sharedIdPayload({ title: 'Attention' }, { title: 'ResNet' }));
+    expect(Object.keys(state.papers)).toStrictEqual(['shared', 'shared#1']);
+    expect(state.papers.shared?.title).toBe('Attention');
+    expect(state.papers['shared#1']?.title).toBe('ResNet');
+    expect(state.projects.map((p) => p.corePaperId)).toStrictEqual(['shared', 'shared#1']);
+  });
+
+  it.each([
+    { label: 'differing authors', second: { authors: ['Kaiming He'] } },
+    { label: 'a differing year', second: { year: 2017 } },
+    { label: 'an added year', second: { year: 0 } },
+  ])('splits records that share an id and title but have $label', ({ second }) => {
+    const state = migrated(
+      sharedIdPayload({ title: 'Attention' }, { title: 'Attention', ...second }),
+    );
+    expect(Object.keys(state.papers)).toStrictEqual(['shared', 'shared#1']);
+  });
+
+  it('splits records whose authors differ only by one extra name', () => {
+    const state = migrated(
+      sharedIdPayload(
+        { title: 'Attention', authors: ['Ashish Vaswani'] },
+        { title: 'Attention', authors: ['Ashish Vaswani', 'Noam Shazeer'] },
+      ),
+    );
+    expect(Object.keys(state.papers)).toHaveLength(2);
+  });
+
+  it('keeps exact duplicates as one paper, as it always did', () => {
+    const state = migrated(
+      sharedIdPayload(
+        { title: 'Attention', authors: ['Ashish Vaswani'], year: 2017 },
+        { title: 'Attention', authors: ['Ashish Vaswani'], year: 2017 },
+      ),
+    );
+    expect(Object.keys(state.papers)).toStrictEqual(['shared']);
+    expect(state.projects.map((p) => p.corePaperId)).toStrictEqual(['shared', 'shared']);
+  });
+
+  it('never loses a record: every split paper keeps its own metadata and a reference', () => {
+    const state = migrated(
+      sharedIdPayload({ title: 'Attention', authors: ['A'] }, { title: 'BERT', year: 2018 }),
+    );
+    expect(
+      Object.values(state.papers).map((paper) => [paper.title, paper.authors, paper.year]),
+    ).toStrictEqual([
+      ['Attention', ['A'], undefined],
+      ['BERT', [], 2018],
+    ]);
+    for (const project of state.projects) {
+      expect(state.papers[project.corePaperId]).toBeDefined();
+    }
+  });
+
+  it('gives split records ids that do not collide with a plain legacy id', () => {
+    // The payload already uses `shared#1` as an id of its own, so the record split off
+    // `shared` must not take it. Which record gives way is fixed by traversal order, but
+    // what matters is that no id is shared and no paper is lost.
+    const raw = legacyPayload([
+      legacyProject('a', { corePaper: legacyPaper('shared', { title: 'Attention' }) }),
+      legacyProject('b', { corePaper: legacyPaper('shared', { title: 'ResNet' }) }),
+      legacyProject('c', { corePaper: legacyPaper('shared#1', { title: 'BERT' }) }),
+    ]);
+    const state = migrated(raw);
+
+    const ids = Object.keys(state.papers);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(3);
+    expect(
+      Object.values(state.papers)
+        .map((paper) => paper.title)
+        .sort(),
+    ).toStrictEqual(['Attention', 'BERT', 'ResNet']);
+    expect(state.projects.map((p) => p.corePaperId)).toStrictEqual(ids);
+    for (const project of state.projects) {
+      expect(state.papers[project.corePaperId]).toBeDefined();
+    }
+    // Deterministic: the same payload always assigns the same ids to the same titles.
+    const titlesById = (s: ProjectsState): [string, string][] =>
+      s.projects.map((p) => [p.corePaperId, s.papers[p.corePaperId]?.title ?? '']);
+    expect(titlesById(migrated(raw))).toStrictEqual(titlesById(state));
+  });
+
+  it('stays deterministic and idempotent when it splits records', () => {
+    const raw = sharedIdPayload({ title: 'Attention' }, { title: 'ResNet' });
+    const first = migrateStoredPayload(raw);
+    expect(migrateStoredPayload(raw)).toStrictEqual(first);
+    if (!first.ok) throw new Error(first.detail);
+    expect(migrateStoredPayload(serializeProjects(first.state))).toStrictEqual({
+      ok: true,
+      state: first.state,
+      from: SCHEMA_VERSION,
+    });
+  });
+
+  it('still migrates a repeated reference to the same record as a single paper', () => {
+    const raw = legacyPayload([
+      legacyProject('a', {
+        corePaper: legacyPaper('shared', { title: 'Attention' }),
+        relatedPapers: [legacyPaper('shared', { title: 'Attention' })],
+      }),
+    ]);
+    const state = migrated(raw);
+    expect(Object.keys(state.papers)).toStrictEqual(['shared']);
+    expect(state.projects[0]?.relatedPaperIds).toStrictEqual([]);
+  });
+
+  it('keeps papers that share a title but were never the same id apart, as before', () => {
+    const raw = legacyPayload([
+      legacyProject('a', { corePaper: legacyPaper('pa', { title: 'Same Title' }) }),
+      legacyProject('b', { corePaper: legacyPaper('pb', { title: 'Same Title' }) }),
+    ]);
+    const state = migrated(raw);
+    expect(Object.keys(state.papers)).toStrictEqual(['pa', 'pb']);
+  });
+});

@@ -27,6 +27,11 @@ export interface ProjectsStore {
 
 export function createProjectsStore(storage: KeyValueStore | null = defaultStore()): ProjectsStore {
   const loaded = loadProjectsWithReport(storage);
+  // When the payload behind `issue` could not be copied aside, the live key holds the only
+  // copy of it. The session keeps working in memory, but writing over that copy would
+  // destroy data the user may still recover, so persistence is off until a reload clears
+  // the condition (for example after freeing storage space).
+  const writesBlocked = loaded.recoveryCopy === 'failed';
   let snapshot: ProjectsSnapshot = {
     state: loaded.state,
     persisted: loaded.persisted,
@@ -47,7 +52,7 @@ export function createProjectsStore(storage: KeyValueStore | null = defaultStore
       if (state === snapshot.state) return;
       snapshot = {
         state,
-        persisted: saveProjects(state, storage),
+        persisted: writesBlocked ? false : saveProjects(state, storage),
         issue: snapshot.issue,
       };
       listeners.forEach((notify) => {

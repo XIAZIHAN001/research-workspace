@@ -107,29 +107,60 @@ export function createPaper(input: PaperInput, makeId: () => string, now: number
   return paper;
 }
 
+/** What resolving a set of external identifiers against the registry found. */
+export type PaperIdentityResolution =
+  /** No usable identifier: nothing may be matched automatically. */
+  | { kind: 'none' }
+  /** Every usable identifier points at the same single paper. */
+  | { kind: 'match'; paper: Paper }
+  /**
+   * The identifiers disagree — one points at paper A, another at paper B, or a single
+   * identifier matches several records. Never resolved by picking a winner.
+   */
+  | { kind: 'conflict'; papers: Paper[] };
+
+/** Result of asking a project to reference a paper. */
+export type PaperReferenceOutcome =
+  /** The paper is linked: either an existing record was reused, or a new one was created. */
+  | { status: 'linked'; paper: Paper }
+  /** The identifiers point at more than one existing paper. Nothing was linked or created. */
+  | { status: 'conflict'; papers: Paper[] }
+  /** The input cannot describe a paper (a blank title). */
+  | { status: 'invalid' };
+
 /**
- * Finds the paper a set of external identifiers points at, or null when none does.
+ * Resolves external identifiers to the paper they identify.
  *
  * This is the only automatic identity match. A missing identifier matches nothing, and a
  * title is never consulted: two papers that share a title stay two papers until something
  * reliable (DOI, arXiv id, or later a PDF content hash) says otherwise.
+ *
+ * Identifiers that point at different papers are reported as a conflict rather than
+ * resolved by precedence — silently preferring the DOI would attach a project to the wrong
+ * paper, and merging the two records would invent an identity relationship the data does
+ * not support.
  */
-export function findPaperByExternalId(
+export function resolvePaperIdentity(
   papers: Record<string, Paper>,
   ids: ExternalIds,
-): Paper | null {
+): PaperIdentityResolution {
   const registered = Object.values(papers);
+  const matches: Paper[] = [];
+  const addMatches = (matchesPaper: (paper: Paper) => boolean): void => {
+    for (const paper of registered) {
+      if (matchesPaper(paper) && !matches.some((seen) => seen.id === paper.id)) matches.push(paper);
+    }
+  };
+
   const doi = ids.doi == null ? null : normalizeDoi(ids.doi);
-  if (doi !== null) {
-    const byDoi = registered.find((paper) => paper.doi === doi);
-    if (byDoi !== undefined) return byDoi;
-  }
+  if (doi !== null) addMatches((paper) => paper.doi === doi);
   const arxivId = ids.arxivId == null ? null : normalizeArxivId(ids.arxivId);
-  if (arxivId !== null) {
-    const byArxiv = registered.find((paper) => paper.arxivId === arxivId);
-    if (byArxiv !== undefined) return byArxiv;
-  }
-  return null;
+  if (arxivId !== null) addMatches((paper) => paper.arxivId === arxivId);
+
+  const [only, ...others] = matches;
+  if (only === undefined) return { kind: 'none' };
+  if (others.length === 0) return { kind: 'match', paper: only };
+  return { kind: 'conflict', papers: matches };
 }
 
 /** Short author credit for dense UI: "Vaswani 等", "He", or null when unknown. */

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PROJECTS_CORRUPT_KEY, PROJECTS_STORAGE_KEY } from '../app/config';
+import { SCHEMA_VERSION } from '../domain/migrate';
 import type { Paper } from '../domain/papers';
 import type { Project } from '../domain/project';
 import { EMPTY_STATE, type ProjectsState } from '../domain/projectsState';
@@ -348,5 +349,43 @@ describe('createProjectsStore: persistence failures', () => {
     const { state, persisted } = createProjectsStore(storage).getSnapshot();
     expect(persisted).toBe(false);
     expect(state.projects).toHaveLength(1);
+  });
+});
+
+describe('createProjectsStore: protecting a payload it could not copy aside', () => {
+  /** Every quarantine slot already holds a different payload, so nothing can be copied. */
+  function storeWithFullQuarantine(): MemoryStore {
+    return createMemoryStore({
+      [CORRUPT_KEY]: 'first',
+      [`${CORRUPT_KEY}.2`]: 'second',
+      [`${CORRUPT_KEY}.3`]: 'third',
+      [PROJECTS_STORAGE_KEY]: '{oops',
+    });
+  }
+
+  it('keeps working in memory but refuses to write over the only copy', () => {
+    const storage = storeWithFullQuarantine();
+    const store = createProjectsStore(storage);
+    expect(store.getSnapshot().issue?.kind).toBe('unreadable');
+
+    store.dispatch({ type: 'add', project: makeProject('a'), paper: makePaper('paper-a') });
+
+    expect(idsOf(store.getSnapshot())).toStrictEqual(['a']);
+    expect(store.getSnapshot().persisted).toBe(false);
+    expect(storage.data.get(PROJECTS_STORAGE_KEY)).toBe('{oops');
+  });
+
+  it('writes again as soon as the payload has been copied aside', () => {
+    const storage = createMemoryStore({ [PROJECTS_STORAGE_KEY]: '{oops' });
+    const store = createProjectsStore(storage);
+
+    store.dispatch({ type: 'add', project: makeProject('a'), paper: makePaper('paper-a') });
+
+    expect(store.getSnapshot().persisted).toBe(true);
+    expect(JSON.parse(storage.data.get(PROJECTS_STORAGE_KEY) ?? 'null')).toHaveProperty(
+      'version',
+      SCHEMA_VERSION,
+    );
+    expect(storage.data.get(CORRUPT_KEY)).toBe('{oops');
   });
 });

@@ -11,6 +11,7 @@ import { useTheme } from '../features/theme/useTheme';
 import type { Project } from '../domain/project';
 import { daysBetween } from '../domain/time';
 import type { ProjectsStore } from '../services/projectsStore';
+import type { LoadIssue } from '../services/storage';
 import {
   mockWelcomeProvider,
   type WelcomeContext,
@@ -18,6 +19,7 @@ import {
 } from '../services/welcome';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useNow } from '../ui/useNow';
+import { PROJECTS_BACKUP_KEY, PROJECTS_CORRUPT_KEY } from './config';
 import { useSidebar } from './useSidebar';
 
 interface AppProps {
@@ -27,8 +29,27 @@ interface AppProps {
 
 type View = 'home' | 'project';
 
+/**
+ * Plain-language notice for a payload that could not be loaded. It names the key the
+ * original was copied to, because without it the user has no way to find the data again —
+ * but it never shows the payload itself or any internal detail.
+ */
+function loadIssueNotice(issue: LoadIssue): string {
+  const reason: Record<LoadIssue['kind'], string> = {
+    unreadable: '本地保存的项目数据已损坏，无法读取。',
+    invalid: '本地保存的项目数据格式不正确，无法读取。',
+    'unsupported-version': '本地保存的项目数据由更新版本的应用写入，当前版本读不了。',
+    'migration-failed': '本地保存的项目数据升级失败，已停止使用它。',
+  };
+  const kept =
+    issue.kind === 'unsupported-version' || issue.kind === 'migration-failed'
+      ? `原始数据已完整备份在本机（${PROJECTS_BACKUP_KEY}），没有被覆盖或删除。`
+      : `原始数据仍保留在本机（隔离副本 ${PROJECTS_CORRUPT_KEY}），没有被删除。`;
+  return `${reason[issue.kind]}${kept}在确认数据恢复之前，请不要清理浏览器数据。`;
+}
+
 export function App({ store, welcomeProvider = mockWelcomeProvider }: AppProps) {
-  const { projects, papers, selected, persisted, actions } = useProjects(store);
+  const { projects, papers, selected, persisted, issue, actions } = useProjects(store);
   const theme = useTheme();
   const sidebar = useSidebar();
   const avatar = useAvatar();
@@ -148,6 +169,12 @@ export function App({ store, welcomeProvider = mockWelcomeProvider }: AppProps) 
           >
             <PanelLeftOpen size={16} aria-hidden="true" />
           </button>
+        )}
+
+        {issue !== null && (
+          <p className="banner" role="status">
+            {loadIssueNotice(issue)}
+          </p>
         )}
 
         {!persisted && (

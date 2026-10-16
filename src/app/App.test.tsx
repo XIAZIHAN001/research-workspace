@@ -629,3 +629,67 @@ describe('data written by the earlier build', () => {
     expect(Object.keys(stored.papers as Record<string, unknown>)).toHaveLength(2);
   });
 });
+
+describe('notice when stored data cannot be loaded', () => {
+  const CORRUPT_TEXT = /本地保存的项目数据已损坏/;
+  const NEWER_TEXT = /更新版本的应用写入/;
+
+  it('says the original was set aside rather than deleted', () => {
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, '{oops');
+    setup();
+
+    const notice = screen.getByText(CORRUPT_TEXT);
+    expect(notice.textContent).toContain('没有被删除');
+    expect(notice.textContent).toContain('rw.projects.corrupt');
+    expect(screen.getByText(/请不要清理浏览器数据/)).toBeInTheDocument();
+  });
+
+  it('shows no raw payload and no internal error text', () => {
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, '{oops');
+    const { container } = setup();
+
+    expect(container.textContent).not.toContain('{oops');
+    expect(container.textContent).not.toMatch(/SyntaxError|Unexpected token|Unexpected end/);
+  });
+
+  it('explains a payload written by a newer version, and where its copy is', () => {
+    window.localStorage.setItem(
+      PROJECTS_STORAGE_KEY,
+      JSON.stringify({ version: 99, projects: [], papers: {}, selectedId: null }),
+    );
+    setup();
+
+    const notice = screen.getByText(NEWER_TEXT);
+    expect(notice.textContent).toContain('rw.projects.backup');
+    expect(notice.textContent).toContain('没有被覆盖或删除');
+  });
+
+  it('starts from an empty workspace the user can still use', async () => {
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, '{oops');
+    const { user } = setup();
+
+    expect(screen.getByText(/还没有项目/)).toBeInTheDocument();
+    await createProject(user, 'BERT');
+    expect(await screen.findByRole('heading', { level: 1, name: 'BERT' })).toBeInTheDocument();
+    // The unreadable payload is still quarantined, and the new project was saved normally.
+    expect(window.localStorage.getItem(`${PROJECTS_STORAGE_KEY}.corrupt`)).toBe('{oops');
+    expect(loadProjects().projects.map((p) => p.name)).toStrictEqual(['BERT']);
+  });
+
+  it('says nothing when the stored payload loads normally', () => {
+    seedProjects(2);
+    setup();
+
+    expect(screen.queryByText(CORRUPT_TEXT)).toBeNull();
+    expect(screen.queryByText(NEWER_TEXT)).toBeNull();
+  });
+
+  it('says nothing after a normal upgrade from the earlier shape', () => {
+    seedPhase0Project();
+    setup();
+
+    expect(screen.queryByText(CORRUPT_TEXT)).toBeNull();
+    expect(screen.queryByText(NEWER_TEXT)).toBeNull();
+    expect(rowButton('Attention Is All You Need')).toBeInTheDocument();
+  });
+});

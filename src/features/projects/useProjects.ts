@@ -1,9 +1,9 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import {
   createPaper,
-  findPaperByExternalId,
-  type Paper,
+  resolvePaperIdentity,
   type PaperInput,
+  type PaperReferenceOutcome,
 } from '../../domain/papers';
 import { createProject, type Project } from '../../domain/project';
 import { makeId } from '../../services/ids';
@@ -28,18 +28,22 @@ export function useProjects(store: ProjectsStore) {
        *
        * A DOI or arXiv id that matches a paper already in the knowledge base reuses that
        * paper (and its future notes); otherwise a new one is created. Titles are never
-       * used to decide identity. Returns the paper that is linked, or null when the input
-       * has no usable title.
+       * used to decide identity. Identifiers that point at different existing papers are
+       * reported as a conflict and change nothing — the caller decides, we never guess.
        */
-      referencePaper(projectId: string, input: PaperInput): Paper | null {
+      referencePaper(projectId: string, input: PaperInput): PaperReferenceOutcome {
         // Read the registry now rather than closing over a render-time copy: the store is
         // the single source of truth, and an action must never link against stale papers.
         const { papers } = store.getSnapshot().state;
+        const identity = resolvePaperIdentity(papers, input);
+        if (identity.kind === 'conflict') return { status: 'conflict', papers: identity.papers };
+
         const paper =
-          findPaperByExternalId(papers, input) ?? createPaper(input, makeId, Date.now());
-        if (paper === null) return null;
+          identity.kind === 'match' ? identity.paper : createPaper(input, makeId, Date.now());
+        if (paper === null) return { status: 'invalid' };
+
         store.dispatch({ type: 'linkPaper', projectId, paper, now: Date.now() });
-        return paper;
+        return { status: 'linked', paper };
       },
       unlinkPaper(projectId: string, paperId: string): void {
         store.dispatch({ type: 'unlinkPaper', projectId, paperId, now: Date.now() });
