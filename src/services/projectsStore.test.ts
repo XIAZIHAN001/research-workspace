@@ -137,7 +137,7 @@ describe('createProjectsStore: schema migration on load', () => {
     const storage = createMemoryStore({ [PROJECTS_STORAGE_KEY]: PHASE_0_PAYLOAD });
     createProjectsStore(storage);
     const written = JSON.parse(storage.data.get(PROJECTS_STORAGE_KEY) ?? 'null');
-    expect(written.version).toBe(2);
+    expect(written.version).toBe(SCHEMA_VERSION);
     expect(Object.keys(written.papers).sort()).toStrictEqual(['c1', 'r1']);
   });
 

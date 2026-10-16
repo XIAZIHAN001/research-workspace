@@ -483,3 +483,69 @@ describe('parseLegacyState (schema 1)', () => {
     });
   });
 });
+
+describe('parseProjectsState: PDF binding and reading position', () => {
+  const PDF = {
+    sha256: 'a'.repeat(64),
+    name: 'attention.pdf',
+    bytes: 1024,
+    pageCount: 9,
+    addedAt: 5,
+  };
+
+  function stateWithPaperFields(fields: Raw): Raw {
+    const papers = { 'core-a': rawPaper('core-a', fields) };
+    return rawState([rawProject('a')], papers, 'a');
+  }
+
+  it('keeps a well-formed PDF binding and reading position', () => {
+    const parsed = parseProjectsState(
+      stateWithPaperFields({ pdf: PDF, reading: { page: 3, updatedAt: 7 } }),
+    );
+    expect(parsed?.papers['core-a']).toMatchObject({
+      pdf: PDF,
+      reading: { page: 3, updatedAt: 7 },
+    });
+  });
+
+  it('accepts a binding whose page count was never recorded', () => {
+    const parsed = parseProjectsState(stateWithPaperFields({ pdf: { ...PDF, pageCount: null } }));
+    expect(parsed?.papers['core-a']?.pdf).toStrictEqual({ ...PDF, pageCount: null });
+  });
+
+  it('leaves a paper without a PDF or a position alone', () => {
+    const parsed = parseProjectsState(stateWithPaperFields({}));
+    expect(parsed?.papers['core-a']).toStrictEqual({
+      id: 'core-a',
+      title: 'Paper core-a',
+      authors: [],
+      createdAt: 1,
+      updatedAt: 2,
+    });
+  });
+
+  it.each([
+    { label: 'a hash that is not a SHA-256', pdf: { ...PDF, sha256: 'nope' } },
+    { label: 'an uppercase hash', pdf: { ...PDF, sha256: 'A'.repeat(64) } },
+    { label: 'a missing name', pdf: { ...PDF, name: '' } },
+    { label: 'a negative size', pdf: { ...PDF, bytes: -1 } },
+    { label: 'a page count of the wrong type', pdf: { ...PDF, pageCount: 'nine' } },
+    { label: 'a missing timestamp', pdf: { ...PDF, addedAt: undefined } },
+    { label: 'something that is not an object', pdf: 'attention.pdf' },
+  ])('drops a PDF binding with $label rather than failing the payload', ({ pdf }) => {
+    const parsed = parseProjectsState(stateWithPaperFields({ pdf }));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.papers['core-a']).not.toHaveProperty('pdf');
+  });
+
+  it.each([
+    { label: 'page zero', reading: { page: 0, updatedAt: 1 } },
+    { label: 'a fractional page', reading: { page: 1.5, updatedAt: 1 } },
+    { label: 'a missing page', reading: { updatedAt: 1 } },
+    { label: 'a missing timestamp', reading: { page: 2 } },
+    { label: 'a string page', reading: { page: '2', updatedAt: 1 } },
+  ])('drops a reading position with $label', ({ reading }) => {
+    const parsed = parseProjectsState(stateWithPaperFields({ reading }));
+    expect(parsed?.papers['core-a']).not.toHaveProperty('reading');
+  });
+});

@@ -544,3 +544,104 @@ describe('projectsReducer', () => {
     });
   });
 });
+
+describe('projectsReducer: updatePaper', () => {
+  const PDF = {
+    sha256: 'e'.repeat(64),
+    name: 'attention.pdf',
+    bytes: 20,
+    pageCount: 3,
+    addedAt: 9,
+  };
+
+  function twoPapers(): ProjectsState {
+    const state = makeState(['a']);
+    return {
+      ...state,
+      papers: {
+        ...state.papers,
+        other: makePaper('other', { title: 'BERT', doi: '10.1000/bert' }),
+      },
+    };
+  }
+
+  it('replaces one paper and leaves everything else alone', () => {
+    const state = twoPapers();
+    const next = projectsReducer(state, {
+      type: 'updatePaper',
+      paperId: 'paper-a',
+      edit: { title: 'Attention Is All You Need', pdf: PDF },
+      now: 50,
+    });
+    expect(next.papers['paper-a']).toMatchObject({
+      id: 'paper-a',
+      title: 'Attention Is All You Need',
+      pdf: PDF,
+      updatedAt: 50,
+    });
+    expect(next.papers.other).toBe(state.papers.other);
+    expect(next.projects).toBe(state.projects);
+    expect(next.selectedId).toBe(state.selectedId);
+  });
+
+  it('records where reading stopped', () => {
+    const next = projectsReducer(twoPapers(), {
+      type: 'updatePaper',
+      paperId: 'paper-a',
+      edit: { reading: { page: 7, updatedAt: 60 } },
+      now: 60,
+    });
+    expect(next.papers['paper-a']?.reading).toStrictEqual({ page: 7, updatedAt: 60 });
+  });
+
+  it('refuses an identifier another paper owns, changing nothing at all', () => {
+    const state = twoPapers();
+    const next = projectsReducer(state, {
+      type: 'updatePaper',
+      paperId: 'paper-a',
+      edit: { doi: '10.1000/bert' },
+      now: 50,
+    });
+    expect(next).toBe(state);
+    expect(next.papers['paper-a']).not.toHaveProperty('doi');
+    expect(next.papers.other?.doi).toBe('10.1000/bert');
+  });
+
+  it('returns the same state for an unknown paper', () => {
+    const state = twoPapers();
+    expect(
+      projectsReducer(state, {
+        type: 'updatePaper',
+        paperId: 'ghost',
+        edit: { title: 'x' },
+        now: 1,
+      }),
+    ).toBe(state);
+  });
+
+  it('returns the same state when the edit changes nothing', () => {
+    const state = twoPapers();
+    expect(
+      projectsReducer(state, {
+        type: 'updatePaper',
+        paperId: 'paper-a',
+        edit: { title: 'Paper paper-a' },
+        now: 1,
+      }),
+    ).toBe(state);
+  });
+
+  it('does not mutate the state it is given', () => {
+    const state = deepFreeze(twoPapers());
+    const before = structuredClone(state);
+    expect(() =>
+      projectsReducer(state, {
+        type: 'updatePaper',
+        paperId: 'paper-a',
+        edit: { pdf: PDF, reading: { page: 2, updatedAt: 3 } },
+        now: 9,
+      }),
+    ).not.toThrow();
+    expect(state).toStrictEqual(before);
+  });
+});

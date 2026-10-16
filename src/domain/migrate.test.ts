@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(2);
+    expect(SCHEMA_VERSION).toBe(3);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -300,7 +300,10 @@ describe('migrateStoredPayload: a broken migration table', () => {
   });
 
   it('reports a step whose output does not validate as a migration failure', () => {
-    const outcome = migrateStoredPayload(PHASE_0, { 1: () => ({ version: 2, projects: 'nope' }) });
+    // The step claims to reach the current version, but what it produced is not a state.
+    const outcome = migrateStoredPayload(PHASE_0, {
+      1: (payload) => ({ ...payload, version: SCHEMA_VERSION, projects: 'nope' }),
+    });
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.reason).toBe('migration-failed');
     expect(outcome.ok === false && outcome.detail).toContain('invalid state');
@@ -437,5 +440,91 @@ describe('migrateStoredPayload: a legacy id is not proof of identity', () => {
     ]);
     const state = migrated(raw);
     expect(Object.keys(state.papers)).toStrictEqual(['pa', 'pb']);
+  });
+});
+
+describe('migrateStoredPayload: v2 → v3', () => {
+  const PROJECT = {
+    id: 'p1',
+    name: 'Attention',
+    corePaperId: 'pa',
+    relatedPaperIds: [],
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const PAPER_V2 = {
+    id: 'pa',
+    title: 'Attention',
+    authors: ['Ashish Vaswani'],
+    doi: '10.1000/abc',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const V2_PAYLOAD = JSON.stringify({
+    version: 2,
+    projects: [PROJECT],
+    papers: { pa: PAPER_V2 },
+    selectedId: 'p1',
+  });
+
+  it('bumps the version and changes nothing else', () => {
+    const outcome = migrateStoredPayload(V2_PAYLOAD);
+    expect(outcome.ok && outcome.from).toBe(2);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state).toStrictEqual({
+      projects: [PROJECT],
+      papers: { pa: PAPER_V2 },
+      selectedId: 'p1',
+    });
+  });
+
+  it('is idempotent: the payload it writes is already current', () => {
+    const migrated = migrateStoredPayload(V2_PAYLOAD);
+    if (!migrated.ok) throw new Error(migrated.detail);
+    expect(migrateStoredPayload(serializeProjects(migrated.state))).toStrictEqual({
+      ok: true,
+      state: migrated.state,
+      from: SCHEMA_VERSION,
+    });
+  });
+
+  it('keeps a PDF binding and a reading position already present', () => {
+    const pdf = {
+      sha256: 'a'.repeat(64),
+      name: 'attention.pdf',
+      bytes: 12,
+      pageCount: 9,
+      addedAt: 5,
+    };
+    const raw = JSON.stringify({
+      version: 2,
+      projects: [PROJECT],
+      papers: { pa: { ...PAPER_V2, pdf, reading: { page: 3, updatedAt: 8 } } },
+      selectedId: 'p1',
+    });
+    const outcome = migrateStoredPayload(raw);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.papers.pa).toStrictEqual({
+      ...PAPER_V2,
+      pdf,
+      reading: { page: 3, updatedAt: 8 },
+    });
+  });
+
+  it('reports a payload that claims v2 but is not one as invalid', () => {
+    const outcome = migrateStoredPayload('{"version":2,"projects":"nope"}');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toBe('invalid');
+  });
+
+  it('reports a v4 payload as an unsupported version', () => {
+    const outcome = migrateStoredPayload(
+      JSON.stringify({ version: 4, projects: [], papers: {}, selectedId: null }),
+    );
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toBe('unsupported-version');
+    expect(outcome.ok === false && outcome.reason === 'unsupported-version' && outcome.found).toBe(
+      4,
+    );
   });
 });

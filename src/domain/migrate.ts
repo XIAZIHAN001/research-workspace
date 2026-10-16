@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -132,8 +132,21 @@ function takePaperId(legacyId: string, index: number, taken: Record<string, Pape
   return candidate;
 }
 
-const MIGRATIONS: Record<number, MigrationStep> = { 1: migrateV1ToV2 };
+/**
+ * v2 → v3 added two optional paper fields: the local PDF binding (`Paper.pdf`) and the
+ * reading position (`Paper.reading`). Nothing needs rewriting — a v2 payload already
+ * satisfies the v3 shape — but the version is still bumped, so an older build refuses the
+ * file (backing it up and leaving it alone) instead of quietly dropping the PDF binding on
+ * its next write.
+ */
+function migrateV2ToV3(payload: Record<string, unknown>): Record<string, unknown> | null {
+  // Validated first so a payload that is not really v2 is reported as bad data (`invalid`)
+  // rather than as a migration bug.
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 3 };
+}
 
+const MIGRATIONS: Record<number, MigrationStep> = { 1: migrateV1ToV2, 2: migrateV2ToV3 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {
   return JSON.stringify({

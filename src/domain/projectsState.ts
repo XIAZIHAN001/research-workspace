@@ -1,5 +1,5 @@
 import { normalizeName } from './normalize';
-import type { Paper } from './papers';
+import { applyPaperEdit, type Paper, type PaperEdit } from './papers';
 import type { Project } from './project';
 
 export interface ProjectsState {
@@ -23,6 +23,12 @@ export type ProjectsAction =
   /** Links a paper to a project. `paper` is registered when it is not known yet. */
   | { type: 'linkPaper'; projectId: string; paper: Paper; now: number }
   | { type: 'unlinkPaper'; projectId: string; paperId: string; now: number }
+  /**
+   * Changes one paper's own metadata, PDF binding or reading position. Never creates,
+   * merges or deletes anything, and refuses an edit that would take over an identifier
+   * another paper already owns.
+   */
+  | { type: 'updatePaper'; paperId: string; edit: PaperEdit; now: number }
   | { type: 'rename'; id: string; name: string; now: number }
   | { type: 'remove'; id: string }
   | { type: 'select'; id: string };
@@ -84,6 +90,14 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
             : p,
         ),
       };
+    }
+
+    case 'updatePaper': {
+      const result = applyPaperEdit(state.papers, action.paperId, action.edit, action.now);
+      // A refused edit (unknown paper, identifier owned by someone else) changes nothing at
+      // all: the caller has already been told why, and the registry stays as it was.
+      if (!result.ok || result.paper === state.papers[action.paperId]) return state;
+      return { ...state, papers: { ...state.papers, [action.paperId]: result.paper } };
     }
 
     case 'rename': {

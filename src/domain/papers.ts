@@ -1,12 +1,13 @@
 import { normalizeName } from './normalize';
+import type { PaperPdf, PaperReading } from './pdfFile';
 
 /**
  * A paper as the knowledge base knows it, independent of any project.
  *
  * `id` is the global identity: projects reference it and, later, notes, annotations and
  * knowledge-graph nodes hang off it. It is generated once and never derived from the
- * title or from an external identifier, so renaming a paper or correcting its DOI keeps
- * every reference intact.
+ * title, from an external identifier or from the PDF file, so renaming a paper, correcting
+ * its DOI or swapping its PDF keeps every reference intact.
  */
 export interface Paper {
   id: string;
@@ -17,20 +18,52 @@ export interface Paper {
   doi?: string;
   /** Normalized arXiv id: no `arXiv:` prefix, no version suffix, lowercase. */
   arxivId?: string;
+  /** The local PDF attached to this paper, if one was imported. Bytes live in IndexedDB. */
+  pdf?: PaperPdf;
+  /** Where the reader last left off. */
+  reading?: PaperReading;
   /** Epoch milliseconds. */
   createdAt: number;
   /** Epoch milliseconds. */
   updatedAt: number;
 }
 
-/** Everything needed to create a paper. External identifiers are optional. */
+/** Everything needed to create a paper. External identifiers and the PDF are optional. */
 export interface PaperInput {
   title: string;
   authors?: string[];
   year?: number;
   doi?: string | null;
   arxivId?: string | null;
+  pdf?: PaperPdf | null;
 }
+
+/**
+ * A change to an existing paper. `undefined` leaves a field alone; `null` clears it.
+ *
+ * Editing metadata, attaching a PDF and importing a new paper are deliberately separate
+ * operations: this one only ever touches the paper it names, and never creates, merges or
+ * deletes anything.
+ */
+export interface PaperEdit {
+  title?: string;
+  authors?: string[];
+  year?: number | null;
+  doi?: string | null;
+  arxivId?: string | null;
+  pdf?: PaperPdf | null;
+  reading?: PaperReading;
+}
+
+export type PaperEditFailure =
+  | { reason: 'unknown-paper' }
+  | { reason: 'blank-title' }
+  | { reason: 'invalid-year'; value: number }
+  | { reason: 'invalid-identifier'; field: 'doi' | 'arxivId'; value: string }
+  /** Another paper already owns this identifier: never merged, never overwritten. */
+  | { reason: 'identifier-taken'; field: 'doi' | 'arxivId'; paper: Paper };
+
+export type PaperEditResult = { ok: true; paper: Paper } | { ok: false; failure: PaperEditFailure };
 
 /** External identifiers used to recognise a paper that is already in the knowledge base. */
 export interface ExternalIds {
@@ -103,8 +136,94 @@ export function createPaper(input: PaperInput, makeId: () => string, now: number
   if (doi !== null) paper.doi = doi;
   const arxivId = input.arxivId == null ? null : normalizeArxivId(input.arxivId);
   if (arxivId !== null) paper.arxivId = arxivId;
+  if (input.pdf != null) paper.pdf = input.pdf;
 
   return paper;
+}
+
+/**
+ * Applies an edit to one paper, or explains why it cannot be applied.
+ *
+ * The paper's `id` is never part of an edit: identity is not editable. An identifier that
+ * already belongs to a different paper makes the whole edit fail — importing, editing and
+ * merging are separate operations, and silently moving a DOI from one record to another
+ * would rewrite two papers' identities at once.
+ *
+ * Returns the same paper object when the edit changes nothing, so callers can treat that
+ * as a no-op.
+ */
+export function applyPaperEdit(
+  papers: Record<string, Paper>,
+  paperId: string,
+  edit: PaperEdit,
+  now: number,
+): PaperEditResult {
+  const current = papers[paperId];
+  if (current === undefined) return { ok: false, failure: { reason: 'unknown-paper' } };
+
+  const updated: Paper = { ...current };
+
+  if (edit.title !== undefined) {
+    const title = normalizeName(edit.title);
+    if (title === null) return { ok: false, failure: { reason: 'blank-title' } };
+    updated.title = title;
+  }
+  if (edit.authors !== undefined) updated.authors = cleanAuthors(edit.authors);
+  if (edit.year !== undefined) {
+    if (edit.year === null) delete updated.year;
+    else if (Number.isFinite(edit.year)) updated.year = edit.year;
+    else return { ok: false, failure: { reason: 'invalid-year', value: edit.year } };
+  }
+
+  for (const field of ['doi', 'arxivId'] as const) {
+    const raw = edit[field];
+    if (raw === undefined) continue;
+    const value = raw === null ? null : normalizeIdentifier(field, raw);
+    if (raw !== null && value === null) {
+      return { ok: false, failure: { reason: 'invalid-identifier', field, value: raw } };
+    }
+    if (value === null) {
+      delete updated[field];
+      continue;
+    }
+    const owner = findByIdentifier(papers, field, value);
+    if (owner !== undefined && owner.id !== paperId) {
+      return { ok: false, failure: { reason: 'identifier-taken', field, paper: owner } };
+    }
+    updated[field] = value;
+  }
+
+  if (edit.pdf !== undefined) {
+    if (edit.pdf === null) delete updated.pdf;
+    else updated.pdf = edit.pdf;
+  }
+  if (edit.reading !== undefined) {
+    updated.reading = {
+      page: Math.max(1, Math.floor(edit.reading.page)),
+      updatedAt: edit.reading.updatedAt,
+    };
+  }
+
+  if (papersEqual(current, updated)) return { ok: true, paper: current };
+  updated.updatedAt = now;
+  return { ok: true, paper: updated };
+}
+
+function normalizeIdentifier(field: 'doi' | 'arxivId', raw: string): string | null {
+  return field === 'doi' ? normalizeDoi(raw) : normalizeArxivId(raw);
+}
+
+/** The paper that already carries this identifier, if any. */
+function findByIdentifier(
+  papers: Record<string, Paper>,
+  field: 'doi' | 'arxivId',
+  value: string,
+): Paper | undefined {
+  return Object.values(papers).find((paper) => paper[field] === value);
+}
+
+function papersEqual(one: Paper, other: Paper): boolean {
+  return JSON.stringify(one) === JSON.stringify(other);
 }
 
 /** What resolving a set of external identifiers against the registry found. */

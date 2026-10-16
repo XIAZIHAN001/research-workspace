@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyPaperEdit,
   authorCredit,
   createPaper,
   normalizeArxivId,
@@ -246,5 +247,196 @@ describe('authorCredit', () => {
   it('skips blank entries instead of crediting an empty name', () => {
     expect(authorCredit(ref(['  ', 'Kaiming He']))).toBe('He');
     expect(authorCredit(ref(['', 'Ian Goodfellow', 'Yoshua Bengio']))).toBe('Goodfellow 等');
+  });
+});
+
+describe('createPaper with a PDF', () => {
+  it('records the binding it was given', () => {
+    const pdf = { sha256: 'b'.repeat(64), name: 'a.pdf', bytes: 3, pageCount: 2, addedAt: 4 };
+    const created = createPaper({ title: 'Attention', pdf }, sequentialIds(), 0);
+    expect(created?.pdf).toStrictEqual(pdf);
+  });
+
+  it('keeps no binding when none was given', () => {
+    expect(createPaper({ title: 'Attention' }, sequentialIds(), 0)).not.toHaveProperty('pdf');
+    expect(createPaper({ title: 'Attention', pdf: null }, sequentialIds(), 0)).not.toHaveProperty(
+      'pdf',
+    );
+  });
+});
+
+describe('applyPaperEdit', () => {
+  const PDF = { sha256: 'c'.repeat(64), name: 'a.pdf', bytes: 9, pageCount: 4, addedAt: 7 };
+
+  function registry(...papers: Paper[]): Record<string, Paper> {
+    return Object.fromEntries(papers.map((entry) => [entry.id, entry]));
+  }
+
+  const attention = paper('a', { title: 'Attention', authors: ['Ashish Vaswani'], year: 2017 });
+  const bert = paper('b', { title: 'BERT', doi: '10.1000/bert' });
+
+  it('applies title, authors and year, and stamps updatedAt', () => {
+    const result = applyPaperEdit(
+      registry(attention, bert),
+      'a',
+      {
+        title: '  Attention Is All You Need ',
+        authors: [' Ashish Vaswani ', ''],
+        year: 2018,
+      },
+      99,
+    );
+    if (!result.ok) throw new Error(result.failure.reason);
+    expect(result.paper).toStrictEqual({
+      ...attention,
+      title: 'Attention Is All You Need',
+      authors: ['Ashish Vaswani'],
+      year: 2018,
+      updatedAt: 99,
+    });
+  });
+
+  it('normalizes an identifier it is given', () => {
+    const result = applyPaperEdit(
+      registry(attention, bert),
+      'a',
+      {
+        doi: 'https://doi.org/10.1000/ABC',
+        arxivId: 'arXiv:2401.12345v2',
+      },
+      5,
+    );
+    expect(result.ok && result.paper.doi).toBe('10.1000/abc');
+    expect(result.ok && result.paper.arxivId).toBe('2401.12345');
+  });
+
+  it('clears a field with null', () => {
+    const withAll = paper('c', { year: 2017, doi: '10.1000/x', arxivId: '2401.12345', pdf: PDF });
+    const result = applyPaperEdit(
+      registry(withAll),
+      'c',
+      {
+        year: null,
+        doi: null,
+        arxivId: null,
+        pdf: null,
+      },
+      5,
+    );
+    if (!result.ok) throw new Error(result.failure.reason);
+    expect(result.paper).not.toHaveProperty('year');
+    expect(result.paper).not.toHaveProperty('doi');
+    expect(result.paper).not.toHaveProperty('arxivId');
+    expect(result.paper).not.toHaveProperty('pdf');
+  });
+
+  it('attaches a PDF and records where reading stopped', () => {
+    const result = applyPaperEdit(
+      registry(attention),
+      'a',
+      {
+        pdf: PDF,
+        reading: { page: 3, updatedAt: 11 },
+      },
+      5,
+    );
+    if (!result.ok) throw new Error(result.failure.reason);
+    expect(result.paper.pdf).toStrictEqual(PDF);
+    expect(result.paper.reading).toStrictEqual({ page: 3, updatedAt: 11 });
+  });
+
+  it('refuses a reading position below the first page and clamps instead of failing', () => {
+    const result = applyPaperEdit(
+      registry(attention),
+      'a',
+      {
+        reading: { page: 0.4, updatedAt: 1 },
+      },
+      5,
+    );
+    expect(result.ok && result.paper.reading?.page).toBe(1);
+  });
+
+  it.each([
+    { label: 'a malformed DOI', edit: { doi: 'not-a-doi' }, field: 'doi' },
+    { label: 'a malformed arXiv id', edit: { arxivId: 'nope' }, field: 'arxivId' },
+  ])('refuses $label and changes nothing', ({ edit, field }) => {
+    const result = applyPaperEdit(registry(attention), 'a', edit, 5);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.failure).toMatchObject({
+      reason: 'invalid-identifier',
+      field,
+    });
+  });
+
+  it('refuses an identifier another paper already owns, naming that paper', () => {
+    const result = applyPaperEdit(registry(attention, bert), 'a', { doi: '10.1000/BERT' }, 5);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.failure).toMatchObject({
+      reason: 'identifier-taken',
+      field: 'doi',
+      paper: { id: 'b' },
+    });
+  });
+
+  it('does not merge two papers that would end up with the same identifier', () => {
+    const papers = registry(attention, bert);
+    applyPaperEdit(papers, 'a', { doi: '10.1000/bert' }, 5);
+    expect(Object.keys(papers)).toStrictEqual(['a', 'b']);
+    expect(papers.b?.title).toBe('BERT');
+  });
+
+  it('lets a paper keep an identifier it already has', () => {
+    const result = applyPaperEdit(registry(attention, bert), 'b', { doi: '10.1000/bert' }, 5);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.paper).toBe(bert);
+  });
+
+  it('refuses a blank title', () => {
+    const result = applyPaperEdit(registry(attention), 'a', { title: '   ' }, 5);
+    expect(result.ok === false && result.failure.reason).toBe('blank-title');
+  });
+
+  it('refuses a year that is not a number', () => {
+    const result = applyPaperEdit(registry(attention), 'a', { year: Number.NaN }, 5);
+    expect(result.ok === false && result.failure.reason).toBe('invalid-year');
+  });
+
+  it('reports an unknown paper', () => {
+    const result = applyPaperEdit(registry(attention), 'ghost', { title: 'x' }, 5);
+    expect(result.ok === false && result.failure.reason).toBe('unknown-paper');
+  });
+
+  it('returns the very same object when there is nothing to change', () => {
+    const result = applyPaperEdit(
+      registry(attention),
+      'a',
+      {
+        title: attention.title,
+        authors: attention.authors,
+        year: attention.year,
+      },
+      5,
+    );
+    expect(result.ok && result.paper).toBe(attention);
+  });
+
+  it('never touches the identity or the creation time', () => {
+    const result = applyPaperEdit(registry(attention), 'a', { title: 'Renamed', year: 2020 }, 5);
+    expect(result.ok && result.paper.id).toBe('a');
+    expect(result.ok && result.paper.createdAt).toBe(attention.createdAt);
+  });
+
+  it('leaves every other paper untouched', () => {
+    const papers = registry(attention, bert);
+    applyPaperEdit(papers, 'a', { title: 'Renamed' }, 5);
+    expect(papers.b).toBe(bert);
+  });
+
+  it('accepts a PDF binding it is asked to replace', () => {
+    const withPdf = paper('d', { pdf: PDF });
+    const replacement = { ...PDF, sha256: 'd'.repeat(64), name: 'other.pdf' };
+    const result = applyPaperEdit(registry(withPdf), 'd', { pdf: replacement }, 5);
+    expect(result.ok && result.paper.pdf).toStrictEqual(replacement);
   });
 });

@@ -1,4 +1,5 @@
 import type { Paper } from './papers';
+import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
 import type { ProjectsState } from './projectsState';
 
@@ -6,12 +7,32 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /* ------------------------------------------------------------------ *
- * Current shape (schema version 2)
+ * Current shape (schema version 3)
  * ------------------------------------------------------------------ */
+
+/** A malformed PDF binding is dropped: rejecting the whole payload would hide the workspace. */
+function parsePaperPdf(value: unknown): PaperPdf | null {
+  if (!isRecord(value)) return null;
+  const { sha256, name, bytes, pageCount, addedAt } = value;
+  if (typeof sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) return null;
+  if (typeof name !== 'string' || name === '') return null;
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
+  if (typeof addedAt !== 'number') return null;
+  if (pageCount !== null && typeof pageCount !== 'number') return null;
+  return { sha256, name, bytes, pageCount, addedAt };
+}
+
+function parsePaperReading(value: unknown): PaperReading | null {
+  if (!isRecord(value)) return null;
+  const { page, updatedAt } = value;
+  if (typeof page !== 'number' || !Number.isInteger(page) || page < 1) return null;
+  if (typeof updatedAt !== 'number') return null;
+  return { page, updatedAt };
+}
 
 function parsePaper(value: unknown): Paper | null {
   if (!isRecord(value)) return null;
-  const { id, title, authors, year, doi, arxivId, createdAt, updatedAt } = value;
+  const { id, title, authors, year, doi, arxivId, pdf, reading, createdAt, updatedAt } = value;
   if (typeof id !== 'string' || typeof title !== 'string') return null;
   if (!Array.isArray(authors) || !authors.every((a) => typeof a === 'string')) return null;
   if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
@@ -20,6 +41,10 @@ function parsePaper(value: unknown): Paper | null {
   if (typeof year === 'number') paper.year = year;
   if (typeof doi === 'string') paper.doi = doi;
   if (typeof arxivId === 'string') paper.arxivId = arxivId;
+  const parsedPdf = parsePaperPdf(pdf);
+  if (parsedPdf !== null) paper.pdf = parsedPdf;
+  const parsedReading = parsePaperReading(reading);
+  if (parsedReading !== null) paper.reading = parsedReading;
   return paper;
 }
 
