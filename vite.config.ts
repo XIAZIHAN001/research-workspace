@@ -66,11 +66,23 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: { ignored: ['**/src-tauri/**', '**/.cache/**'] },
+    // The browser talks to the local AI service through this proxy, so the page stays
+    // same-origin and the service itself stays off the network. `npm run ai:serve` starts it.
+    proxy: {
+      '/api/ai': {
+        target: `http://127.0.0.1:${process.env.AI_PORT ?? '8787'}`,
+        // Rewrites Host to the service's own address, which is what its DNS-rebinding guard
+        // expects; the browser's Origin header is forwarded unchanged and checked there.
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    // The local AI service is Node-side, but its tests need no Node-only environment: Node's
+    // built-ins stay available under jsdom, so both halves share one runner and one gate.
+    include: ['src/**/*.test.{ts,tsx}', 'server/**/*.test.mjs'],
     css: false,
   },
 });

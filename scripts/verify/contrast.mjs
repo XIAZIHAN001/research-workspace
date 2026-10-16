@@ -44,6 +44,16 @@ function collectTargets() {
     }
     const style = getComputedStyle(element);
     if (style.visibility === 'hidden' || Number(style.opacity) < 0.05) continue;
+    // Text painted in a fully transparent colour is not text anyone reads: pdf.js builds its
+    // selectable text layer that way, with the glyphs drawn on the canvas underneath. There is
+    // no foreground colour to measure, and measuring the r,g,b of "transparent" would invent a
+    // black-on-the-background ratio for a layer that is deliberately invisible.
+    const channels =
+      /^rgba?\((.*)\)$/
+        .exec(style.color)?.[1]
+        .split(/[\s,/]+/)
+        .filter(Boolean) ?? [];
+    if (channels.length === 4 && Number(channels[3]) === 0) continue;
     const range = document.createRange();
     range.selectNodeContents(node);
     const text_ = range.getBoundingClientRect();

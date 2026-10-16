@@ -687,6 +687,8 @@ describe('projectsReducer: annotations belong to the paper, not the project', ()
       rects: [{ x: 0.1, y: 0.1, width: 0.2, height: 0.02 }],
       kind: 'note',
       note: '',
+      origin: 'user',
+      sourceLabel: '',
       createdAt: 10,
       updatedAt: 10,
       ...overrides,

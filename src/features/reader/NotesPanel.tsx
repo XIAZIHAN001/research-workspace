@@ -4,6 +4,7 @@ import {
   ANNOTATION_KINDS,
   ANNOTATION_KIND_LABEL,
   MAX_NOTE_LENGTH,
+  ORIGIN_LABEL,
   sortAnnotations,
   type Annotation,
   type AnnotationEdit,
@@ -126,6 +127,13 @@ function NoteItem({ annotation, active, canJump, onJump, onEdit, onDelete }: Not
     <li className="note-item" data-active={active} data-kind={annotation.kind}>
       <div className="note-meta">
         <span className="note-kind">{ANNOTATION_KIND_LABEL[annotation.kind]}</span>
+        {annotation.origin === 'assistant' && (
+          // Saved explanations sit in the same list as the reader's own notes, so they say
+          // which they are — including after the reader edits one.
+          <span className="note-origin" title={annotation.sourceLabel}>
+            {ORIGIN_LABEL.assistant}
+          </span>
+        )}
         <span className="note-page">第 {annotation.page} 页</span>
       </div>
       <p className="note-quote">{annotation.quote}</p>

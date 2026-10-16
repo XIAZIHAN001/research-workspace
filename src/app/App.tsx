@@ -21,6 +21,7 @@ import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
 import { createAnnotation } from '../domain/annotation';
+import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
 import type { Project } from '../domain/project';
@@ -45,6 +46,8 @@ interface AppProps {
   blobs?: PdfBlobStore;
   /** Parses a PDF to validate it; injected in tests, pdf.js in the app. */
   probe?: ProbePdf;
+  /** The assistant's transport; injected in tests, the local service in the app. */
+  ai?: AiClient;
 }
 
 type View = 'home' | 'project' | 'library' | 'reader';
@@ -80,7 +83,7 @@ function loadIssueNotice(issue: LoadIssue): string {
   return `${reason[issue.kind]}${kept}在确认数据恢复之前，请不要清理浏览器数据。`;
 }
 
-export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe }: AppProps) {
+export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe, ai }: AppProps) {
   const { projects, papers, annotations, selected, persisted, issue, actions } = useProjects(store);
   const theme = useTheme();
   const sidebar = useSidebar();
@@ -335,6 +338,7 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
               key={readingPaper.id}
               paper={readingPaper}
               blobs={blobStore}
+              aiClient={ai}
               onClose={closeReader}
               onReadingPosition={handleReadingPosition}
               onReplaceFile={() => {
@@ -368,6 +372,31 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
               onEditAnnotation={actions.updateAnnotation}
               onDeleteAnnotation={(annotation) => {
                 actions.removeAnnotation(annotation.id);
+              }}
+              onSaveAiNote={(anchor, draft) => {
+                // An explanation the reader chose to keep becomes an ordinary annotation with
+                // the same anchor — same file, same page, same boxes — but marked as coming
+                // from the assistant, so it can never be mistaken for something they wrote.
+                const created = createAnnotation(
+                  {
+                    paperId: readingPaper.id,
+                    pdfSha256: readingPaper.pdf?.sha256 ?? '',
+                    page: anchor.page,
+                    quote: anchor.quote,
+                    prefix: anchor.prefix,
+                    suffix: anchor.suffix,
+                    rects: anchor.rects,
+                    kind: 'insight',
+                    note: draft.note,
+                    origin: 'assistant',
+                    sourceLabel: draft.sourceLabel,
+                  },
+                  makeId,
+                  Date.now(),
+                );
+                if (created === null) return;
+                actions.addAnnotation(created);
+                setNotice('已保存为笔记，并标记为 AI 辅助。');
               }}
             />
           </ReaderBoundary>

@@ -19,6 +19,8 @@ function annotation(overrides: Partial<Annotation> = {}): Annotation {
     rects: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.02 }],
     kind: 'question',
     note: '',
+    origin: 'user',
+    sourceLabel: '',
     createdAt: 10,
     updatedAt: 10,
     ...overrides,

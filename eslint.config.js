@@ -19,8 +19,8 @@ export default defineConfig([
     },
   },
   {
-    // Node-side tooling: build config and helper scripts.
-    files: ['vite.config.ts', 'eslint.config.js', 'scripts/**/*.mjs'],
+    // Node-side tooling: build config, helper scripts, and the local AI service.
+    files: ['vite.config.ts', 'eslint.config.js', 'scripts/**/*.mjs', 'server/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   {

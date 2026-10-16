@@ -316,6 +316,7 @@
   display: flex;
   flex: 0 0 300px;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
@@ -451,6 +452,390 @@
     bottom: 0;
     z-index: 12;
     width: min(320px, 88vw);
+    background: var(--glass-fill-strong);
+    box-shadow: var(--elev-float);
+    backdrop-filter: blur(var(--glass-blur));
+  }
+}
+
+/* --- The assistant --------------------------------------------------------- */
+
+/* A citation's boxes are shown, not saved, so they look nothing like a highlight. */
+.pdf-highlight[data-spotlight='true'] {
+  background: rgb(126 140 255 / 0.18);
+  box-shadow: 0 0 0 2px rgb(126 140 255 / 0.75);
+  mix-blend-mode: normal;
+}
+
+.note-origin {
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.ai-panel {
+  display: flex;
+  /* `min-width: 0` matters here: a flex item will not shrink below its min-content width, and a
+     single long paragraph in the range disclosure would otherwise widen the panel until it and
+     the whole reader overflowed the window. */
+  flex: 0 0 360px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--glass-fill);
+}
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ai-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-provider {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+/* Saying that a call costs money has to be legible before it is pretty. */
+.ai-provider[data-online='true'] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ai-empty {
+  padding: 14px 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.ai-hint {
+  color: var(--text-2);
+}
+
+.ai-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.ai-source {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.ai-range-toggle {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-range-toggle:hover {
+  color: var(--text);
+}
+
+.ai-range {
+  padding: 0 9px 9px;
+}
+
+.ai-range-summary {
+  margin: 0 0 6px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ai-range-part {
+  margin-bottom: 6px;
+}
+
+.ai-range-part p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.55;
+  max-height: 130px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.ai-range-label {
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.ai-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ai-turn:last-of-type {
+  border-bottom: 0;
+}
+
+.ai-turn-mode {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-question {
+  margin: 0;
+  padding: 5px 8px;
+  border-left: 2px solid var(--ring);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.ai-answer-body p {
+  margin: 0 0 7px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-citation,
+.ai-citations button {
+  padding: 0 5px;
+  /* The app's ordinary quiet-control edge and ink. The accent tint this started with could not
+     reach a readable ratio in either theme, and a citation nobody can read is no use. */
+  border: 1px solid var(--ring);
+  border-radius: 5px;
+  background: var(--pill-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ai-citation:hover,
+.ai-citations button:hover {
+  background: var(--row-active);
+}
+
+.ai-citations {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-citations li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.ai-citations li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-warn {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ai-foot {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+
+.ai-turn-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ai-failure {
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  font-size: 12px;
+}
+
+.ai-failure p {
+  margin: 0 0 6px;
+  color: var(--text-2);
+}
+
+.ai-busy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+.ai-parallel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-original,
+.ai-translation {
+  padding: 7px 8px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.ai-original p {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-translation[data-hidden='true'] {
+  opacity: 0.72;
+}
+
+.ai-translation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-ask {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.ai-ask input::placeholder,
+.ai-ask-inline input::placeholder {
+  color: var(--text-2);
+}
+
+.ai-ask input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--ring);
+  border-radius: var(--r-sm);
+  background: var(--pill-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ai-ask label {
+  flex: 1 1 auto;
+}
+
+/* The compact entry in the toolbar over a selection. */
+.ai-ask-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 190px;
+}
+
+.ai-ask-menu > .btn {
+  justify-content: flex-start;
+}
+
+.ai-ask-inline {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.ai-ask-inline input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--ring);
+  border-radius: var(--r-sm);
+  background: var(--pill-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ai-ask-inline label {
+  flex: 1 1 auto;
+}
+
+/* In a narrow window either panel covers the edge of the page instead of taking a column. */
+@media (max-width: 1100px) {
+  .ai-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 12;
+    width: min(360px, 92vw);
     background: var(--glass-fill-strong);
     box-shadow: var(--elev-float);
     backdrop-filter: blur(var(--glass-blur));

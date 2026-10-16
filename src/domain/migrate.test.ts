@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(4);
+    expect(SCHEMA_VERSION).toBe(5);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -537,5 +537,102 @@ describe('migrateStoredPayload: v2 → current', () => {
     expect(outcome.ok === false && outcome.reason === 'unsupported-version' && outcome.found).toBe(
       SCHEMA_VERSION + 1,
     );
+  });
+});
+
+describe('migrateStoredPayload: v4 → current', () => {
+  const PAPER = {
+    id: 'pa',
+    title: 'Attention',
+    authors: ['Ashish Vaswani'],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const PROJECT = {
+    id: 'p1',
+    name: 'Reading',
+    corePaperId: 'pa',
+    relatedPaperIds: [],
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const NOTE_V4 = {
+    id: 'n1',
+    paperId: 'pa',
+    pdfSha256: 'a'.repeat(64),
+    page: 4,
+    quote: 'the rotated attention mechanism',
+    prefix: 'we replace ',
+    suffix: ' which lets',
+    rects: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.02 }],
+    kind: 'insight',
+    note: '作者用旋转替换了绝对位置编码。',
+    createdAt: 5,
+    updatedAt: 6,
+  };
+  const V4_PAYLOAD = JSON.stringify({
+    version: 4,
+    projects: [PROJECT],
+    papers: { pa: PAPER },
+    annotations: [NOTE_V4],
+    selectedId: 'p1',
+  });
+
+  it('stamps every existing note as the reader’s own work', () => {
+    const outcome = migrateStoredPayload(V4_PAYLOAD);
+    expect(outcome.ok && outcome.from).toBe(4);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.annotations).toStrictEqual([
+      { ...NOTE_V4, origin: 'user', sourceLabel: '' },
+    ]);
+  });
+
+  it('leaves every other field alone', () => {
+    const outcome = migrateStoredPayload(V4_PAYLOAD);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.projects).toStrictEqual([PROJECT]);
+    expect(outcome.state.papers).toStrictEqual({ pa: PAPER });
+    expect(outcome.state.selectedId).toBe('p1');
+  });
+
+  it('carries a hand-written assistant note through instead of relabelling it', () => {
+    const raw = JSON.stringify({
+      ...JSON.parse(V4_PAYLOAD),
+      annotations: [{ ...NOTE_V4, origin: 'assistant', sourceLabel: 'DeepSeek deepseek-flash' }],
+    });
+    const outcome = migrateStoredPayload(raw);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.annotations[0]?.origin).toBe('assistant');
+    expect(outcome.state.annotations[0]?.sourceLabel).toBe('DeepSeek deepseek-flash');
+  });
+
+  it('is idempotent: the payload it writes is already current', () => {
+    const migrated = migrateStoredPayload(V4_PAYLOAD);
+    if (!migrated.ok) throw new Error(migrated.detail);
+    expect(migrateStoredPayload(serializeProjects(migrated.state))).toStrictEqual({
+      ok: true,
+      state: migrated.state,
+      from: SCHEMA_VERSION,
+    });
+  });
+
+  it('rejects an unknown origin rather than defaulting it to the reader', () => {
+    const raw = JSON.stringify({
+      ...JSON.parse(V4_PAYLOAD),
+      annotations: [{ ...NOTE_V4, origin: 'claude' }],
+    });
+    const outcome = migrateStoredPayload(raw);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toBe('invalid');
+  });
+
+  it('rejects an assistant note with no provenance to show the reader', () => {
+    const raw = JSON.stringify({
+      ...JSON.parse(V4_PAYLOAD),
+      annotations: [{ ...NOTE_V4, origin: 'assistant' }],
+    });
+    const outcome = migrateStoredPayload(raw);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toBe('invalid');
   });
 });

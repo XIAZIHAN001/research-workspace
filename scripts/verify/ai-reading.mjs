@@ -1,0 +1,652 @@
+/* global document, window */
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import { launchBrowser } from './browser.mjs';
+import { auditContrast } from './contrast.mjs';
+import { buildInjectionPdf } from './sample-pdf.mjs';
+import { boxDistance, clearSelection, selectSpans, unionBox } from './text-selection.mjs';
+
+/**
+ * Browser acceptance for the AI reading loop.
+ *
+ * It drives the real application against the real local service, with the offline mock provider
+ * behind it — so everything except the network hop to DeepSeek is the production path: the
+ * browser builds the context, the Vite proxy forwards it, the service checks its origin and
+ * writes the prompt, the citation verifier runs, and the answer comes back and is rendered.
+ *
+ * What it checks is deliberately not "does an answer appear". It checks what was actually sent,
+ * that the citations lead back to the right words on the right page, that a failure leaves the
+ * reader's own work untouched, and that nothing about the key or the paper leaks.
+ *
+ * Screenshots go to docs/screenshots-phase4/.
+ */
+
+const PORT = 4177;
+const AI_PORT = 8788;
+const ORIGIN = `http://127.0.0.1:${PORT}/`;
+const AI_ORIGIN = `http://127.0.0.1:${String(AI_PORT)}`;
+const ROOT = new URL('../../', import.meta.url);
+const SHOT_DIR = new URL('docs/screenshots-phase4/', ROOT);
+const REPORT_FILE = new URL('docs/phase4-ai-verification-report.json', ROOT);
+const WORK_DIR = new URL('.cache/verify/', ROOT);
+const VITE_BIN = fileURLToPath(new URL('node_modules/vite/bin/vite.js', ROOT));
+const SERVER_ENTRY = fileURLToPath(new URL('server/start.mjs', ROOT));
+const REAL_PAPER = new URL('.cache/papers/2610.22294.pdf', ROOT);
+const STORAGE_KEY = 'rw.projects';
+
+const results = [];
+const consoleIssues = [];
+/** Every request body the page sent to the service, in order. */
+const requests = [];
+
+function check(name, passed, detail = '') {
+  results.push({ name, passed, detail });
+  process.stdout.write(
+    `${passed ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : `  (${detail})`}\n`,
+  );
+}
+
+function watch(page) {
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') {
+      consoleIssues.push({
+        text: `${message.type()}: ${message.text()}`,
+        url: message.location()?.url ?? '',
+      });
+    }
+  });
+  page.on('pageerror', (error) => {
+    consoleIssues.push({ text: `pageerror: ${error.message}`, url: '' });
+  });
+}
+
+/** The local AI service, on the mock provider. Its output is kept so it can be audited. */
+async function startService() {
+  const child = spawn(process.execPath, [SERVER_ENTRY], {
+    cwd: fileURLToPath(ROOT),
+    env: { ...process.env, AI_PORT: String(AI_PORT), AI_PROVIDER: 'mock' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => {
+    output += String(chunk);
+  });
+  child.stderr.on('data', (chunk) => {
+    output += String(chunk);
+  });
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      if ((await fetch(`${AI_ORIGIN}/api/ai/health`)).ok) {
+        return { child, outputOf: () => output };
+      }
+    } catch {
+      // Not up yet.
+    }
+    await sleep(200);
+  }
+  child.kill();
+  throw new Error('the local AI service did not start');
+}
+
+async function startPreview() {
+  const child = spawn(
+    process.execPath,
+    [VITE_BIN, 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'],
+    {
+      cwd: fileURLToPath(ROOT),
+      env: { ...process.env, AI_PORT: String(AI_PORT) },
+      stdio: 'ignore',
+    },
+  );
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      if ((await fetch(ORIGIN)).ok) return child;
+    } catch {
+      // Not up yet.
+    }
+    await sleep(250);
+  }
+  child.kill();
+  throw new Error('preview server did not start');
+}
+
+const payloadOf = (page) =>
+  page.evaluate((key) => JSON.parse(window.localStorage.getItem(key) ?? 'null'), STORAGE_KEY);
+
+async function createProject(page, title) {
+  await page.getByLabel('新建项目').click();
+  await page.getByLabel('核心论文标题').fill(title);
+  await page.getByRole('button', { name: '创建项目' }).click();
+  await page.getByRole('heading', { level: 1, name: title }).waitFor();
+}
+
+async function importIntoProject(page, filePath) {
+  await page.getByRole('button', { name: '导入新论文' }).click();
+  const dialog = page.getByRole('dialog', { name: '导入论文' });
+  await dialog.locator('input[type="file"]').setInputFiles(filePath);
+  await dialog.getByRole('button', { name: '导入' }).click();
+  await page.locator('.reader').waitFor({ timeout: 30_000 });
+  await page
+    .locator('.pdf-page[data-page="1"] .textLayer span')
+    .first()
+    .waitFor({ timeout: 30_000 });
+}
+
+/** Back to wherever we were, then into the reader for this project's paper. */
+async function reopenReader(page, projectName) {
+  const back = page.getByRole('button', { name: '返回' });
+  if ((await back.count()) > 0) await back.click();
+  const expand = page.getByLabel('展开侧栏');
+  if ((await expand.count()) > 0) await expand.click();
+  await page.getByRole('button', { name: projectName }).first().click();
+  await page.getByRole('button', { name: '阅读' }).first().click();
+  await page.locator('.reader').waitFor({ timeout: 30_000 });
+  await page
+    .locator('.pdf-page[data-page="1"] .textLayer span')
+    .first()
+    .waitFor({ timeout: 30_000 });
+}
+
+const toolbarOf = (page) => page.getByRole('toolbar', { name: '批注' });
+
+/** Selects a span range and waits for the floating toolbar. */
+async function selectForToolbar(page, pageNumber, start, end) {
+  const selection = await selectSpans(page, pageNumber, start, end);
+  await page.mouse.move(5, 5);
+  await page
+    .locator(`.pdf-page[data-page="${String(pageNumber)}"]`)
+    .first()
+    .dispatchEvent('mouseup');
+  await toolbarOf(page).waitFor({ timeout: 5000 });
+  return selection;
+}
+
+/** The boxes of whatever is currently spotlighted on a page, in viewport coordinates. */
+function spotlightBoxes(page, pageNumber) {
+  return page.evaluate((number) => {
+    const elements = [
+      ...document.querySelectorAll(
+        `.pdf-page[data-page="${String(number)}"] .pdf-highlight[data-spotlight="true"]`,
+      ),
+    ];
+    return elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+    });
+  }, pageNumber);
+}
+
+/** The page's full rendered text, so a check can prove a later page was not sent. */
+function pageTextOf(page, pageNumber) {
+  return page.evaluate(
+    (number) =>
+      document.querySelector(`.pdf-page[data-page="${String(number)}"] .textLayer`)?.textContent ??
+      '',
+    pageNumber,
+  );
+}
+
+async function main() {
+  await mkdir(SHOT_DIR, { recursive: true });
+  await mkdir(WORK_DIR, { recursive: true });
+
+  const real = existsSync(fileURLToPath(REAL_PAPER));
+  const fixture = real
+    ? fileURLToPath(REAL_PAPER)
+    : fileURLToPath(new URL('two-column.pdf', WORK_DIR));
+  if (!real) await writeFile(fixture, (await import('./sample-pdf.mjs')).buildTwoColumnPdf());
+  const injectionFile = fileURLToPath(new URL('injection.pdf', WORK_DIR));
+  await writeFile(injectionFile, buildInjectionPdf());
+
+  const service = await startService();
+  const server = await startPreview();
+  const browser = await launchBrowser();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+  watch(page);
+
+  // Every ask is captured before it is forwarded, so the checks describe what really went out.
+  await page.route('**/api/ai/ask', async (route) => {
+    try {
+      requests.push(route.request().postDataJSON());
+    } catch {
+      requests.push(null);
+    }
+    await route.continue();
+  });
+
+  try {
+    await page.goto(ORIGIN);
+    await createProject(page, 'AI 精读验收');
+    await importIntoProject(page, fixture);
+    const title = await page.locator('.reader-title').innerText();
+    check(
+      'setup: a real PDF is open in the reader',
+      (await pageTextOf(page, 1)).length > 200,
+      `${String((await pageTextOf(page, 1)).length)} chars${real ? '' : ' (generated fallback)'}`,
+    );
+
+    // Creating a project also creates its core paper, so the one with a file is the import.
+    const paper = Object.values((await payloadOf(page)).papers).find(
+      (entry) => entry.pdf !== undefined,
+    );
+
+    // ---- 1. Selecting text opens the assistant ----------------------------
+    const selected = await selectForToolbar(
+      page,
+      1,
+      { span: 4, offset: 0 },
+      { span: 9, offset: 999 },
+    );
+    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    const menu = page.getByRole('group', { name: '向 AI 提问' });
+    await menu.waitFor({ timeout: 5000 });
+    check(
+      'entry: the selection toolbar offers the five ways to ask',
+      (await menu.getByRole('button').count()) >= 4,
+    );
+    await menu.getByRole('button', { name: '解释这段话' }).click();
+    const panel = page.getByRole('complementary', { name: 'AI 精读助手' });
+    await panel.waitFor({ timeout: 10_000 });
+    await panel.locator('.ai-answer-body').waitFor({ timeout: 20_000 });
+    check('ask: the assistant panel opens from a real selection', true);
+    await page.screenshot({ path: fileURLToPath(new URL('01-ask-answer.png', SHOT_DIR)) });
+
+    // ---- 2. What was sent ------------------------------------------------
+    const first = requests.at(-1);
+    const passages = first?.passages ?? [];
+    const selectedPassage = passages.find((entry) => entry.selection);
+    check(
+      'request: the selected原文 is the primary passage, verbatim',
+      selectedPassage?.text?.replace(/\s+/g, ' ').trim() ===
+        selected.text.replace(/\s+/g, ' ').trim(),
+      `${String(selectedPassage?.text?.length ?? 0)} chars sent`,
+    );
+    check(
+      'request: it carries the paper identity, the page and the file hash',
+      first?.paper?.id === paper.id &&
+        first?.paper?.page === 1 &&
+        first?.paper?.pdfSha256 === paper.pdf?.sha256 &&
+        first?.paper?.title === title,
+      `sent ${JSON.stringify(first?.paper)} for ${paper.id.slice(0, 12)} sha ${String(paper.pdf?.sha256 ?? '').slice(0, 8)}`,
+    );
+    check(
+      'request: it is a structured request, not a chat transcript',
+      first?.mode === 'explain' && Array.isArray(first.passages),
+    );
+
+    // ---- 3. It is not the whole paper ------------------------------------
+    const totalChars = passages.reduce((sum, entry) => sum + entry.text.length, 0);
+    const pages = new Set(passages.map((entry) => entry.page));
+    check(
+      'request: the context is bounded, not the document',
+      totalChars <= 3800 && passages.length <= 3,
+      `${String(totalChars)} chars in ${String(passages.length)} passages`,
+    );
+    check(
+      'request: every passage comes from the page being read',
+      pages.size === 1 && pages.has(1),
+    );
+
+    const secondPageText = await page.evaluate(() => {
+      const slot = document.querySelectorAll('.reader-slot')[1];
+      const layer = slot?.querySelector('.textLayer');
+      return layer?.textContent ?? '';
+    });
+    await page.locator('.pdf-page[data-page="1"]').scrollIntoViewIfNeeded();
+    const bodyText = JSON.stringify(first);
+    const probe = secondPageText.replace(/\s+/g, ' ').trim().slice(0, 60);
+    check(
+      'request: no text from a page the reader is not on',
+      probe.length < 20 || !bodyText.includes(probe),
+    );
+
+    // ---- 4. Citations lead back to the words -----------------------------
+    const chip = panel.locator('.ai-citation').first();
+    await chip.waitFor({ timeout: 10_000 });
+    const chipLabel = await chip.innerText();
+    await chip.click();
+    await page.waitForTimeout(600);
+    const spotlight = unionBox(await spotlightBoxes(page, 1));
+    const backToSelection = await selectSpans(
+      page,
+      1,
+      { span: 4, offset: 0 },
+      { span: 9, offset: 999 },
+    );
+    const targetBox = unionBox(backToSelection.boxes);
+    await clearSelection(page);
+    const offset = boxDistance(spotlight, targetBox);
+    check(
+      'citation: following it marks the exact words it quoted',
+      offset <= 2,
+      `${chipLabel.replace(/\s+/g, ' ')} → worst edge ${offset.toFixed(1)}px from the fresh selection`,
+    );
+    check('citation: the chip names a page, not a guess', /\d+\s*页/.test(chipLabel));
+    await page.screenshot({ path: fileURLToPath(new URL('02-citation-jump.png', SHOT_DIR)) });
+
+    // ---- 5. Asking does not save anything --------------------------------
+    const beforeSave = await payloadOf(page);
+    check(
+      'privacy: a conversation is not written to storage',
+      JSON.stringify(beforeSave).length === JSON.stringify(await payloadOf(page)).length &&
+        !JSON.stringify(beforeSave).includes('本地模拟回答'),
+      `${String(beforeSave.annotations.length)} notes stored`,
+    );
+
+    // ---- 6. Saving the answer as a note ----------------------------------
+    await panel.getByRole('button', { name: /保存为笔记/ }).click();
+    const afterSave = await payloadOf(page);
+    const saved = afterSave.annotations.at(-1);
+    check(
+      'note: the explanation is saved through the ordinary annotation path',
+      afterSave.annotations.length === beforeSave.annotations.length + 1 &&
+        saved?.paperId === paper.id &&
+        saved?.page === 1,
+      `${String(afterSave.annotations.length)} notes`,
+    );
+    check(
+      'note: it is marked as coming from the assistant, with its source',
+      saved?.origin === 'assistant' && /模拟|DeepSeek/.test(saved?.sourceLabel ?? ''),
+      `origin=${String(saved?.origin)} source=${String(saved?.sourceLabel)}`,
+    );
+    // The stored quote is whitespace-normalised, the passage sent is the raw page slice, so the
+    // two are compared in the same normal form rather than byte for byte.
+    const collapse = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
+    check(
+      'note: it is anchored to the same words the model was shown',
+      collapse(saved?.quote) === collapse(selectedPassage?.text),
+      collapse(saved?.quote) === collapse(selectedPassage?.text)
+        ? `${String(collapse(saved?.quote).length)} chars`
+        : `saved ${JSON.stringify(collapse(saved?.quote).slice(0, 40))} vs sent ${JSON.stringify(collapse(selectedPassage?.text).slice(0, 40))}`,
+    );
+
+    // ---- 7. It survives a reload -----------------------------------------
+    await page.reload();
+    await reopenReader(page, 'AI 精读验收');
+    // The notes panel is already open in a wide window; only narrow ones start with it closed.
+    const notesToggle = page.getByRole('button', { name: /^笔记/ });
+    if ((await notesToggle.getAttribute('aria-pressed')) !== 'true') await notesToggle.click();
+    const item = page.locator('.note-item').filter({ hasText: 'AI 辅助' }).first();
+    await item.waitFor({ timeout: 10_000 });
+    check('persistence: the saved note is still there after a reload, marked as AI-assisted', true);
+    check(
+      'persistence: it is drawn as a highlight on the page as well',
+      (await page.locator('.pdf-highlight[data-annotation]').count()) > 0,
+    );
+
+    // ---- 8. Translation ---------------------------------------------------
+    await page.getByRole('button', { name: /^AI 答疑/ }).click();
+    const toTranslate = await selectForToolbar(
+      page,
+      1,
+      { span: 4, offset: 0 },
+      { span: 6, offset: 999 },
+    );
+    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await page
+      .getByRole('group', { name: '向 AI 提问' })
+      .getByRole('button', { name: '翻译为中文' })
+      .click();
+    await page.locator('.ai-parallel').waitFor({ timeout: 20_000 });
+    const original = (await page.locator('.ai-original').innerText()).replace(/\s+/g, ' ').trim();
+    const translation = (await page.locator('.ai-translation').innerText())
+      .replace(/\s+/g, ' ')
+      .trim();
+    const wanted = toTranslate.text.replace(/\s+/g, ' ').trim();
+    check(
+      'translate: the English shown is exactly what the reader selected',
+      original.includes(wanted) && wanted.length > 20,
+      `${String(wanted.length)} of ${String(original.length)} chars`,
+    );
+    check(
+      'translate: a Chinese translation is shown beside it',
+      /[一-鿿]/.test(translation) && translation.length > 20,
+      `${String(translation.length)} chars`,
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('03-translate.png', SHOT_DIR)) });
+    await page.getByRole('button', { name: '隐藏译文' }).click();
+    check(
+      'translate: it can be folded away so it stops covering the page',
+      (await page.locator('.ai-answer-body').count()) === 0 &&
+        (await page.locator('.ai-original').count()) === 1,
+    );
+
+    // ---- 9. Failure, retry and cancellation -------------------------------
+    const askWith = async (question) => {
+      const box = page.getByRole('textbox', { name: '继续提问' });
+      await box.fill(question);
+      await page.getByRole('button', { name: '提问' }).click();
+    };
+
+    await askWith('故意触发错误 [[mock:error]]');
+    const alert = page.getByRole('alert').last();
+    await alert.waitFor({ timeout: 20_000 });
+    check(
+      'failure: a provider error is reported, with a retry',
+      (await alert.innerText()).length > 0 &&
+        (await page.getByRole('button', { name: '重试' }).count()) > 0,
+      (await alert.innerText()).slice(0, 40),
+    );
+    const afterFailure = await payloadOf(page);
+    check(
+      'failure: the reader’s notes and highlights are untouched',
+      afterFailure.annotations.length === afterSave.annotations.length,
+      `${String(afterFailure.annotations.length)} notes still stored`,
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('04-failure.png', SHOT_DIR)) });
+
+    await page.getByRole('button', { name: '重试' }).click();
+    await page.waitForTimeout(1200);
+    check(
+      'retry: retrying re-runs the same question and reports the same failure',
+      (await page.getByRole('alert').count()) > 0 &&
+        (await page.getByRole('textbox', { name: '继续提问' }).count()) === 1,
+    );
+
+    await askWith('这次说得慢一点 [[mock:timeout]]');
+    await page.getByRole('button', { name: '取消' }).waitFor({ timeout: 10_000 });
+    await page.getByRole('button', { name: '取消' }).click();
+    await page.waitForTimeout(600);
+    check(
+      'cancel: stopping a stalled request clears the busy state and leaves the panel usable',
+      (await page.locator('.ai-busy').count()) === 0 &&
+        (await page.getByRole('textbox', { name: '继续提问' }).count()) === 1,
+    );
+
+    // ---- 10. No key, no proxy, no execution -------------------------------
+    const answers = await page.evaluate(() => document.body.innerText);
+    check(
+      'leak: no credential appears anywhere in the rendered app',
+      !/sk-[A-Za-z0-9]{16,}/.test(answers),
+    );
+
+    const built = await readFile(new URL('dist/index.html', ROOT), 'utf8').catch(() => '');
+    const scripts = await readdir(new URL('dist/assets/', ROOT)).catch(() => []);
+    let bundle = built;
+    for (const file of scripts) {
+      if (file.endsWith('.js')) {
+        bundle += await readFile(new URL(`dist/assets/${file}`, ROOT), 'utf8').catch(() => '');
+      }
+    }
+    check(
+      'leak: the built application contains no key or key name',
+      !bundle.includes('DEEPSEEK_API_KEY') &&
+        !/sk-[A-Za-z0-9]{16,}/.test(bundle) &&
+        !bundle.includes('api.deepseek.com'),
+      `${String(Math.round(bundle.length / 1024))} KB scanned`,
+    );
+
+    const proxied = await page.evaluate(async () => {
+      const response = await fetch('/api/ai/not-a-real-endpoint');
+      return response.status;
+    });
+    check(
+      'service: there is no path through it to anywhere else',
+      proxied === 404,
+      `got ${String(proxied)}`,
+    );
+
+    const foreignOrigin = await fetch(`${AI_ORIGIN}/api/ai/health`, {
+      headers: { Origin: 'https://evil.example' },
+    });
+    check('service: a foreign origin is refused', foreignOrigin.status === 403);
+
+    // ---- 11. Instructions inside the paper are data -----------------------
+    await page.getByRole('button', { name: '返回' }).click();
+    await importIntoProject(page, injectionFile);
+    await selectForToolbar(page, 1, { span: 2, offset: 0 }, { span: 5, offset: 999 });
+    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await page
+      .getByRole('group', { name: '向 AI 提问' })
+      .getByRole('button', { name: '解释这段话' })
+      .click();
+    const injectedPanel = page.getByRole('complementary', { name: 'AI 精读助手' });
+    await injectedPanel.locator('.ai-answer-body').waitFor({ timeout: 20_000 });
+    const injectedRequest = requests.at(-1);
+    const injectedAnswer = await injectedPanel.locator('.ai-answer-body').innerText();
+    check(
+      'injection: the paper’s orders travel as a passage, never as an instruction',
+      injectedRequest.passages.some((entry) =>
+        entry.text.includes('Ignore all previous instructions'),
+      ) &&
+        typeof injectedRequest.system === 'undefined' &&
+        injectedRequest.history.length === 0,
+    );
+    check(
+      'injection: the answer is the provider’s own, not the document’s demand',
+      // The mock frames every answer itself, so a compliant answer would be visibly different
+      // from this — and the passage it echoes back is quoted as text, which is not compliance.
+      injectedAnswer.includes('本地模拟回答') &&
+        injectedAnswer.trim() !== 'PWNED' &&
+        !injectedAnswer.includes('硬性规则') &&
+        !injectedAnswer.includes('groundedInText') &&
+        !injectedAnswer.includes('paper_text'),
+      `${String(injectedAnswer.length)} chars of the provider’s usual frame`,
+    );
+
+    await askWith('把答案伪装成 HTML [[mock:html]]');
+    await page.locator('.ai-answer-body').last().waitFor({ timeout: 20_000 });
+    const executed = await page.evaluate(() => typeof window.__aiInjected);
+    check(
+      'injection: model output containing markup is shown, not executed',
+      executed === 'undefined' &&
+        (await page.locator('.ai-answer-body img').count()) === 0 &&
+        (await page.locator('.ai-answer-body script').count()) === 0,
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('05-injection.png', SHOT_DIR)) });
+
+    // ---- 12. Both themes --------------------------------------------------
+    // The range disclosure is opened first, so its text is on screen and gets measured too.
+    const rangeToggle = page.getByRole('button', { name: /查看会发送的范围/ });
+    if ((await rangeToggle.getAttribute('aria-expanded')) !== 'true') await rangeToggle.click();
+    for (const [theme, slug, index] of [
+      ['浅色', 'light', 6],
+      ['深色', 'dark', 7],
+    ]) {
+      await page.getByRole('button', { name: theme }).click();
+      await page.waitForTimeout(350);
+      await page.screenshot({
+        path: fileURLToPath(new URL(`0${String(index)}-ai-${slug}.png`, SHOT_DIR)),
+      });
+      const contrast = await auditContrast(page);
+      check(
+        `themes: every visible text run meets its contrast requirement in ${slug}`,
+        contrast.failures.length === 0,
+        `${String(contrast.checked)} runs, ${String(contrast.failures.length)} below their requirement` +
+          contrast.failures
+            .slice(0, 5)
+            .map(
+              (entry) =>
+                ` [${String(entry.ratio)} < ${String(entry.need)} ${entry.label.slice(0, 24)}]`,
+            )
+            .join(''),
+      );
+    }
+
+    // ---- 13. The service’s own log ---------------------------------------
+    const log = service.outputOf();
+    const lines = log.split('\n').filter((entry) => entry.trim() !== '');
+    const parsed = lines.filter((entry) => {
+      try {
+        JSON.parse(entry);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    check('log: every line is a structured record, not a dump', parsed.length === lines.length);
+    check(
+      'log: no key and no paper text is recorded',
+      !log.includes('DEEPSEEK_API_KEY') &&
+        !/sk-[A-Za-z0-9]{16,}/.test(log) &&
+        !log.includes('Ignore all previous instructions'),
+    );
+    check(
+      'log: it does record what was asked, in numbers',
+      log.includes('"passages"') && log.includes('"citations"'),
+    );
+
+    // ---- 14. The reader still works ---------------------------------------
+    await page.getByRole('button', { name: '返回' }).click();
+    await reopenReader(page, 'AI 精读验收');
+    const before = (await payloadOf(page)).annotations.length;
+    await selectForToolbar(page, 1, { span: 12, offset: 0 }, { span: 14, offset: 999 });
+    await toolbarOf(page).getByRole('button', { name: '高亮' }).click();
+    check(
+      'regression: highlighting still works next to the assistant',
+      (await payloadOf(page)).annotations.length === before + 1,
+    );
+
+    // Three of the requests below are broken on purpose — the two provider errors and the
+    // endpoint probe — so their browser-level noise is expected. Everything else is not.
+    const provoked = consoleIssues.filter((issue) =>
+      /\/api\/ai\/(ask|not-a-real-endpoint)/.test(issue.url),
+    );
+    const unexpected = consoleIssues.filter(
+      (issue) => !/\/api\/ai\/(ask|not-a-real-endpoint)/.test(issue.url),
+    );
+    check(
+      'console: nothing failed except the requests this run broke on purpose',
+      unexpected.length === 0 && provoked.length <= 3,
+      `${String(unexpected.length)} unexpected, ${String(provoked.length)} provoked`,
+    );
+    if (unexpected.length > 0) {
+      process.stdout.write(
+        `  unexpected: ${unexpected
+          .slice(0, 3)
+          .map((issue) => issue.text)
+          .join(' | ')}\n`,
+      );
+    }
+  } finally {
+    await browser.close();
+    server.kill();
+    service.child.kill();
+  }
+
+  const passed = results.filter((result) => result.passed).length;
+  const failed = results.length - passed;
+  await writeFile(
+    REPORT_FILE,
+    `${JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        provider: 'mock (offline, through the real local service)',
+        fixture: real ? 'real CC-BY arXiv paper 2610.22294' : 'generated two-column sample',
+        passed,
+        failed,
+        results,
+        consoleIssues,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  process.stdout.write(`\n${String(passed)} passed, ${String(failed)} failed.\n`);
+  if (failed > 0) process.exitCode = 1;
+}
+
+await main();

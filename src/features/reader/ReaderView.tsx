@@ -4,15 +4,25 @@ import {
   ChevronRight,
   Maximize2,
   PanelRightOpen,
+  Sparkles,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Annotation, AnnotationEdit, AnnotationKind } from '../../domain/annotation';
+import type {
+  Annotation,
+  AnnotationEdit,
+  AnnotationKind,
+  NormalizedRect,
+} from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
 import type { PdfBlobStore } from '../../services/pdfStore';
+import { fetchAiHealth } from '../../services/ai/client';
+import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
+import { inspectPageLayout } from './layout';
 import { NotesPanel } from './NotesPanel';
 import { PdfPage } from './PdfPage';
 import {
@@ -20,6 +30,7 @@ import {
   locateAnchor,
   pageElementOf,
   pageNumberOf,
+  readPageText,
   type SelectionAnchor,
 } from './selection';
 import {
@@ -34,6 +45,7 @@ import {
   totalHeight,
 } from './readerMath';
 import { PDF_FAILURE_MESSAGE, usePdfDocument } from './usePdfDocument';
+import { useAiReading, type AiClient, type AiTurn } from './useAiReading';
 
 interface ReaderViewProps {
   paper: Paper;
@@ -49,12 +61,46 @@ interface ReaderViewProps {
     anchor: SelectionAnchor,
     draft: { kind: AnnotationKind; note: string },
   ) => void;
+  /** Saves an assistant's answer as a note in the reader's own list, marked as such. */
+  onSaveAiNote: (anchor: SelectionAnchor, draft: { note: string; sourceLabel: string }) => void;
   onEditAnnotation: (id: string, edit: AnnotationEdit) => void;
   onDeleteAnnotation: (annotation: Annotation) => void;
+  /** Injectable so tests and the browser checks can supply a deterministic assistant. */
+  aiClient?: AiClient;
 }
 
 /** Below this width the notes panel covers part of the page instead of taking a column. */
 const NOTES_OVERLAY_QUERY = '(max-width: 1100px)';
+
+/** How long to wait for a page the reader jumped to to finish rendering its text layer. */
+const RENDER_WAIT_MS = 2500;
+
+/**
+ * Waits until a page has a usable text layer, then returns its element.
+ *
+ * A jump sets the current page immediately, but the page only builds its canvas and text layer
+ * once it enters the render window — and that happens a frame or two later. Asking the page
+ * about its text before that would answer "there is no such text here", which is a different
+ * and much more alarming statement than "it is not ready yet". Returns null on timeout, so the
+ * caller can say nothing rather than something wrong.
+ */
+async function waitForRenderedPage(
+  root: HTMLElement | null,
+  page: number,
+  timeoutMs = RENDER_WAIT_MS,
+): Promise<HTMLElement | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const element =
+      root?.querySelector<HTMLElement>(`.pdf-page[data-page="${String(page)}"]`) ?? null;
+    const layer = element?.querySelector<HTMLElement>('.textLayer') ?? null;
+    if (element !== null && layer !== null && (layer.textContent ?? '') !== '') return element;
+    if (Date.now() > deadline) return null;
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 100);
+    });
+  }
+}
 
 /**
  * The reading surface: a scrolling column of pages, with navigation and zoom.
@@ -72,8 +118,10 @@ export function ReaderView({
   onReplaceFile,
   annotations,
   onCreateAnnotation,
+  onSaveAiNote,
   onEditAnnotation,
   onDeleteAnnotation,
+  aiClient,
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -95,10 +143,18 @@ export function ReaderView({
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Annotation | null>(null);
-  const [notesOpen, setNotesOpen] = useState(
-    () =>
-      typeof window.matchMedia === 'function' && !window.matchMedia(NOTES_OVERLAY_QUERY).matches,
+  /** Which of the two side panels is showing, if either. */
+  const [panel, setPanel] = useState<'notes' | 'ai' | null>(() =>
+    typeof window.matchMedia === 'function' && !window.matchMedia(NOTES_OVERLAY_QUERY).matches
+      ? 'notes'
+      : null,
   );
+  /** Boxes shown briefly when the reader follows a citation. Never saved, never a highlight. */
+  const [spotlight, setSpotlight] = useState<{ page: number; rects: NormalizedRect[] } | null>(
+    null,
+  );
+  const [health, setHealth] = useState<AiHealth | null>(null);
+  const ai = useAiReading(aiClient);
 
   const pdfSha256 = paper.pdf?.sha256 ?? null;
   const here = useMemo(
@@ -270,10 +326,14 @@ export function ReaderView({
   const jumpToAnnotation = (annotation: Annotation): void => {
     setActiveAnnotationId(annotation.id);
     scrollToPage(annotation.page);
-    const page = scrollRef.current?.querySelector<HTMLElement>(
-      `.pdf-page[data-page="${String(annotation.page)}"]`,
-    );
-    if (page !== null && page !== undefined) {
+    void (async () => {
+      const page = await waitForRenderedPage(scrollRef.current, annotation.page);
+      if (page === null) {
+        // The page never finished rendering. The highlight is still drawn from its stored
+        // boxes; there is simply nothing to check the text against, and nothing to claim.
+        setSelectionNotice(null);
+        return;
+      }
       const located = locateAnchor(page, annotation);
       if (located.match.kind === 'ambiguous') {
         setSelectionNotice(
@@ -284,12 +344,91 @@ export function ReaderView({
       } else {
         setSelectionNotice(null);
       }
-    }
+    })();
     setFlashId(annotation.id);
     window.setTimeout(() => {
       setFlashId((current) => (current === annotation.id ? null : current));
     }, 1600);
   };
+
+  /**
+   * Follows a citation back to the page it came from.
+   *
+   * The citation was verified against the passages the service sent, so its page is a fact and
+   * jumping there is always right. Where on the page it points, though, is found by matching the
+   * quoted text — and when that is ambiguous or fails, the reader is told, exactly as they are
+   * for a saved highlight. Nothing is highlighted on a guess.
+   */
+  const jumpToCitation = (citation: AiCitation): void => {
+    scrollToPage(citation.page);
+    setFlashId(null);
+    setSpotlight(null);
+    void (async () => {
+      const page = await waitForRenderedPage(scrollRef.current, citation.page);
+      if (page === null) {
+        setSelectionNotice('这一页还没有渲染完，暂时无法标出引用位置；已经跳到该页。');
+        return;
+      }
+      const located = locateAnchor(page, { quote: citation.quote, prefix: '', suffix: '' });
+      if (located.match.kind === 'found') {
+        setSelectionNotice(null);
+        setSpotlight({ page: citation.page, rects: located.rects });
+      } else if (located.match.kind === 'ambiguous') {
+        setSelectionNotice('这段原文在这一页出现了多次，无法确定引用的是哪一处。');
+      } else {
+        setSelectionNotice('这段引文没有在这一页的文字里找到，可能是提取时残缺了。');
+      }
+    })();
+  };
+
+  /** Turns the reader's selection into a question for the assistant. */
+  const openAi = (mode: AiMode, question: string): void => {
+    if (pendingSelection === null) return;
+    const pageRoot = scrollRef.current?.querySelector<HTMLElement>(
+      `.pdf-page[data-page="${String(pendingSelection.anchor.page)}"]`,
+    );
+    const layer = pageRoot?.querySelector<HTMLElement>('.textLayer') ?? null;
+    const pageText = layer === null ? '' : readPageText(layer).page.text;
+    setSelectionNotice(null);
+    setSpotlight(null);
+    setPanel('ai');
+    ai.ask(
+      {
+        paperId: paper.id,
+        title: paper.title,
+        pdfSha256: pdfSha256 ?? '',
+        anchor: pendingSelection.anchor,
+        pageText,
+        layoutNotice:
+          pageRoot === null || pageRoot === undefined ? null : inspectPageLayout(pageRoot).notice,
+      },
+      mode,
+      question,
+    );
+    clearSelection();
+  };
+
+  const saveAiNote = (turn: AiTurn): void => {
+    if (ai.session === null || turn.answer === null) return;
+    onSaveAiNote(ai.session.source.anchor, {
+      note: turn.answer.answer,
+      sourceLabel: turn.answer.providerLabel,
+    });
+  };
+
+  // The service's identity is only needed once the assistant is actually opened, so the app
+  // does not call out on startup.
+  useEffect(() => {
+    if (panel !== 'ai' || health !== null) return;
+    let cancelled = false;
+    void (async () => {
+      const found = await fetchAiHealth();
+      if (!cancelled) setHealth(found);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, health]);
 
   // A notice is a passing remark, not a permanent state.
   useEffect(() => {
@@ -399,13 +538,24 @@ export function ReaderView({
           <button
             type="button"
             className="btn btn-quiet"
-            aria-pressed={notesOpen}
+            aria-pressed={panel === 'notes'}
             onClick={() => {
-              setNotesOpen((value) => !value);
+              setPanel((value) => (value === 'notes' ? null : 'notes'));
             }}
           >
             <PanelRightOpen size={14} aria-hidden="true" />
             笔记{here.length > 0 ? ` ${String(here.length)}` : ''}
+          </button>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            aria-pressed={panel === 'ai'}
+            onClick={() => {
+              setPanel((value) => (value === 'ai' ? null : 'ai'));
+            }}
+          >
+            <Sparkles size={14} aria-hidden="true" />
+            AI 答疑
           </button>
         </div>
       </div>
@@ -476,6 +626,7 @@ export function ReaderView({
                       }}
                       annotations={byPage.get(pageNumber) ?? []}
                       flashId={flashId}
+                      spotlight={spotlight?.page === pageNumber ? spotlight.rects : null}
                     />
                   </div>
                 );
@@ -483,7 +634,7 @@ export function ReaderView({
             </div>
           </div>
 
-          {notesOpen && (
+          {panel === 'notes' && (
             <NotesPanel
               annotations={annotations}
               currentPdfSha256={pdfSha256}
@@ -492,7 +643,24 @@ export function ReaderView({
               onEdit={onEditAnnotation}
               onDelete={setPendingDelete}
               onClose={() => {
-                setNotesOpen(false);
+                setPanel(null);
+              }}
+            />
+          )}
+
+          {panel === 'ai' && (
+            <AiPanel
+              session={ai.session}
+              busy={ai.busy}
+              health={health}
+              onFollowUp={ai.followUp}
+              onRetry={ai.retry}
+              onCancel={ai.cancel}
+              onClear={ai.clear}
+              onSaveNote={saveAiNote}
+              onJumpToCitation={jumpToCitation}
+              onClose={() => {
+                setPanel(null);
               }}
             />
           )}
@@ -506,6 +674,7 @@ export function ReaderView({
             saveAnnotation({ kind: 'note', note: '' });
           }}
           onNote={saveAnnotation}
+          onAsk={openAi}
           onDismiss={clearSelection}
         />
       )}

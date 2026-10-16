@@ -1,4 +1,10 @@
-import { ANNOTATION_KINDS, type Annotation, type AnnotationKind } from './annotation';
+import {
+  ANNOTATION_KINDS,
+  ANNOTATION_ORIGINS,
+  type Annotation,
+  type AnnotationKind,
+  type AnnotationOrigin,
+} from './annotation';
 import type { Paper } from './papers';
 import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
@@ -10,6 +16,35 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /* ------------------------------------------------------------------ *
  * Current shape (schema version 4)
  * ------------------------------------------------------------------ */
+
+/**
+ * Where a note's text came from.
+ *
+ * A payload written before assistant notes existed has no `origin` at all, and everything in it
+ * is the reader's own work — so a missing field means `user`, which is what the 4→5 migration
+ * writes anyway. A field that is present but wrong is corruption, not an older shape.
+ */
+function parseOrigins(
+  value: unknown,
+  sourceLabel: unknown,
+): { origin: AnnotationOrigin; sourceLabel: string } | null {
+  let origin: AnnotationOrigin = 'user';
+  if (value !== undefined) {
+    if (typeof value !== 'string' || !ANNOTATION_ORIGINS.includes(value as AnnotationOrigin)) {
+      return null;
+    }
+    origin = value as AnnotationOrigin;
+  }
+  let label = '';
+  if (sourceLabel !== undefined) {
+    if (typeof sourceLabel !== 'string') return null;
+    label = sourceLabel;
+  }
+  // An assistant note without a label would be indistinguishable in the panel; the migration
+  // and the save path both always set one, so this combination means the payload is wrong.
+  if (origin === 'assistant' && label === '') return null;
+  return { origin, sourceLabel: label };
+}
 
 /** A highlight whose shape does not survive validation is rejected, not guessed at. */
 function parseAnnotation(value: unknown): Annotation | null {
@@ -25,6 +60,8 @@ function parseAnnotation(value: unknown): Annotation | null {
     rects,
     kind,
     note,
+    origin,
+    sourceLabel,
     createdAt,
     updatedAt,
   } = value;
@@ -37,6 +74,8 @@ function parseAnnotation(value: unknown): Annotation | null {
   if (typeof kind !== 'string' || !ANNOTATION_KINDS.includes(kind as AnnotationKind)) return null;
   if (typeof note !== 'string') return null;
   if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
+  const provenance = parseOrigins(origin, sourceLabel);
+  if (provenance === null) return null;
   if (!Array.isArray(rects)) return null;
   const parsedRects: Annotation['rects'] = [];
   for (const rect of rects) {
@@ -58,6 +97,7 @@ function parseAnnotation(value: unknown): Annotation | null {
     rects: parsedRects,
     kind: kind as AnnotationKind,
     note,
+    ...provenance,
     createdAt,
     updatedAt,
   };

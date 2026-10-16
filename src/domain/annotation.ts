@@ -17,6 +17,23 @@ export interface NormalizedRect {
 
 export type AnnotationKind = 'question' | 'insight' | 'note';
 
+/**
+ * Where the *text* of a note came from.
+ *
+ * Once a reader saves an explanation the assistant wrote, it sits in the same list as the notes
+ * they typed themselves — and the two must not be confused, either now or after an edit. So the
+ * origin records how the text entered the app and is never rewritten: a note that began as an
+ * answer stays marked as one, even after the reader edits it.
+ */
+export type AnnotationOrigin = 'user' | 'assistant';
+
+export const ANNOTATION_ORIGINS: readonly AnnotationOrigin[] = ['user', 'assistant'];
+
+export const ORIGIN_LABEL: Record<AnnotationOrigin, string> = {
+  user: '自己写',
+  assistant: 'AI 辅助',
+};
+
 export interface Annotation {
   id: string;
   /** The global paper this belongs to: notes follow the paper, not the project. */
@@ -35,6 +52,9 @@ export interface Annotation {
   rects: NormalizedRect[];
   kind: AnnotationKind;
   note: string;
+  origin: AnnotationOrigin;
+  /** Which provider and model wrote an assistant note; empty for the reader's own. */
+  sourceLabel: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -53,6 +73,7 @@ export const CONTEXT_RADIUS = 40;
 
 export const MAX_QUOTE_LENGTH = 2000;
 export const MAX_NOTE_LENGTH = 4000;
+export const MAX_SOURCE_LENGTH = 120;
 
 export interface AnnotationInput {
   paperId: string;
@@ -64,6 +85,9 @@ export interface AnnotationInput {
   rects: readonly NormalizedRect[];
   kind: AnnotationKind;
   note?: string;
+  /** Defaults to the reader's own writing; only the assistant flow passes `assistant`. */
+  origin?: AnnotationOrigin;
+  sourceLabel?: string;
 }
 
 /** Collapses the whitespace a PDF text layer puts between and inside lines. */
@@ -129,12 +153,14 @@ export function createAnnotation(
     rects,
     kind: input.kind,
     note: (input.note ?? '').slice(0, MAX_NOTE_LENGTH),
+    origin: input.origin ?? 'user',
+    sourceLabel: (input.sourceLabel ?? '').slice(0, MAX_SOURCE_LENGTH),
     createdAt: now,
     updatedAt: now,
   };
 }
 
-/** An edit touches what the reader wrote, never where the highlight is. */
+/** An edit touches what the reader wrote, never where the highlight is, nor who wrote it. */
 export interface AnnotationEdit {
   note?: string;
   kind?: AnnotationKind;

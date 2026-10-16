@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import type { Annotation } from '../../domain/annotation';
+import type { Annotation, NormalizedRect } from '../../domain/annotation';
 import { isRenderCancelled, loadPdfjs, type PDFDocumentProxy } from './pdfjs';
 
 interface PdfPageProps {
@@ -15,6 +15,14 @@ interface PdfPageProps {
   annotations?: readonly Annotation[];
   /** The annotation to draw attention to, right after the reader jumped to it. */
   flashId?: string | null;
+  /**
+   * Boxes to mark right now, without saving anything.
+   *
+   * Used when the reader follows a citation: the place the model referred to is shown, briefly,
+   * and is not a highlight anyone made. It is drawn in its own layer so it can never be
+   * mistaken for — or confused with — a saved annotation.
+   */
+  spotlight?: readonly NormalizedRect[] | null;
 }
 
 /** Above this the canvas stops growing: more pixels cost memory without being visible. */
@@ -39,6 +47,7 @@ export function PdfPage({
   placeholder,
   annotations = [],
   flashId = null,
+  spotlight = null,
 }: PdfPageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -140,8 +149,22 @@ export function PdfPage({
       style={{ width: `${width}px`, height: `${height}px` }}
     >
       <div ref={hostRef} className="pdf-host" />
-      {annotations.length > 0 && (
+      {(spotlight !== null && spotlight.length > 0) || annotations.length > 0 ? (
         <div className="annotation-layer">
+          {spotlight?.map((rect, index) => (
+            <div
+              // The boxes of one spotlight are a position list; the index is their identity.
+              key={`spotlight-${String(index)}`}
+              className="pdf-highlight"
+              data-spotlight="true"
+              style={{
+                left: `${String(rect.x * 100)}%`,
+                top: `${String(rect.y * 100)}%`,
+                width: `${String(rect.width * 100)}%`,
+                height: `${String(rect.height * 100)}%`,
+              }}
+            />
+          ))}
           {annotations.map((annotation) => (
             <Fragment key={annotation.id}>
               {annotation.rects.map((rect, index) => (
@@ -163,7 +186,7 @@ export function PdfPage({
             </Fragment>
           ))}
         </div>
-      )}
+      ) : null}
       {hasNoText && !failed && (
         <p className="pdf-page-hint">
           这一页没有可提取的文字（可能是扫描件），暂时无法高亮或记笔记。

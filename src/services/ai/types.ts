@@ -1,0 +1,103 @@
+/**
+ * What the browser and the local AI service say to each other.
+ *
+ * The browser sends structure: which paper, which page, which passages, which question. It does
+ * not send a system message, a model name, an endpoint or a credential — those live in the
+ * service, which is the only thing that holds the key.
+ */
+
+/** The kinds of help the reader can ask for at a selection. */
+export type AiMode = 'explain' | 'walkthrough' | 'formula' | 'translate' | 'ask';
+
+export const AI_MODE_LABEL: Record<AiMode, string> = {
+  explain: '解释这段话',
+  walkthrough: '逐步讲解原理',
+  formula: '解释数学公式',
+  translate: '翻译为中文',
+  ask: '自由提问',
+};
+
+/** One block of原文 the model is allowed to rely on. Exactly one is the reader's selection. */
+export interface AiPassage {
+  id: string;
+  page: number;
+  text: string;
+  selection: boolean;
+}
+
+export interface AiHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AiPaperRef {
+  id: string;
+  title: string;
+  page: number;
+  pdfSha256: string;
+}
+
+export interface AiAskRequest {
+  mode: AiMode;
+  question: string;
+  paper: AiPaperRef;
+  passages: AiPassage[];
+  history?: AiHistoryTurn[];
+  /** What the reader's own layout check found, stated as a measurement rather than a guess. */
+  layoutNotice?: string | null;
+}
+
+/** A citation that survived the service's check: the page came from our own record. */
+export interface AiCitation {
+  n: number;
+  passageId: string;
+  page: number;
+  quote: string;
+  selection: boolean;
+}
+
+export interface AiAnswer {
+  provider: string;
+  providerLabel: string;
+  model: string;
+  /** True when the answer came from a paid service, so the interface can say so. */
+  online: boolean;
+  mode: AiMode;
+  answer: string;
+  /** The model's own claim about whether the text it was given sufficed. Null when unknown. */
+  groundedInText: boolean | null;
+  citations: AiCitation[];
+  warnings: string[];
+  usage: { promptTokens: number | null; completionTokens: number | null } | null;
+}
+
+export type AiFailureKind =
+  | 'offline'
+  | 'timeout'
+  | 'cancelled'
+  | 'busy'
+  | 'rate-limit'
+  | 'auth'
+  | 'upstream'
+  | 'bad-request'
+  | 'unknown';
+
+export interface AiFailure {
+  kind: AiFailureKind;
+  message: string;
+}
+
+export interface AiHealth {
+  ok: boolean;
+  provider: string;
+  label: string;
+  model: string;
+  online: boolean;
+  limits: {
+    passages: number;
+    passageChars: number;
+    totalContextChars: number;
+    questionChars: number;
+    requestsPerMinute: number;
+  };
+}

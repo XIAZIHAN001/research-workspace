@@ -1,4 +1,4 @@
-import { Highlighter, MessageSquarePlus, X } from 'lucide-react';
+import { Highlighter, MessageSquarePlus, SendHorizontal, Sparkles, X } from 'lucide-react';
 import { useState, type SubmitEvent } from 'react';
 import {
   ANNOTATION_KINDS,
@@ -6,6 +6,7 @@ import {
   MAX_NOTE_LENGTH,
   type AnnotationKind,
 } from '../../domain/annotation';
+import { AI_MODE_LABEL, type AiMode } from '../../services/ai/types';
 
 interface AnnotationToolbarProps {
   /** Where to sit, in viewport coordinates: just above the selection. */
@@ -14,35 +15,54 @@ interface AnnotationToolbarProps {
   onHighlight: () => void;
   /** Saves a highlight with a note and a kind. */
   onNote: (draft: { kind: AnnotationKind; note: string }) => void;
+  /** Asks the assistant about the selection. */
+  onAsk: (mode: AiMode, question: string) => void;
   onDismiss: () => void;
 }
 
-const HALF_WIDTH = 130;
+/** Half the toolbar's widest state, used to keep the whole thing on screen. */
+const HALF_WIDTH = { actions: 150, menu: 200 };
 const EDGE = 8;
+
+const AI_MODES: readonly AiMode[] = ['explain', 'walkthrough', 'formula', 'translate', 'ask'];
 
 /**
  * The small toolbar that appears over a selection.
  *
- * Two actions only: highlighting is one click, writing a note opens a small editor in place.
- * The selection itself is already captured by the reader before this mounts, so clicking here
- * cannot lose it.
+ * Four actions, and none of them is a menu of menus: highlighting is one click, writing a note
+ * opens a small editor in place, and the assistant opens a short list of the questions a reader
+ * actually has about a passage. The selection is captured by the reader before this mounts, so
+ * clicking here cannot lose it.
  */
 export function AnnotationToolbar({
   spot,
   onHighlight,
   onNote,
+  onAsk,
   onDismiss,
 }: AnnotationToolbarProps) {
   const [composing, setComposing] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [kind, setKind] = useState<AnnotationKind>('question');
   const [note, setNote] = useState('');
+  const [question, setQuestion] = useState('');
 
-  const left = Math.min(Math.max(spot.x, HALF_WIDTH + EDGE), window.innerWidth - HALF_WIDTH - EDGE);
+  const half = composing || asking ? HALF_WIDTH.menu : HALF_WIDTH.actions;
+  const left = Math.min(
+    Math.max(spot.x, half + EDGE),
+    Math.max(half + EDGE, window.innerWidth - half - EDGE),
+  );
   const top = Math.max(spot.y - 12, 56);
 
-  const submit = (event: SubmitEvent<HTMLFormElement>): void => {
+  const submitNote = (event: SubmitEvent<HTMLFormElement>): void => {
     event.preventDefault();
     onNote({ kind, note });
+  };
+
+  const submitQuestion = (event: SubmitEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (question.trim() === '') return;
+    onAsk('ask', question.trim());
   };
 
   return (
@@ -56,7 +76,7 @@ export function AnnotationToolbar({
       }}
     >
       {composing ? (
-        <form className="annotation-compose" onSubmit={submit}>
+        <form className="annotation-compose" onSubmit={submitNote}>
           <div className="annotation-kinds" role="group" aria-label="笔记类型">
             {ANNOTATION_KINDS.map((option) => (
               <button
@@ -95,6 +115,54 @@ export function AnnotationToolbar({
             </button>
           </div>
         </form>
+      ) : asking ? (
+        <div className="ai-ask-menu" role="group" aria-label="向 AI 提问">
+          {AI_MODES.filter((mode) => mode !== 'ask').map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                onAsk(mode, '');
+              }}
+            >
+              {AI_MODE_LABEL[mode]}
+            </button>
+          ))}
+          <form className="ai-ask-inline" onSubmit={submitQuestion}>
+            <label>
+              <span className="sr-only">针对这段原文提问</span>
+              <input
+                type="text"
+                value={question}
+                autoFocus
+                placeholder="针对这段原文提问…"
+                onChange={(event) => {
+                  setQuestion(event.target.value);
+                }}
+              />
+            </label>
+            <button
+              type="submit"
+              className="icon-btn"
+              aria-label="提问"
+              disabled={question.trim() === ''}
+            >
+              <SendHorizontal size={14} aria-hidden="true" />
+            </button>
+          </form>
+          <div className="annotation-actions">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setAsking(false);
+              }}
+            >
+              返回
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="annotation-actions">
           <button type="button" className="btn btn-quiet" onClick={onHighlight}>
@@ -110,6 +178,16 @@ export function AnnotationToolbar({
           >
             <MessageSquarePlus size={14} aria-hidden="true" />
             笔记
+          </button>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            onClick={() => {
+              setAsking(true);
+            }}
+          >
+            <Sparkles size={14} aria-hidden="true" />
+            AI
           </button>
           <button type="button" className="icon-btn" aria-label="关闭" onClick={onDismiss}>
             <X size={14} aria-hidden="true" />

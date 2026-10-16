@@ -15,6 +15,15 @@ if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
   };
 }
 
+// jsdom has no layout engine, so scrollIntoView() is missing rather than a no-op. The reader's
+// panels call it to keep the newest item in view; with no scrollable box there is nothing for it
+// to do, and it must not throw.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+    void this;
+  };
+}
+
 // Vitest runs with globals off, so Testing Library cannot register its own
 // auto-cleanup. Unmount rendered trees and wipe storage between tests.
 afterEach(() => {

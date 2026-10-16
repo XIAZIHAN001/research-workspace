@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -155,10 +155,31 @@ function migrateV3ToV4(payload: Record<string, unknown>): Record<string, unknown
   return { ...payload, version: 4, annotations: [] };
 }
 
+/**
+ * v4 → v5 added provenance to every note: whether the reader wrote it or an assistant did, and
+ * which model wrote it.
+ *
+ * Every existing note was typed by a human, and the migration says so explicitly rather than
+ * relying on the reader's tolerance for a missing field. That matters: a payload that has been
+ * through this migration is self-describing, so nothing downstream has to guess.
+ */
+function migrateV4ToV5(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  const annotations = Array.isArray(payload.annotations) ? payload.annotations : [];
+  return {
+    ...payload,
+    version: 5,
+    annotations: annotations.map((entry) =>
+      isRecord(entry) ? { origin: 'user', sourceLabel: '', ...entry } : entry,
+    ),
+  };
+}
+
 const MIGRATIONS: Record<number, MigrationStep> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
+  4: migrateV4ToV5,
 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {

@@ -148,6 +148,9 @@ export interface SelectionAnchor {
   prefix: string;
   suffix: string;
   rects: NormalizedRect[];
+  /** Where the quote sits in the page's own text, so context can be taken from around it. */
+  start: number;
+  end: number;
 }
 
 /** The selection's boxes on the page, as fractions of the page box. */
@@ -200,6 +203,8 @@ export function describeSelection(
     prefix: layout.page.text.slice(Math.max(0, start - 40), start),
     suffix: layout.page.text.slice(end, end + 40),
     rects: normalizedRects(range, pageRoot),
+    start,
+    end,
   };
 }
 
