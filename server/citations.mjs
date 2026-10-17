@@ -57,7 +57,120 @@ export function parseModelOutput(raw) {
       // try the next shape
     }
   }
-  return { ok: false, text: trimmed, sawJsonObject };
+
+  // The model writes its answer as JSON *containing LaTeX*, and a stray backslash or a missing
+  // brace is enough to make the envelope invalid while the answer inside it is perfectly good.
+  // (Measured against the live API: a 3971-character answer whose every citation was correct,
+  // rejected whole because the JSON did not close.) So the fields are salvaged individually —
+  // and the caller still verifies every citation word for word, which is what keeps this honest.
+  const salvaged = salvage(trimmed);
+  if (salvaged !== null)
+    return { ok: true, text: salvaged.answer, value: salvaged, salvaged: true };
+
+  return {
+    ok: false,
+    text: trimmed,
+    // Something that opens as an object is an attempt at the contract, even when it is too
+    // broken to parse; showing it raw would put JSON in front of a reader who asked a question.
+    sawJsonObject: sawJsonObject || trimmed.startsWith('{'),
+  };
+}
+
+/**
+ * Reads `answer`, `groundedInText` and `citations` out of JSON that does not parse.
+ *
+ * Deliberately narrow: it only understands the shape this service's own prompt asks for, it
+ * takes each citation object through `JSON.parse` on its own (so a broken one is dropped rather
+ * than half-read), and it returns null rather than guessing when the answer itself is missing.
+ */
+function salvage(text) {
+  const answer = readStringField(text, 'answer');
+  if (answer === null || answer.trim() === '') return null;
+
+  const citations = [];
+  const start = text.indexOf('"citations"');
+  if (start >= 0) {
+    const bracket = text.indexOf('[', start);
+    if (bracket >= 0) {
+      for (let index = bracket; index < text.length; index += 1) {
+        if (text[index] !== '{') continue;
+        // Match the closing brace of this object, honouring strings and escapes.
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        for (let end = index; end < text.length; end += 1) {
+          const ch = text[end];
+          if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+          }
+          if (ch === '"') inString = true;
+          else if (ch === '{') depth += 1;
+          else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              try {
+                citations.push(JSON.parse(text.slice(index, end + 1)));
+              } catch {
+                // A citation whose own object is broken is dropped, not repaired.
+              }
+              index = end;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const grounded = /"groundedInText"\s*:\s*(true|false)/.exec(text);
+  return {
+    answer,
+    groundedInText: grounded === null ? undefined : grounded[1] === 'true',
+    citations,
+  };
+}
+
+/** The value of a top-level string field, read with escape awareness. null when absent. */
+function readStringField(text, name) {
+  const key = `"${name}"`;
+  const at = text.indexOf(key);
+  if (at < 0) return null;
+  const colon = text.indexOf(':', at);
+  if (colon < 0) return null;
+  // The value has to actually be a string. Without this the scan would happily read the first
+  // quoted thing it found after the key — which, for `{"answer": {"text": …}}`, is the nested
+  // field's own name, turning a malformed answer into a confident-looking wrong one.
+  let cursor = colon + 1;
+  while (cursor < text.length && /\s/.test(text[cursor] ?? '')) cursor += 1;
+  if (text[cursor] !== '"') return null;
+  const open = cursor;
+  let out = '';
+  let escaped = false;
+  for (let index = open + 1; index < text.length; index += 1) {
+    const ch = text[index];
+    if (escaped) {
+      out += `\\${ch}`;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      try {
+        return JSON.parse(`"${out}"`);
+      } catch {
+        // An escape the JSON grammar does not know: keep the text as it stands.
+        return out;
+      }
+    }
+    out += ch;
+  }
+  return null;
 }
 
 /**
@@ -90,6 +203,11 @@ export function verifyAnswer(rawText, passages, { truncated = false } = {}) {
   const answer = parsed.text.slice(0, MAX_ANSWER_CHARS);
   if (parsed.text.length > MAX_ANSWER_CHARS) warnings.push('回答过长，已截断。');
   if (parsed.text.trim() === '') warnings.push('模型返回了空的回答正文。');
+  if (parsed.salvaged === true) {
+    warnings.push(
+      '模型这次返回的 JSON 不完整，回答正文与引用是从中逐字段恢复的；每条引用仍逐字校验过，但没有通过一次完整的 JSON 解析。',
+    );
+  }
 
   const byId = new Map(passages.map((passage) => [passage.id, passage]));
   const groundedInText =

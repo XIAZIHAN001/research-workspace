@@ -23,6 +23,15 @@ interface AnnotationToolbarProps {
 /** Half the toolbar's widest state, used to keep the whole thing on screen. */
 const HALF_WIDTH = { actions: 150, menu: 200 };
 const EDGE = 8;
+/**
+ * Roughly how tall each state is, used to keep the bottom edge on screen.
+ *
+ * A selection near the foot of the page puts the toolbar near the foot of the window, and the
+ * menu opens downwards — so without this the last items were rendered below the viewport where
+ * they could not be clicked at all. Measured, not measured *precisely*: it only has to be close
+ * enough to keep the buttons reachable, and the stylesheet caps the height as a backstop.
+ */
+const HEIGHT = { actions: 44, menu: 280 };
 
 const AI_MODES: readonly AiMode[] = ['explain', 'walkthrough', 'formula', 'translate', 'ask'];
 
@@ -52,7 +61,13 @@ export function AnnotationToolbar({
     Math.max(spot.x, half + EDGE),
     Math.max(half + EDGE, window.innerWidth - half - EDGE),
   );
-  const top = Math.max(spot.y - 12, 56);
+  // Clamped on all four sides: horizontally so neither end runs off the window, vertically so
+  // the menu that opens downwards still ends above the bottom edge.
+  const estimatedHeight = composing || asking ? HEIGHT.menu : HEIGHT.actions;
+  const top = Math.min(
+    Math.max(spot.y - 12, 56),
+    Math.max(56, window.innerHeight - estimatedHeight - EDGE),
+  );
 
   const submitNote = (event: SubmitEvent<HTMLFormElement>): void => {
     event.preventDefault();

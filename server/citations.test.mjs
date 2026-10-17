@@ -244,6 +244,48 @@ describe('verifyAnswer: answers that cannot be used', () => {
  * view they are. The interface says so in as many words — see the caveat asserted in
  * `AiPanel.test.tsx`.
  */
+/**
+ * The live API produced a 3971-character answer whose every citation was correct and whose JSON
+ * envelope did not parse. Rejecting that whole answer and showing the reader raw JSON is a worse
+ * outcome than reading the fields out of it — as long as every citation is still checked word for
+ * word, which it is.
+ */
+describe('verifyAnswer: recovering a good answer from a broken envelope', () => {
+  it('reads the fields out when a stray trailing comma broke the parse', () => {
+    const broken =
+      '{"answer": "作者说 [1]。", "groundedInText": true, "citations": [{"n":1,"passageId":"selection","quote":"normalised across the key dimension"}],}';
+    const result = verifyAnswer(broken, PASSAGES);
+    expect(result.answer).toBe('作者说 [1]。');
+    expect(result.groundedInText).toBe(true);
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0]?.passageId).toBe('selection');
+    expect(result.warnings.join(' ')).toContain('JSON 不完整');
+  });
+
+  it('keeps the citations whose own objects are intact when the array is cut off', () => {
+    const broken =
+      '{"answer": "见 [1]。", "citations": [{"n":1,"passageId":"selection","quote":"normalised across the key dimension"}';
+    const result = verifyAnswer(broken, PASSAGES);
+    expect(result.answer).toBe('见 [1]。');
+    expect(result.citations).toHaveLength(1);
+    expect(result.warnings.join(' ')).toContain('JSON 不完整');
+  });
+
+  it('still refuses a citation that the passages do not contain', () => {
+    const broken =
+      '{"answer": "见 [1]。", "citations": [{"n":1,"passageId":"selection","quote":"这并不在原文里"}],}';
+    const result = verifyAnswer(broken, PASSAGES);
+    // Recovery is of the *shape*; the citation still has to earn its place.
+    expect(result.citations).toEqual([]);
+    expect(result.warnings.join(' ')).toContain('未通过校验');
+  });
+
+  it('does not salvage an answer field that is not a string', () => {
+    expect(verifyAnswer('{"answer": 42, "citations": []', PASSAGES).answer).toBe('');
+    expect(verifyAnswer('{"answer": {"text": "x"}, "citations": []', PASSAGES).answer).toBe('');
+  });
+});
+
 describe('verifyAnswer: what citation checking does not claim', () => {
   it('accepts a real quotation attached to a conclusion the passage never makes', () => {
     const result = verifyAnswer(

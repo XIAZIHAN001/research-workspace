@@ -187,7 +187,14 @@ async function gotoPage(page, number) {
   }
 }
 
-/** Leaf spans of a page, with the geometry needed to pick a range inside one column. */
+/**
+ * Leaf spans of a page, with the geometry needed to pick a range inside one column.
+ *
+ * Every leaf span is kept, including empty ones, because `selectSpans` addresses spans by their
+ * position in this same list. Filtering empties here would shift every index and the selection
+ * would land somewhere else than the range that was chosen — which is exactly what happened
+ * once, and was only visible because the model quoted the passage it had actually been given.
+ */
 function spanInfo(page, number) {
   return page.evaluate((n) => {
     const root = document.querySelector(`.pdf-page[data-page="${String(n)}"]`);
@@ -196,7 +203,7 @@ function spanInfo(page, number) {
     return {
       half: box.left + box.width / 2,
       spans: [...root.querySelectorAll('.textLayer span')]
-        .filter((span) => span.querySelector('span') === null && (span.textContent ?? '').trim())
+        .filter((span) => span.querySelector('span') === null)
         .map((span) => {
           const rect = span.getBoundingClientRect();
           return { text: span.textContent ?? '', left: rect.left, right: rect.right };
@@ -264,7 +271,26 @@ function pickRun(info, { wantMath, minSpans = 3, minChars = 80, maxChars = 600 }
   // A run that is asked to contain mathematics and does not is not a substitute for one that
   // does. Falling back would quietly turn the formula test into a second prose test and then
   // fail a check about symbols, which reads as a product problem when it is a fixture problem.
-  const pool = wantMath ? scored.filter((entry) => entry.maths > 0) : scored;
+  //
+  // Containing a symbol is not enough either. A page of axis labels carries `β` and `−` and no
+  // mathematics at all — asking a model to explain a formula that is really a set of tick marks
+  // measures nothing except its willingness to say so.
+  //
+  // Two signals, because one was not enough: the run must state something (`=`, `∈`, `≤`, `≥`)
+  // *and* must not be mostly numerals. `1 2 4 8 16 −10 0 10 20 30 gain over unguided (pp) …
+  // β= 0.5 1 2 4 8` satisfies the equality test and is a chart axis; a passage that explains
+  // notation has letters in it and a few numbers, not the other way round.
+  const equationLike = (text) => /[=∈≤≥]|:=/.test(text);
+  const mostlyNumerals = (text) => {
+    const digits = (text.match(/\d/g) ?? []).length;
+    const letters = (text.match(/[A-Za-z一-鿿]/g) ?? []).length;
+    return digits + letters > 0 && digits / (digits + letters) > 0.25;
+  };
+  const pool = wantMath
+    ? scored.filter(
+        (entry) => entry.maths > 0 && equationLike(entry.text) && !mostlyNumerals(entry.text),
+      )
+    : scored;
   if (pool.length === 0) return null;
   // For mathematics, prefer the longest run: a complete sentence that uses the notation beats a
   // two-character fragment that merely contains it.
@@ -273,22 +299,96 @@ function pickRun(info, { wantMath, minSpans = 3, minChars = 80, maxChars = 600 }
 }
 
 /**
- * Finds a page carrying a usable passage of notation, looking near the most mathematical page.
+ * Finds a passage that uses notation, by reading the text rather than the geometry.
  *
- * One page is not enough: on this paper the notation is dense on page 7 but so interleaved with
- * the other column that no long single-column run of it survives. Neighbouring pages carry the
- * same definitions in different layouts.
+ * Displayed equations in this paper are not contiguous in the extraction: a single line comes
+ * back as a scatter of items — `≥`, `∈`, `) :=`, `∏` — and the column cut used elsewhere in this
+ * script splits sentences that happen to straddle the page midpoint. So the formula case picks a
+ * *window of consecutive spans whose text reads like notation in prose*: it must contain an
+ * equality or an inequality, real words, and not be mostly numerals (a chart axis satisfies a
+ * naive search and teaches nothing).
+ *
+ * Returns null rather than substituting a passage without notation. The caller fails loudly; a
+ * formula test that silently becomes a prose test is worse than no result.
  */
-async function findMathPassage(page, nearPage) {
+/**
+ * Where the notation passage is, checked offline with pdf.js before any of this runs.
+ *
+ * Displayed equations in this paper do not extract contiguously — a single definition comes back
+ * as a scatter of items (`Qβ(u) :=`, `P1(u) exp(βR(u))`, `Zβ`) — so a geometric or heuristic
+ * search picks either a chart axis or a fragment cut mid-expression, and neither is a fair test
+ * of "explain this maths". This sentence is the paper's own definition of the symbols, found by
+ * reading the page rather than by guessing at geometry, and it is pinned for that reason.
+ *
+ * The page is verified at run time: if the phrase is not there, the search falls back and, if
+ * that fails too, nothing is sent.
+ */
+const PINNED_NOTATION = { page: 6, phrase: 'normalizing constant', minChars: 70 };
+
+/**
+ * Finds a passage that uses notation.
+ *
+ * Tries the pinned definition first, then a content-based window scan. Returns null rather than
+ * substituting a passage without notation: a formula test that silently becomes a prose test is
+ * worse than no result, and the caller fails loudly.
+ */
+async function findNotationWindow(page, nearPage) {
+  // 1. The pinned definition, if this paper still has it.
+  await gotoPage(page, PINNED_NOTATION.page);
+  const pinnedInfo = await spanInfo(page, PINNED_NOTATION.page);
+  if (pinnedInfo !== null) {
+    const at = pinnedInfo.spans.findIndex((span) => span.text.includes(PINNED_NOTATION.phrase));
+    if (at >= 0) {
+      let from = at;
+      let text = '';
+      while (from >= 0) {
+        text = pinnedInfo.spans
+          .slice(from, at + 1)
+          .map((span) => span.text)
+          .join('');
+        if (text.length >= PINNED_NOTATION.minChars) break;
+        from -= 1;
+      }
+      const maths = (text.match(/[∀-⋿Ͱ-Ͽ∑√×±≤≥∈∂∇]/g) ?? []).length;
+      if (maths > 0) {
+        return { page: PINNED_NOTATION.page, run: { from, to: at, text, maths } };
+      }
+    }
+  }
+  process.stdout.write('  the pinned definition was not found; falling back to a search\n');
+
+  // 2. A window of consecutive spans whose text reads like notation in prose.
   const order = [nearPage, nearPage - 1, nearPage + 1, nearPage + 2, nearPage - 2, nearPage + 3];
+  const seen = [];
+  let fallback = null;
   for (const number of order) {
     if (number < 1) continue;
     await gotoPage(page, number);
     const info = await spanInfo(page, number);
     if (info === null) continue;
-    const run = pickRun(info, { wantMath: true, minSpans: 1, minChars: 60 });
-    if (run !== null && run.maths > 0) return { page: number, run };
+
+    for (let from = 0; from < info.spans.length; from += 1) {
+      let text = '';
+      for (let to = from; to < Math.min(info.spans.length, from + 12); to += 1) {
+        text += info.spans[to].text;
+        if (text.length < 70) continue;
+        if (text.length > 400) break;
+        const letters = (text.match(/[A-Za-z一-鿿]/g) ?? []).length;
+        const digits = (text.match(/\d/g) ?? []).length;
+        const maths = (text.match(/[∀-⋿Ͱ-Ͽ∑√×±≤≥∈∂∇]/g) ?? []).length;
+        const states = /[=≥≤∈]|:=/.test(text);
+        if (!states || maths === 0 || letters < 25 || digits / (digits + letters) >= 0.3) continue;
+        const run = { from, to, text, maths };
+        if (text.includes(':=')) return { page: number, run, definition: true };
+        if (fallback === null) fallback = { page: number, run, definition: false };
+      }
+    }
+    seen.push(number);
   }
+  if (fallback !== null) return fallback;
+  process.stdout.write(
+    `  no passage of notation found on pages ${seen.join(', ')} — nothing was sent\n`,
+  );
   return null;
 }
 
@@ -312,7 +412,10 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
   await menu.waitFor({ timeout: 5_000 });
 
   const started = Date.now();
-  const [response] = await Promise.all([
+  const [request, response] = await Promise.all([
+    page.waitForRequest((r) => r.url().includes('/api/ai/ask') && r.method() === 'POST', {
+      timeout: 120_000,
+    }),
     page.waitForResponse(
       (r) => r.url().includes('/api/ai/ask') && r.request().method() === 'POST',
       { timeout: 120_000 },
@@ -329,6 +432,8 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
   const elapsedMs = Date.now() - started;
   const status = response.status();
   const body = await response.json().catch(() => null);
+  const sentBody = request.postDataJSON?.() ?? null;
+  const sentSelection = sentBody?.passages?.find((passage) => passage.selection)?.text ?? null;
 
   const record = {
     label,
@@ -337,6 +442,8 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
     question: question ?? null,
     selectionChars: run.text.length,
     selectionExcerpt: run.text.slice(0, 120),
+    /** What the application actually put in the request — not what this script meant to select. */
+    sentSelection,
     status,
     elapsedMs,
     answer: null,
@@ -348,6 +455,21 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
     provider: null,
     error: null,
   };
+
+  // The one invariant that makes every other check mean anything: the passage recorded here is
+  // the passage the model was given. Without it, a selector bug can pass every other check by
+  // measuring its own intent — which it did, once.
+  const collapse = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
+  check(
+    `${label}: the passage sent is the passage selected`,
+    sentSelection !== null && collapse(sentSelection) === collapse(run.text),
+    sentSelection === null
+      ? 'no ask request was captured'
+      : `${String(collapse(sentSelection).length)} sent vs ${String(collapse(run.text).length)} selected` +
+          (collapse(sentSelection) === collapse(run.text)
+            ? ''
+            : ` — sent ${JSON.stringify(collapse(sentSelection).slice(0, 50))}`),
+  );
 
   if (body === null || status !== 200) {
     record.error = body?.message ?? `HTTP ${String(status)}`;
@@ -512,7 +634,7 @@ async function main() {
 
     // ---- Test 2: a passage with mathematics ----------------------------
     if (want('formula')) {
-      const found = await findMathPassage(page, math.page);
+      const found = await findNotationWindow(page, math.page);
       if (found === null) throw new Error('no page offered a usable passage of notation');
       const formulaPage = found.page;
       const formula = found.run;

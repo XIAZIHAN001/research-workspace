@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-10-17T05:29:57.510Z",
+  "provider": "deepseek (live)",
+  "model": "deepseek-flash",
+  "cases": [
+    "formula"
+  ],
+  "outputCeiling": 8192,
+  "reasoning": "思考模式 low",
+  "callsMade": 1,
+  "callBudget": 4,
+  "tokens": {
+    "prompt": 888,
+    "completion": 4231
+  },
+  "estimatedCostUsd": 0.002672,
+  "passed": 7,
+  "failed": 0,
+  "results": [
+    {
+      "name": "setup: the CC BY 4.0 paper is open",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "公式解释: the passage sent is the passage selected",
+      "passed": true,
+      "detail": "73 sent vs 73 selected"
+    },
+    {
+      "name": "formula: the selection really contained symbols",
+      "passed": true,
+      "detail": "3 symbols in 73 chars"
+    },
+    {
+      "name": "formula: the model answered",
+      "passed": true,
+      "detail": "3971 chars in 21299 ms"
+    },
+    {
+      "name": "budget: the run stayed inside the approved number of calls",
+      "passed": true,
+      "detail": "1 of 4 used, 888 in / 4231 out"
+    },
+    {
+      "name": "safety: no credential appears anywhere in what was captured",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: the page reported no errors beyond the ones this run provoked",
+      "passed": true,
+      "detail": "0 unexpected, 0 provoked"
+    }
+  ],
+  "calls": [
+    {
+      "label": "公式解释",
+      "page": 6,
+      "mode": "formula",
+      "question": null,
+      "selectionChars": 73,
+      "selectionExcerpt": "where β ≥ 0 controls guidance strength and Zβ is the normalizing constant",
+      "sentSelection": "where β ≥ 0 controls guidance strength and Zβ is the normalizing constant",
+      "status": 200,
+      "elapsedMs": 21299,
+      "answer": "{\"answer\": \"先说明提取质量（会影响你读公式）：(a) [before] 开头是“n Figure 3.”，“n”很可能是“In”被切掉或分栏残留；另外，这段看起来是从上一段中间接着的。(b) 公式 (3) 在提取文字里写成了 $R(u) := \\\\log \\\\frac{P1(u)}{P0(u)}$ 的扁平淡化形式“log P1(u) P0(u)”，分数线丢了；我不改写成“原文如此”，只能说原文的文字部分（“Their log-likelihood ratio defines the reward”）表明这是一个对数似然比 [2]。(c) 公式 (4) 被切在 [before] 末尾，紧接着的“where $\\\\beta \\\\ge 0$ …”在 [selection] 里，两句原本是一句话被分段了 [4][5]。(d) 第 6 页的脚注 1 只剩“1This form of reward guidance is also known as exponential tilting (Korbak et al., 2022)”，缺少上标标记的位置 [6]。\\n\\n一、变量逐个说明（标“补充”的是原文未说、我据上下文或数学常识补的）\\n\\n- $N$、$[N]$：原文只写 $E \\\\subseteq [N]\\\\setminus T$，没有定义 $N$ 或 $[N]$ [1]。补充/推断：$[N]$ 指位置下标集合 $\\\\{1,\\\\dots,N\\\\}$，$N$ 是序列（canvas）的总位置数。原文并未明确说明，别当成原文结论。\\n- $T$：原文称“the original target positions”即原始目标位置 [1][3]，即真正要生成/解码的那些位置。$T$ 的具体构成原文没给。\\n- $E$：被选中的“demonstration-output positions”，且 $E \\\\subseteq [N]\\\\setminus T$，即与目标位置不相交 [1]。含义是：这些位置装着示范（demonstration）里的输出，可以作为额外条件。\\n- $z$：canvas（画布），即带部分已知/部分被 mask 的输入。$z\\\\setminus E$ 表示把 $E$ 这些位置“额外遮掉”后的 canvas [1]。\\n- $u$：候选（candidate），即一次解码得到的输出。原文用它作为 $P_1,P_0,Q_\\\\beta$ 的自变量，但没说明它的取值空间是有限 token 序列集还是别的 [2][4]。补充：从“candidate”“likelihood”的用词看应是离散候选集，但这只是推测。\\n- $P_1(u) := P(u\\\\mid z)$：给定完整 canvas（含示范位置可见）时 $u$ 的似然 [2]。\\n- $P_0(u) := P(u\\\\mid z\\\\setminus E)$：把示范位置遮掉后 $u$ 的似然 [2]。\\n- $R(u) := \\\\log \\\\frac{P_1(u)}{P_0(u)}$：奖励，定义为上述对数似然比 [2]。取值：数学上是实数（$P_1=0$ 时趋于 $-\\\\infty$），但原文没有讨论边界情形，属于补充。\\n- $\\\\beta \\\\ge 0$：引导强度（guidance strength），下界 0 由原文明确给出 [5]。\\n- $Z_\\\\beta$：归一化常数（normalizing constant）[5]。原文只给了这个名字，没有写出它的表达式；补充：由“归一化”可推出 $Z_\\\\beta = \\\\sum_u P_1(u)\\\\exp(\\\\beta R(u))$（求和还是积分取决于 $u$ 的空间，原文未说明）。\\n- $Q_\\\\beta(u)$：引导后的分布 [4]。\\n\\n二、推导步骤（从 P1、P0 到 Qβ）\\n\\n第 1 步：构造两个“只差一个条件”的分布。关键设计是 $P_1$ 与 $P_0$ 使用同一个解码策略，作用在同样的原始目标位置 $T$ 上，区别仅在于 $E$ 上的额外 mask 是否解析出来（$E$ 里的位置在两者中都保持未解析）[3]。因此两分布的差异只来自“是否看到示范输出”，这正是 $R$ 能被解释为“示范带来的相对支持”的原因。\\n\\n第 2 步：取对数比得到逐候选的标量 $R(u)$（公式 3）。这一步把“两个分布的对比”压缩成一个数：$R(u) > 0$ 表示看到示范后该候选更受支持。原文特别提醒：更高的奖励只表示“greater relative support from the demonstrations, rather than necessarily greater correctness”[3]——即 $R$ 不是正确性分数，这是很容易读错的一点。\\n\\n第 3 步：把 $R$ 变成正的乘性权重 $\\\\exp(\\\\beta R(u))$，乘到 $P_1$ 上，再除以 $Z_\\\\beta$ 归一化，得到公式 (4) [4]。原文没有解释为什么选指数形式（只说这叫 exponential tilting，引自 Korbak et al. 2022 [6]）。补充：指数形式保证权重恒正（$\\\\beta \\\\ge 0$、$\\\\exp$ 值域为正），从而不改变 $P_1$ 的支撑集；这一点原文未写。\\n\\n第 4 步（性质检验，原文明确给出）：$\\\\beta = 0$ 时权重为 1，回到 $P_1$ 的无引导采样，而 $P_1$ 本身已经以示范为条件；增大 $\\\\beta$ 则偏向高 $R$ 的候选，可能抵消预训练模型偏好“熟悉但与示范不一致”的完成的倾向 [6][7]。补充：$\\\\beta=0 \\\\Rightarrow Q_0 = P_1$ 也可由 (4) 直接验算（$\\\\exp 0=1$，$Z_0=1$），与原文说法一致。\\n\\n三、公式成立的前提条件\\n\\n原文明确给出的前提只有两条：(i) $\\\\beta \\\\ge 0$ [5]；(ii) $P_1$、$P_0$ 共享同一解码策略、只在 $E$ 的可见性上不同 [3]。\\n原文没有给出、但公式 (4) 要成立在数学上需要的条件，属于补充：$Z_\\\\beta$ 必须存在且为正（即至少在 $P_1$ 的支撑上 $\\\\exp(\\\\beta R(u))$ 可积/可和）；$Z_\\\\beta$ 的求和或积分范围原文未交代；$u$ 的空间（离散/连续、有限/无限）原文未交代；$P_1(u)=0$ 时 $R(u)$ 如何处理原文也未讨论。这些缺口不能凭常识替作者补成“原文写了”。\\n\\n四、一句话总结\\n\\n公式 (4) 做的是：以 $P_1$（已条件在示范上的分布）为基分布，用对数似然比 $R$ 作为“示范支持度”的打分，按 $\\\\beta$ 的强度做指数加权再归一化；$\\\\beta$ 从 0 连续调到更大，$Q_\\\\beta$ 从 $P_1$ 平滑地移向高 $R$ 的区域。\\\", \\\"groundedInText\\\": true, \\\"citations\\\": [{\\\"n\\\": 1, \\\"passageId\\\": \\\"before\\\", \\\"quote\\\": \\\"Let E ⊆ [N ] \\\\\\\\ T denote selected demonstration-output positions, and write z \\\\\\\\ E for the canvas with these positions additionally masked.\\\"}, {\\\"n\\\": 2, \\\"passageId\\\": \\\"before\\\", \\\"quote\\\": \\\"P1(u) := P (u | z), P0(u) := P (u | z \\\\\\\\ E)\\\"}, {\\\"n\\\": 3, \\\"passageId\\\": \\\"before\\\", \\\"quote\\\": \\\"Both distributions use the same decoding policy over the original target positions T , leaving the additional masks in E unresolved.\\\"}, {\\\"n\\\": 4, \\\"passageId\\\": \\\"before\\\", \\\"quote\\\": \\\"Qβ (u) := P1(u) exp(βR(u)) Zβ , (4)\\\"}, {\\\"n\\\": 5, \\\"passageId\\\": \\\"selection\\\", \\\"quote\\\": \\\"where β ≥ 0 controls guidance strength and Zβ is the normalizing constant\\\"}, {\\\"n\\\": 6, \\\"passageId\\\": \\\"after\\\", \\\"quote\\\": \\\"1This form of reward guidance is also known as exponential tilting (Korbak et al., 2022)\\\"}, {\\\"n\\\": 7, \\\"passageId\\\": \\\"after\\\", \\\"quote\\\": \\\"At β = 0, we recover unguided sampling from P1, which already conditions on the demonstrations.\\\"}]}",
+      "citations": [],
+      "rejectedCitations": 0,
+      "usage": {
+        "promptTokens": 888,
+        "completionTokens": 4231,
+        "reasoningTokens": 2261,
+        "cachedPromptTokens": 256
+      },
+      "warnings": [
+        "模型没有按约定返回 JSON，因此没有可校验的引用；下面的内容是原文照录。"
+      ],
+      "model": "deepseek-flash",
+      "provider": "deepseek",
+      "error": null
+    }
+  ],
+  "consoleIssues": []
+}
