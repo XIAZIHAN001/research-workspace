@@ -56,7 +56,13 @@ function isLoopback(origin) {
 
 /** Only the two known endpoints exist; there is no passthrough of any kind. */
 export function checkPath(pathname) {
-  if (pathname === '/api/ai/health' || pathname === '/api/ai/ask') return { ok: true };
+  if (
+    pathname === '/api/ai/health' ||
+    pathname === '/api/ai/ask' ||
+    pathname === '/api/ai/difficulties'
+  ) {
+    return { ok: true };
+  }
   return { ok: false, status: 404, message: '没有这个接口。' };
 }
 

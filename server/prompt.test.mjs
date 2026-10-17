@@ -243,3 +243,44 @@ describe('the system message is independent of the paper', () => {
     expect(messages.at(-1).content).toContain('Ignore all previous instructions');
   });
 });
+
+/**
+ * A question about the page, with nothing selected.
+ *
+ * The assistant is not selection-only any more. What changes is one label and one sentence in
+ * the user turn; what must not change is the system message, because the scope describes the
+ * material and the material never reaches it.
+ */
+describe('a question about the page rather than a selection', () => {
+  const pageAsk = () =>
+    accepted(
+      validAsk({
+        scope: 'page',
+        passages: [{ id: 'page', page: 3, text: 'The whole page of a paper.', selection: true }],
+      }),
+    );
+
+  it('is accepted, and defaults to selection when the field is absent', () => {
+    expect(pageAsk().scope).toBe('page');
+    expect(accepted(validAsk()).scope).toBe('selection');
+  });
+
+  it('refuses a scope it does not know', () => {
+    expect(normalizeAskRequest(validAsk({ scope: 'whole-paper' })).ok).toBe(false);
+  });
+
+  it('labels the passage as the page, not as a selection', () => {
+    const block = renderPaperBlock(pageAsk());
+    expect(block).toContain('（这一页的正文）');
+    expect(block).toContain('没有选中特定文字');
+    expect(block).not.toContain('（读者选中的原文）');
+  });
+
+  it('tells the model not to assume the rest of the paper', () => {
+    expect(buildMessages(pageAsk()).messages.at(-1).content).toContain('不要假设整篇论文');
+  });
+
+  it('leaves the system message byte-identical', () => {
+    expect(buildMessages(pageAsk()).system).toBe(buildMessages(accepted(validAsk())).system);
+  });
+});

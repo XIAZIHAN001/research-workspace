@@ -45,6 +45,14 @@ export interface AiAskRequest {
   history?: AiHistoryTurn[];
   /** What the reader's own layout check found, stated as a measurement rather than a guess. */
   layoutNotice?: string | null;
+  /**
+   * What the primary passage is.
+   *
+   * `selection` means the reader selected text; `page` means they are asking about the page as
+   * a whole. The distinction changes only how the material is described to the model — the
+   * citation rules are identical either way.
+   */
+  scope?: 'selection' | 'page';
 }
 
 /** A citation that survived the service's check: the page came from our own record. */

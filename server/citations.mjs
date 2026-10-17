@@ -30,11 +30,11 @@ const MAX_ANSWER_CHARS = 20_000;
 const MAX_CITATIONS = 20;
 
 /** Whitespace in a PDF text layer is unreliable; everything else must match exactly. */
-function collapse(text) {
+export function collapse(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-function isRecord(value) {
+export function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -121,7 +121,7 @@ function stripFence(text) {
   return (fenced === null ? text : fenced[1]).trim();
 }
 
-function tryParse(text) {
+export function tryParse(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -130,7 +130,7 @@ function tryParse(text) {
 }
 
 /** The outermost `{…}`, ignoring braces inside strings. */
-function sliceObject(text) {
+export function sliceObject(text) {
   const start = text.indexOf('{');
   if (start < 0) return null;
   const end = matchingDelimiter(text, start, '{', '}');
@@ -138,7 +138,7 @@ function sliceObject(text) {
 }
 
 /** The outermost `[…]`, ignoring brackets inside strings. */
-function sliceArray(text) {
+export function sliceArray(text) {
   const start = text.indexOf('[');
   if (start < 0) return null;
   const end = matchingDelimiter(text, start, '[', ']');

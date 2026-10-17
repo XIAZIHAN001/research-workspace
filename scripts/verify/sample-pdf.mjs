@@ -373,3 +373,26 @@ export function buildFragmentedPdf() {
     ].join('\n'),
   ]);
 }
+
+/**
+ * A page built to test what recolouring does to colour.
+ *
+ * White paper, black text, three filled blocks (red, blue, grey). The paper and the text must
+ * follow the reading mode; the coloured blocks must not, because they stand in for a figure.
+ * The grey block is there to show the honest limitation: a neutral fill is indistinguishable
+ * from ink, so it is recoloured like ink.
+ */
+export function buildColourPdf() {
+  const rect = (r, g, b, x, y, w, h) => `${r} ${g} ${b} rg ${x} ${y} ${w} ${h} re f`;
+  return buildPages([
+    [
+      '1 1 1 rg 0 0 595 842 re f',
+      rect(0.85, 0.1, 0.1, 60, 560, 200, 140),
+      rect(0.1, 0.45, 0.85, 330, 560, 200, 140),
+      rect(0.5, 0.5, 0.5, 60, 380, 200, 120),
+      line(SANS, 14, 60, 760, 'Black text on white paper, for the reading modes.'),
+      line(SANS, 14, 60, 730, 'Colour below must survive every mode unchanged.'),
+      line(SANS, 11, 60, 340, 'A grey block, neutral by definition, is treated as ink.'),
+    ].join('\n'),
+  ]);
+}

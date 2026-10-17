@@ -112,6 +112,43 @@
   display: block;
 }
 
+/* --- Paper modes ---------------------------------------------------------- */
+
+/* The page box's own colour is set inline: it has to match the palette the canvas was rendered
+   with, and that value lives in one place (paperTheme.ts). */
+
+.paper-modes {
+  display: flex;
+  gap: 4px;
+}
+
+/* A highlight is "multiply" on white paper. On dark paper multiply would push the colour into
+   the page and disappear, so the same mark is screened instead — lightened, still the reader's
+   own colour. */
+.pdf-page[data-paper='dark'] .pdf-highlight:not([data-spotlight='true']) {
+  mix-blend-mode: screen;
+}
+
+/* Selected text sits on a dark sheet, so the wash has to be stronger to read as a selection. */
+.pdf-page[data-paper='dark'] .textLayer ::selection {
+  background: color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+/* Said quietly, at the corner: this page was left in its original colours. */
+.pdf-page-note {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 76%, transparent);
+  color: #ffffff;
+  font-size: 10px;
+  pointer-events: none;
+}
+
 .pdf-page-error {
   position: absolute;
   inset: 0;
@@ -257,7 +294,7 @@
 .annotation-toolbar {
   position: fixed;
   z-index: 20;
-  max-width: min(340px, 90vw);
+  max-width: min(400px, 92vw);
   /* A backstop for the component's clamp: if the menu is taller than it estimates, it scrolls
      rather than disappearing past the bottom of the window. */
   max-height: calc(100vh - 120px);
@@ -325,6 +362,92 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   background: var(--glass-fill);
+}
+
+/* --- The side panel shell -------------------------------------------------- */
+
+/* One column on the right that holds the assistant or the notes, so the reader has one place
+   to look and one thing to close. The panels themselves still own their headers and their
+   close buttons; this only decides which of them is showing. */
+.reader-side {
+  display: flex;
+  flex: 0 0 360px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.reader-side > .ai-panel,
+.reader-side > .notes-panel {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.reader-side-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+/* Collapsed, the panel leaves a rail: the assistant is always one click away. */
+.reader-rail {
+  position: absolute;
+  top: 46%;
+  right: 0;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--hairline);
+  border-right: 0;
+  border-radius: var(--r-lg) 0 0 var(--r-lg);
+  background: var(--glass-fill-strong);
+  box-shadow: var(--elev-rest);
+  backdrop-filter: blur(var(--glass-blur));
+  transform: translateY(-50%);
+}
+
+.rail-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.rail-btn:hover {
+  background: var(--row-active);
+  color: var(--text);
+}
+
+.rail-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.rail-count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
 }
 
 .notes-head {
@@ -449,13 +572,14 @@
 
 /* In a narrow window the panel covers the edge of the page instead of taking a column. */
 @media (max-width: 1100px) {
-  .notes-panel {
+  .reader-side {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     z-index: 12;
-    width: min(320px, 88vw);
+    width: min(360px, 92vw);
+    padding: 6px;
     background: var(--glass-fill-strong);
     box-shadow: var(--elev-float);
     backdrop-filter: blur(var(--glass-blur));
@@ -540,6 +664,14 @@
 
 .ai-hint {
   color: var(--text-2);
+}
+
+/* Openers shown before the first question, in the empty panel. */
+.ai-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 12px;
 }
 
 .ai-scroll {
@@ -927,17 +1059,231 @@
   flex: 1 1 auto;
 }
 
-/* In a narrow window either panel covers the edge of the page instead of taking a column. */
-@media (max-width: 1100px) {
-  .ai-panel {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 12;
-    width: min(360px, 92vw);
-    background: var(--glass-fill-strong);
-    box-shadow: var(--elev-float);
-    backdrop-filter: blur(var(--glass-blur));
-  }
+/* In a narrow window the assistant covers the edge of the page instead of taking a column;
+   that is handled by `.reader-side` above, which is the only thing that owns the column. */
+
+/* --- Difficulty suggestions ------------------------------------------------ */
+
+/* Markers live in their own layer above the page and below nothing: the reader's own
+   highlights are drawn over the paper, these are drawn over the highlights, and neither can be
+   mistaken for the other — one is a fill, the other a dashed line under the words. */
+.suggestion-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.pdf-suggestion {
+  position: absolute;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px dashed color-mix(in srgb, var(--accent) 72%, transparent);
+  background: none;
+  cursor: help;
+  pointer-events: auto;
+  transform: translateY(-10px);
+}
+
+.pdf-suggestion:hover,
+.pdf-suggestion:focus-visible {
+  border-bottom-style: solid;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  outline: none;
+}
+
+.pdf-page[data-paper='dark'] .pdf-suggestion {
+  border-bottom-color: color-mix(in srgb, var(--accent) 80%, white);
+}
+
+/* The card that opens on a marker: two sentences first, a way deeper second. */
+.suggestion-card {
+  position: fixed;
+  z-index: 21;
+  max-height: calc(100vh - 120px);
+  padding: 10px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  transform: translateX(-50%);
+}
+
+.suggestion-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestion-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: 10.5px;
+}
+
+.suggestion-head .icon-btn {
+  margin-left: auto;
+}
+
+.suggestion-title {
+  margin: 6px 0 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.suggestion-quick {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.suggestion-why {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.suggestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+/* --- The suggestions panel ------------------------------------------------- */
+
+.difficulty-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--glass-fill);
+}
+
+.difficulty-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.difficulty-intro p {
+  margin: 0;
+}
+
+.difficulty-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11.5px;
+}
+
+.difficulty-confirm {
+  display: flex;
+  gap: 6px;
+}
+
+.difficulty-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.difficulty-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.difficulty-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: auto;
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+
+.difficulty-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.difficulty-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.difficulty-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.difficulty-item[data-located='false'] {
+  border-left-color: var(--ring);
+}
+
+.difficulty-kind {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.difficulty-title {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.difficulty-quick {
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.difficulty-unlocated {
+  color: var(--text-2);
+  font-size: 10px;
+}
+
+.difficulty-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
 }

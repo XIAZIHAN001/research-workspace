@@ -54,6 +54,7 @@ function session(overrides: Partial<AiTurn> = {}, mode: AiTurn['mode'] = 'explai
       start: 0,
       end: 30,
     },
+    page: 7,
     pageText: 'the rotated attention mechanism which lets us drop position embeddings',
     layoutNotice: null,
     fragmentation: null,
@@ -94,6 +95,7 @@ const HEALTH: AiHealth = {
 
 function setup(overrides: Partial<Parameters<typeof AiPanel>[0]> = {}) {
   const handlers = {
+    onAskAboutPage: vi.fn(),
     onFollowUp: vi.fn(),
     onRetry: vi.fn(),
     onCancel: vi.fn(),
@@ -106,6 +108,8 @@ function setup(overrides: Partial<Parameters<typeof AiPanel>[0]> = {}) {
     session: session(),
     busy: false,
     health: HEALTH,
+    currentPage: 7,
+    canSaveNote: true,
     ...handlers,
     ...overrides,
   };
@@ -119,10 +123,21 @@ describe('AiPanel', () => {
     expect(screen.getByRole('complementary', { name: 'AI 精读助手' })).toBeInTheDocument();
   });
 
-  it('explains how to start when there is no question yet', () => {
-    setup({ session: null });
-    expect(screen.getByText(/选中论文里的一段原文/)).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '继续提问' })).toBeDisabled();
+  it('invites a question about the page before anything has been asked', () => {
+    const { onAskAboutPage } = setup({ session: null });
+    expect(screen.getByText(/可以直接问这一页的任何问题/)).toBeInTheDocument();
+    // The assistant is not locked behind a selection: the box works straight away.
+    const box = screen.getByRole('textbox', { name: '继续提问' });
+    expect(box).toBeEnabled();
+    expect(box).toHaveAttribute('placeholder', '就这一页提个问题…');
+    expect(onAskAboutPage).not.toHaveBeenCalled();
+  });
+
+  it('starts a page conversation from the opener chips', async () => {
+    const { onAskAboutPage } = setup({ session: null });
+    await userEvent.click(screen.getByRole('button', { name: '这一页讲了什么' }));
+    expect(onAskAboutPage).toHaveBeenCalledTimes(1);
+    expect(onAskAboutPage.mock.calls[0]?.[0]).toContain('这一页');
   });
 
   it('says which provider answered, and whether it costs money', () => {

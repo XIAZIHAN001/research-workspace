@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Annotation, NormalizedRect } from '../../domain/annotation';
+import { paperBackground, recolorImageData, type PaperPalette } from './paperTheme';
 import { isRenderCancelled, loadPdfjs, type PDFDocumentProxy } from './pdfjs';
 
 interface PdfPageProps {
@@ -23,6 +24,17 @@ interface PdfPageProps {
    * mistaken for — or confused with — a saved annotation.
    */
   spotlight?: readonly NormalizedRect[] | null;
+  /** How the page itself is drawn: original colours, warm paper, or dark paper. */
+  palette?: PaperPalette;
+  /**
+   * Difficulty markers on this page.
+   *
+   * Each is a dashed underline at the foot of a located quotation — deliberately not a fill, so
+   * it cannot be mistaken for the reader's own highlight and cannot cover the words it marks.
+   * Only suggestions whose quotation was found exactly once on the page get here at all.
+   */
+  suggestions?: readonly { id: string; title: string; rects: readonly NormalizedRect[] }[];
+  onSuggestionClick?: (id: string, spot: { x: number; y: number }) => void;
 }
 
 /** Above this the canvas stops growing: more pixels cost memory without being visible. */
@@ -48,6 +60,9 @@ export function PdfPage({
   annotations = [],
   flashId = null,
   spotlight = null,
+  palette = 'original',
+  suggestions = [],
+  onSuggestionClick,
 }: PdfPageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -58,6 +73,12 @@ export function PdfPage({
    * highlight to, and the user should not have to guess why selection does not work.
    */
   const [hasNoText, setHasNoText] = useState(false);
+  /**
+   * Set when the page was left in its original colours because recolouring it would have meant
+   * rewriting a picture. Quiet, but present: the reader should be able to find out why this one
+   * page looks different from the rest.
+   */
+  const [keptOriginal, setKeptOriginal] = useState(false);
 
   // Measure first: the column needs the page's real height even when it is not rendered.
   useEffect(() => {
@@ -106,10 +127,39 @@ export function PdfPage({
       const task = page.render({
         canvas,
         viewport,
+        // A white page behind the PDF's own drawing. Without it the canvas keeps transparent
+        // pixels wherever the page does not paint, and recolouring would treat "no ink" as
+        // black — so the background is laid down first and then becomes the paper colour.
+        background: '#ffffff',
         transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
       });
       renderTask = task;
       await task.promise;
+      if (cancelled) return;
+
+      if (palette !== 'original') {
+        // The recolour reads and writes every pixel, so it is done on a working canvas that was
+        // created for exactly that (`willReadFrequently`), then blitted back. Reading the visible
+        // canvas directly is slower and makes Chromium warn on every page.
+        const work = document.createElement('canvas');
+        work.width = canvas.width;
+        work.height = canvas.height;
+        const workContext = work.getContext('2d', { willReadFrequently: true });
+        const visible = canvas.getContext('2d');
+        if (workContext !== null && visible !== null) {
+          workContext.drawImage(canvas, 0, 0);
+          const image = workContext.getImageData(0, 0, work.width, work.height);
+          const report = recolorImageData(image.data, palette);
+          if (report.outcome === 'recoloured') {
+            workContext.putImageData(image, 0, 0);
+            visible.clearRect(0, 0, canvas.width, canvas.height);
+            visible.drawImage(work, 0, 0);
+          }
+          setKeptOriginal(report.outcome === 'image-heavy');
+        }
+      } else {
+        setKeptOriginal(false);
+      }
       if (cancelled) return;
 
       // pdf.js sizes its text layer from these custom properties.
@@ -138,7 +188,7 @@ export function PdfPage({
       textLayer?.cancel();
       host.replaceChildren();
     };
-  }, [doc, pageNumber, scale, active, size]);
+  }, [doc, pageNumber, scale, active, size, palette]);
 
   const { width, height } = size ?? placeholder;
 
@@ -146,7 +196,8 @@ export function PdfPage({
     <div
       className="pdf-page"
       data-page={pageNumber}
-      style={{ width: `${width}px`, height: `${height}px` }}
+      data-paper={palette}
+      style={{ width: `${width}px`, height: `${height}px`, background: paperBackground(palette) }}
     >
       <div ref={hostRef} className="pdf-host" />
       {(spotlight !== null && spotlight.length > 0) || annotations.length > 0 ? (
@@ -187,9 +238,41 @@ export function PdfPage({
           ))}
         </div>
       ) : null}
+      {suggestions.length > 0 && (
+        <div className="suggestion-layer">
+          {suggestions.map((suggestion) =>
+            suggestion.rects.map((rect, index) => (
+              <button
+                // Boxes have no identity of their own; the suggestion and their order do.
+                key={`${suggestion.id}-${String(index)}`}
+                type="button"
+                className="pdf-suggestion"
+                data-suggestion={suggestion.id}
+                title={suggestion.title}
+                aria-label={`难点：${suggestion.title}`}
+                style={{
+                  left: `${String(rect.x * 100)}%`,
+                  top: `${String((rect.y + rect.height) * 100)}%`,
+                  width: `${String(rect.width * 100)}%`,
+                }}
+                onClick={(event) => {
+                  // The page underneath treats mouseup as a selection; a marker is not one.
+                  event.stopPropagation();
+                  onSuggestionClick?.(suggestion.id, { x: event.clientX, y: event.clientY });
+                }}
+              />
+            )),
+          )}
+        </div>
+      )}
       {hasNoText && !failed && (
         <p className="pdf-page-hint">
           这一页没有可提取的文字（可能是扫描件），暂时无法高亮或记笔记。
+        </p>
+      )}
+      {keptOriginal && !failed && (
+        <p className="pdf-page-note" title="这一页的深色像素太多，重着色会把图像本身改掉">
+          图像较多，按原始颜色显示
         </p>
       )}
       {failed && (

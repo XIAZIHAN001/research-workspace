@@ -111,6 +111,53 @@ function describe(mode, passage, question) {
   };
 }
 
+/**
+ * The offline answer to "what is difficult on this page".
+ *
+ * Deterministic and derived from the page it was given: the first few sentences long enough to
+ * be a quotation become suggestions, each quoting the page verbatim so the service's check and
+ * the browser's anchor matching are both genuinely exercised. One suggestion quotes text that
+ * is *not* on the page on purpose — the boundary that drops it is the point of this feature, and
+ * a mock that never trips it would leave that path untested.
+ */
+function difficultyReply(meta) {
+  const text = String(meta.pageText ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sentences = text
+    .split(/(?<=[.!?。；])\s*/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 40 && sentence.length <= 200);
+
+  const picks = sentences.slice(0, 3);
+  const kinds = ['concept', 'formula', 'prerequisite'];
+  const titles = ['这一页的核心概念', '关键的公式或符号', '阅读这一页需要的前置知识'];
+  const suggestions = picks.map((quote, index) => ({
+    kind: kinds[index] ?? 'concept',
+    title: titles[index] ?? '这一页的难点',
+    quote,
+    why: '（本地模拟）这一条由 mock provider 生成，用于验证难点标记从分析到定位的整条链路。',
+    quick: `（本地模拟）第 ${String(index + 1)} 处：这句话里有值得停下来理解的内容，先看清它在说什么，再想它为什么出现在这里。`,
+    deeper: '（本地模拟）可以继续追问：它为什么在这里成立？依赖什么前提？',
+  }));
+
+  suggestions.push({
+    kind: 'concept',
+    title: '一条应该被丢弃的建议',
+    quote: '这段原文并不在本次提供的页面文字里。',
+    why: '（本地模拟）用来验证服务端会丢掉不在原文里的引文。',
+    quick: '（本地模拟）这条不应该出现在界面上。',
+    deeper: null,
+  });
+
+  return {
+    text: JSON.stringify({ suggestions }),
+    usage: null,
+    truncated: false,
+    finishReason: 'stop',
+  };
+}
+
 export function createMockProvider({ model = 'mock-1' } = {}) {
   return {
     name: 'mock',
@@ -119,6 +166,12 @@ export function createMockProvider({ model = 'mock-1' } = {}) {
     label: '本地模拟（未连接在线模型）',
 
     async complete({ system, messages, meta, signal }) {
+      if (meta.task === 'difficulty') {
+        void system;
+        void messages;
+        void signal;
+        return difficultyReply(meta);
+      }
       const scenario = pickTrigger(meta.question ?? '');
       if (scenario === 'upstream') {
         throw new ProviderError('upstream', '模拟的模型服务错误（用于验证错误恢复）。');

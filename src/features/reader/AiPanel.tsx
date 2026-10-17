@@ -25,16 +25,43 @@ interface AiPanelProps {
   busy: boolean;
   /** Null until the local service has been asked; the panel says so rather than guessing. */
   health: AiHealth | null;
+  /** The page the reader is on now, used when there is no conversation yet. */
+  currentPage: number;
+  /** Starts a conversation about the page rather than about a selection. */
+  onAskAboutPage: (question: string) => void;
   onFollowUp: (question: string) => void;
   onRetry: () => void;
   onCancel: () => void;
   onClear: () => void;
+  /** False for a whole-page conversation: a note has to be anchored to text. */
+  canSaveNote: boolean;
   onSaveNote: (turn: AiTurn) => void;
   onJumpToCitation: (citation: AiCitation) => void;
   onClose: () => void;
 }
 
 const MAX_QUESTION = 1000;
+
+/**
+ * The openers offered before a conversation exists.
+ *
+ * They are questions, not modes: each one produces a normal answer with normal citation
+ * checking, and each is answerable from the current page alone — which is all that is sent.
+ */
+const OPENERS: readonly { label: string; question: string }[] = [
+  {
+    label: '这一页讲了什么',
+    question: '用几句话说明这一页在讲什么，以及它在整篇论文里的位置。',
+  },
+  {
+    label: '核心方法是什么',
+    question: '这一页提出的核心方法或结论是什么？关键步骤有哪些？',
+  },
+  {
+    label: '哪里容易卡住',
+    question: '这一页里哪些地方最容易让读者卡住？分别简要说明为什么。',
+  },
+];
 
 /** Renders an answer as text, mathematics and verified citations. */
 function AnswerBody({
@@ -235,10 +262,13 @@ export function AiPanel({
   session,
   busy,
   health,
+  currentPage,
+  onAskAboutPage,
   onFollowUp,
   onRetry,
   onCancel,
   onClear,
+  canSaveNote,
   onSaveNote,
   onJumpToCitation,
   onClose,
@@ -257,10 +287,16 @@ export function AiPanel({
   const submit = (event: SubmitEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const trimmed = question.trim();
+    // With no conversation yet, the first question is about the page — the assistant is not
+    // something the reader has to unlock by selecting text first.
     if (trimmed === '' || busy) return;
     setQuestion('');
-    onFollowUp(trimmed);
+    if (session === null) onAskAboutPage(trimmed);
+    else onFollowUp(trimmed);
   };
+
+  /** Openers for a reader who has just opened the panel and is not sure what to ask. */
+  const QUICK = OPENERS;
 
   const providerNote =
     health === null
@@ -293,11 +329,27 @@ export function AiPanel({
       </p>
 
       {session === null ? (
-        <div className="ai-empty">
-          <p>选中论文里的一段原文，用浮动工具条上的「AI」按钮提问。</p>
-          <p className="ai-hint">
-            只能围绕选中的原文和这一页的上下文作答；不会发送整篇论文，也不会保存对话记录。
-          </p>
+        <div className="ai-scroll">
+          <div className="ai-empty">
+            <p>可以直接问这一页的任何问题。在原文里选中一段再提问，回答就能精确回到那段文字。</p>
+            <p className="ai-hint">
+              现在只会带上第 {currentPage} 页的正文，不会发送整篇论文，也不会保存对话记录。
+            </p>
+          </div>
+          <div className="ai-quick" role="group" aria-label="可以这样问">
+            {QUICK.map((entry) => (
+              <button
+                key={entry.label}
+                type="button"
+                className="chip"
+                onClick={() => {
+                  onAskAboutPage(entry.question);
+                }}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="ai-scroll">
@@ -310,8 +362,11 @@ export function AiPanel({
                 setShowRange((value) => !value);
               }}
             >
-              第 {session.source.anchor.page} 页，选中 {session.source.anchor.quote.length} 字 ——
-              查看会发送的范围
+              第 {session.source.page} 页
+              {session.source.anchor === null
+                ? '整页'
+                : `，选中 ${String(session.source.anchor.quote.length)} 字`}{' '}
+              —— 查看会发送的范围
             </button>
             {/* Said before anything is sent, not buried inside the disclosure: if the selection
                 is a formula broken into single glyphs, the reader should know that the model is
@@ -338,9 +393,11 @@ export function AiPanel({
                     <span className="ai-range-label">
                       {passage.id === PASSAGE_IDS.selection
                         ? '选中的原文'
-                        : passage.id === PASSAGE_IDS.before
-                          ? '同页上文'
-                          : '同页下文'}
+                        : passage.id === PASSAGE_IDS.page
+                          ? '这一页的原文'
+                          : passage.id === PASSAGE_IDS.before
+                            ? '同页上文'
+                            : '同页下文'}
                     </span>
                     <p>{passage.text}</p>
                   </div>
@@ -364,7 +421,7 @@ export function AiPanel({
                 <div className="ai-parallel">
                   <div className="ai-original">
                     <span className="ai-range-label">英文原文</span>
-                    <p>{session.source.anchor.quote}</p>
+                    <p>{session.source.anchor?.quote ?? ''}</p>
                   </div>
                   <div className="ai-translation" data-hidden={!showTranslation}>
                     <div className="ai-translation-head">
@@ -414,7 +471,7 @@ export function AiPanel({
                   ))}
                   <Diagnostics answer={turn.answer} />
                   <p className="ai-foot">
-                    出处：第 {session.source.anchor.page} 页 · {turn.answer.providerLabel}
+                    出处：第 {session.source.page} 页 · {turn.answer.providerLabel}
                     {turn.answer.usage?.completionTokens != null &&
                       ` · 输出 ${String(turn.answer.usage.completionTokens)} tokens`}
                     {turn.answer.usage?.reasoningTokens != null &&
@@ -426,6 +483,12 @@ export function AiPanel({
                       <button
                         type="button"
                         className="btn btn-quiet"
+                        disabled={!canSaveNote}
+                        title={
+                          canSaveNote
+                            ? undefined
+                            : '整页提问没有可锚定的原文；选中一段再提问即可保存为笔记'
+                        }
                         onClick={() => {
                           onSaveNote(turn);
                           setSaved(index);
@@ -508,18 +571,20 @@ export function AiPanel({
             type="text"
             value={question}
             maxLength={MAX_QUESTION}
-            disabled={session === null || busy}
-            placeholder={session === null ? '先选中一段原文' : '就这段原文继续追问…'}
+            disabled={busy}
+            placeholder={
+              session === null
+                ? '就这一页提个问题…'
+                : session.source.anchor === null
+                  ? '就这一页继续追问…'
+                  : '就这段原文继续追问…'
+            }
             onChange={(event) => {
               setQuestion(event.target.value);
             }}
           />
         </label>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={session === null || busy || question.trim() === ''}
-        >
+        <button type="submit" className="btn btn-primary" disabled={busy || question.trim() === ''}>
           <SendHorizontal size={14} aria-hidden="true" />
           提问
         </button>

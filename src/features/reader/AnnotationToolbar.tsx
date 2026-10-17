@@ -21,7 +21,7 @@ interface AnnotationToolbarProps {
 }
 
 /** Half the toolbar's widest state, used to keep the whole thing on screen. */
-const HALF_WIDTH = { actions: 150, menu: 200 };
+const HALF_WIDTH = { actions: 200, menu: 200 };
 const EDGE = 8;
 /**
  * Roughly how tall each state is, used to keep the bottom edge on screen.
@@ -202,7 +202,7 @@ export function AnnotationToolbar({
             }}
           >
             <Sparkles size={14} aria-hidden="true" />
-            AI
+            向这段文字提问
           </button>
           <button type="button" className="icon-btn" aria-label="关闭" onClick={onDismiss}>
             <X size={14} aria-hidden="true" />

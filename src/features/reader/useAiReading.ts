@@ -27,7 +27,15 @@ export interface AiSource {
   paperId: string;
   title: string;
   pdfSha256: string;
-  anchor: SelectionAnchor;
+  /** The page this conversation is about. */
+  page: number;
+  /**
+   * The reader's selection, or null when they asked about the page as a whole.
+   *
+   * A null anchor is a supported starting point, not a missing value: the assistant works
+   * without a selection, and says plainly that it was given the page rather than the paper.
+   */
+  anchor: SelectionAnchor | null;
   /** The page's rendered text, so follow-ups can be built without re-reading the DOM. */
   pageText: string;
   /** The reader's own layout measurement, or null when there is nothing to report. */
@@ -87,10 +95,10 @@ export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
         paperId: source.paperId,
         title: source.title,
         pdfSha256: source.pdfSha256,
-        page: source.anchor.page,
+        page: source.page,
         pageText: source.pageText,
-        start: source.anchor.start,
-        end: source.anchor.end,
+        start: source.anchor?.start,
+        end: source.anchor?.end,
         mode,
         question,
         history: historyOf(previous),

@@ -327,11 +327,24 @@ async function main() {
       .locator('.pdf-page[data-page="3"]')
       .evaluate((element) => getComputedStyle(element).backgroundColor);
     await page.screenshot({ path: fileURLToPath(new URL('03-reader-dark.png', SHOT_DIR)) });
+    // Phase 5 changed this on purpose: the paper follows the reading mode instead of staying
+    // white, and the original mode is the escape hatch back to a white page.
     check(
-      'theme: the page stays white paper in dark mode',
-      pageBackground === 'rgb(255, 255, 255)',
+      'theme: the page follows the reading mode in dark mode',
+      pageBackground !== 'rgb(255, 255, 255)',
       pageBackground,
     );
+    await page.getByRole('button', { name: '原始', exact: true }).click();
+    await page.waitForTimeout(300);
+    const originalBackground = await page
+      .locator('.pdf-page[data-page="3"]')
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    check(
+      'theme: the original paper mode still gives a white page in dark mode',
+      originalBackground === 'rgb(255, 255, 255)',
+      originalBackground,
+    );
+    await page.getByRole('button', { name: '跟随外观', exact: true }).click();
     await page.getByRole('button', { name: '浅色' }).click();
 
     // Leave the reader on page 3 and wait for the debounced write before reloading.

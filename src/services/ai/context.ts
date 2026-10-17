@@ -32,6 +32,8 @@ export const MAX_HISTORY_CHARS = 2000;
 
 export const PASSAGE_IDS = {
   selection: 'selection',
+  /** The whole of the current page, when the reader asks without selecting anything. */
+  page: 'page',
   before: 'before',
   after: 'after',
 } as const;
@@ -43,9 +45,14 @@ export interface AskContextInput {
   page: number;
   /** The page's rendered text, whitespace-collapsed, as `buildPageText` produced it. */
   pageText: string;
-  /** Offsets of the selection inside `pageText`. */
-  start: number;
-  end: number;
+  /**
+   * Offsets of the selection inside `pageText`.
+   *
+   * Absent for a question about the page as a whole: the reader opened the assistant without
+   * selecting anything, which is a supported way to use it rather than a mistake to correct.
+   */
+  start?: number;
+  end?: number;
   mode: AiMode;
   question?: string;
   history?: readonly AiHistoryTurn[];
@@ -55,8 +62,37 @@ export interface AskContextInput {
 
 export function buildAskContext(input: AskContextInput): AiAskRequest {
   const text = input.pageText;
-  const start = Math.max(0, Math.min(input.start, text.length));
-  const end = Math.max(start, Math.min(input.end, text.length));
+  const hasSelection =
+    typeof input.start === 'number' && typeof input.end === 'number' && input.end > input.start;
+
+  if (!hasSelection) {
+    // The page is the whole of what was read; there is no "before" and "after" to add, and
+    // pretending otherwise would send the reader's own page twice.
+    return {
+      mode: input.mode,
+      question: input.question ?? '',
+      paper: {
+        id: input.paperId,
+        title: input.title,
+        page: input.page,
+        pdfSha256: input.pdfSha256,
+      },
+      passages: [
+        {
+          id: PASSAGE_IDS.page,
+          page: input.page,
+          text: text.slice(0, MAX_PASSAGE_CHARS),
+          selection: true,
+        },
+      ],
+      history: (input.history ?? []).map((turn) => ({ role: turn.role, content: turn.content })),
+      layoutNotice: input.layoutNotice ?? null,
+      scope: 'page',
+    };
+  }
+
+  const start = Math.max(0, Math.min(input.start ?? 0, text.length));
+  const end = Math.max(start, Math.min(input.end ?? start, text.length));
 
   const passages: AiPassage[] = [
     {
@@ -90,6 +126,7 @@ export function buildAskContext(input: AskContextInput): AiAskRequest {
     passages,
     history,
     layoutNotice: input.layoutNotice ?? null,
+    scope: 'selection',
   };
 }
 
@@ -120,7 +157,11 @@ export function summarizeContext(request: AiAskRequest): ContextSummary {
 /** One line describing the range, for the panel's "what will be sent" disclosure. */
 export function describeContext(request: AiAskRequest): string {
   const summary = summarizeContext(request);
-  const parts = [`选中 ${String(summary.selectionChars)} 字`];
+  const parts = [
+    request.scope === 'page'
+      ? `这一页 ${String(summary.selectionChars)} 字`
+      : `选中 ${String(summary.selectionChars)} 字`,
+  ];
   for (const passage of request.passages) {
     if (passage.id === PASSAGE_IDS.before) parts.push(`同页上文 ${String(passage.text.length)} 字`);
     if (passage.id === PASSAGE_IDS.after) parts.push(`同页下文 ${String(passage.text.length)} 字`);

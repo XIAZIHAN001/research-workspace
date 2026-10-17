@@ -2,19 +2,21 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Lightbulb,
   Maximize2,
-  PanelRightOpen,
+  NotebookPen,
   Sparkles,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   Annotation,
   AnnotationEdit,
   AnnotationKind,
   NormalizedRect,
 } from '../../domain/annotation';
+import type { DifficultySuggestion } from '../../domain/difficulty';
 import type { Paper } from '../../domain/papers';
 import type { PdfBlobStore } from '../../services/pdfStore';
 import { fetchAiHealth } from '../../services/ai/client';
@@ -22,9 +24,14 @@ import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
+import { DifficultyPanel } from './DifficultyPanel';
 import { inspectPageLayout, measureFragmentation } from './layout';
 import { NotesPanel } from './NotesPanel';
+import { PaperModeSwitch } from './PaperModeSwitch';
 import { PdfPage } from './PdfPage';
+import { SuggestionCard } from './SuggestionCard';
+import { useDifficultyScan, type LocatedQuote } from './useDifficultyScan';
+import { usePaperMode } from './usePaperMode';
 import {
   describeSelection,
   locateAnchor,
@@ -45,7 +52,7 @@ import {
   totalHeight,
 } from './readerMath';
 import { PDF_FAILURE_MESSAGE, usePdfDocument } from './usePdfDocument';
-import { useAiReading, type AiClient, type AiTurn } from './useAiReading';
+import { useAiReading, type AiClient, type AiSource, type AiTurn } from './useAiReading';
 
 interface ReaderViewProps {
   paper: Paper;
@@ -67,6 +74,8 @@ interface ReaderViewProps {
   onDeleteAnnotation: (annotation: Annotation) => void;
   /** Injectable so tests and the browser checks can supply a deterministic assistant. */
   aiClient?: AiClient;
+  /** The application's resolved theme, which the paper follows until the reader chooses. */
+  theme: 'light' | 'dark';
 }
 
 /** Below this width the notes panel covers part of the page instead of taking a column. */
@@ -122,8 +131,10 @@ export function ReaderView({
   onEditAnnotation,
   onDeleteAnnotation,
   aiClient,
+  theme,
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
+  const paperMode = usePaperMode(theme);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [manualScale, setManualScale] = useState(1);
   const [fitWidth, setFitWidth] = useState(true);
@@ -143,8 +154,8 @@ export function ReaderView({
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Annotation | null>(null);
-  /** Which of the two side panels is showing, if either. */
-  const [panel, setPanel] = useState<'notes' | 'ai' | null>(() =>
+  /** Which of the side panels is showing, if any. */
+  const [panel, setPanel] = useState<'notes' | 'ai' | 'difficulty' | null>(() =>
     typeof window.matchMedia === 'function' && !window.matchMedia(NOTES_OVERLAY_QUERY).matches
       ? 'notes'
       : null,
@@ -171,6 +182,76 @@ export function ReaderView({
     return map;
   }, [here]);
 
+  /** The card that opens when a difficulty marker or list entry is clicked. */
+  const [activeSuggestion, setActiveSuggestion] = useState<{
+    suggestion: DifficultySuggestion;
+    spot: { x: number; y: number };
+  } | null>(null);
+
+  /** The rendered text of one page, or null when that page is not on screen right now. */
+  const pageTextFor = useCallback((page: number): string | null => {
+    const layer = scrollRef.current?.querySelector<HTMLElement>(
+      `.pdf-page[data-page="${String(page)}"] .textLayer`,
+    );
+    if (layer === null || layer === undefined) return null;
+    return readPageText(layer).page.text;
+  }, []);
+
+  /**
+   * Finds a suggested quotation on the page, with the same conservative matching a highlight
+   * uses. Only `found` produces boxes; an ambiguous or missing quotation is kept as a
+   * suggestion without a marker, never drawn somewhere plausible.
+   */
+  const locateQuote = useCallback((page: number, quote: string): LocatedQuote => {
+    const pageRoot = scrollRef.current?.querySelector<HTMLElement>(
+      `.pdf-page[data-page="${String(page)}"]`,
+    );
+    if (pageRoot === null || pageRoot === undefined) return { location: 'missing', anchor: null };
+    const located = locateAnchor(pageRoot, { quote, prefix: '', suffix: '' });
+    if (located.match.kind !== 'found') {
+      return {
+        location: located.match.kind === 'ambiguous' ? 'ambiguous' : 'missing',
+        anchor: null,
+      };
+    }
+    return {
+      location: 'found',
+      anchor: {
+        quote,
+        prefix: '',
+        suffix: '',
+        rects: located.rects,
+        start: located.match.start,
+        end: located.match.end,
+      },
+    };
+  }, []);
+
+  const scan = useDifficultyScan({
+    paperId: paper.id,
+    pdfSha256: pdfSha256 ?? '',
+    model: health?.model ?? '',
+    currentPage,
+    pageTextFor,
+    locate: locateQuote,
+  });
+
+  const suggestionsByPage = useMemo(() => {
+    const map = new Map<number, { id: string; title: string; rects: NormalizedRect[] }[]>();
+    if (!scan.markersVisible) return map;
+    for (const suggestion of scan.all) {
+      if (suggestion.location !== 'found' || suggestion.anchor === null) continue;
+      const list = map.get(suggestion.page) ?? [];
+      list.push({
+        id: suggestion.id,
+        title: suggestion.title,
+        rects: suggestion.anchor.rects,
+      });
+      map.set(suggestion.page, list);
+    }
+    return map;
+  }, [scan.all, scan.markersVisible]);
+
   const pageCount = state.status === 'ready' ? state.pageCount : 0;
   const scale =
     fitWidth && baseSize !== null && containerWidth > 0
@@ -189,6 +270,22 @@ export function ReaderView({
   useEffect(() => {
     topsRef.current = tops;
   }, [tops]);
+  const heightsRef = useRef(heights);
+  useEffect(() => {
+    heightsRef.current = heights;
+  }, [heights]);
+  /**
+   * Where in the page the reader is, kept as a fraction so a width change can restore it.
+   *
+   * Opening or closing the side panel changes the fit-width scale, which changes every page's
+   * height. Without this the scroll offset would keep its pixel value and the reader would land
+   * somewhere else in the paper — the "lost my place" bug, triggered by opening a panel.
+   */
+  const viewAnchor = useRef<{ page: number; fraction: number }>({
+    page: currentPage,
+    fraction: 0,
+  });
+  const lastRenderedScale = useRef<number | null>(null);
 
   // The scroll container decides how wide a page may be in fit-width mode.
   useEffect(() => {
@@ -261,6 +358,30 @@ export function ReaderView({
     if (state.status !== 'ready' || !restored.current) return;
     onReadingPosition(clampPage(currentPage, pageCount));
   }, [currentPage, pageCount, state.status, onReadingPosition]);
+
+  /**
+   * Keeps the reader's place when the pages change size under them.
+   *
+   * Fit-width recalculates whenever the scroll column's width changes — which is exactly what
+   * opening or closing the side panel does. The scroll offset is in pixels, so it would stay put
+   * while every page grew or shrank around it. Re-anchoring on (page, fraction of that page)
+   * makes the reflow invisible where it matters.
+   */
+  useLayoutEffect(() => {
+    if (lastRenderedScale.current === null) {
+      lastRenderedScale.current = scale;
+      return;
+    }
+    if (lastRenderedScale.current === scale) return;
+    lastRenderedScale.current = scale;
+    const container = scrollRef.current;
+    if (container === null || heights.length === 0) return;
+    const page = clampPage(viewAnchor.current.page, heights.length);
+    const top = tops[page - 1];
+    const height = heights[page - 1];
+    if (top === undefined || height === undefined) return;
+    container.scrollTop = Math.max(0, top + viewAnchor.current.fraction * height - PAGE_GAP);
+  }, [scale, tops, heights]);
 
   const windowRange = renderWindow(currentPage, pageCount);
 
@@ -382,49 +503,148 @@ export function ReaderView({
   };
 
   /** Turns the reader's selection into a question for the assistant. */
-  const openAi = (mode: AiMode, question: string): void => {
-    if (pendingSelection === null) return;
+  const sourceFor = (pageNumber: number, anchor: SelectionAnchor | null): AiSource | null => {
     const pageRoot = scrollRef.current?.querySelector<HTMLElement>(
-      `.pdf-page[data-page="${String(pendingSelection.anchor.page)}"]`,
+      `.pdf-page[data-page="${String(pageNumber)}"]`,
     );
     const layer = pageRoot?.querySelector<HTMLElement>('.textLayer') ?? null;
-    const pageText = layer === null ? '' : readPageText(layer).page.text;
+    if (pageRoot == null || layer === null) return null;
+    return {
+      paperId: paper.id,
+      title: paper.title,
+      pdfSha256: pdfSha256 ?? '',
+      page: pageNumber,
+      anchor,
+      pageText: readPageText(layer).page.text,
+      layoutNotice: inspectPageLayout(pageRoot).notice,
+      // Measured here, while the rendered page that the numbers describe is still on screen.
+      fragmentation: anchor === null ? null : measureFragmentation(pageRoot, anchor),
+    };
+  };
+
+  const openAi = (mode: AiMode, question: string): void => {
+    if (pendingSelection === null) return;
+    const source = sourceFor(pendingSelection.anchor.page, pendingSelection.anchor);
+    if (source === null) {
+      setSelectionNotice('这一页还没有渲染好，暂时无法提问。');
+      return;
+    }
     setSelectionNotice(null);
     setSpotlight(null);
     setPanel('ai');
-    ai.ask(
-      {
-        paperId: paper.id,
-        title: paper.title,
-        pdfSha256: pdfSha256 ?? '',
-        anchor: pendingSelection.anchor,
-        pageText,
-        layoutNotice:
-          pageRoot === null || pageRoot === undefined ? null : inspectPageLayout(pageRoot).notice,
-        // Measured here, while the rendered page that the numbers describe is still on screen.
-        fragmentation:
-          pageRoot === null || pageRoot === undefined
-            ? null
-            : measureFragmentation(pageRoot, pendingSelection.anchor),
-      },
-      mode,
-      question,
-    );
+    ai.ask(source, mode, question);
     clearSelection();
   };
 
+  /**
+   * A question about the page itself, with nothing selected.
+   *
+   * The assistant is not selection-only: opening it and asking about the page is a first-class
+   * way to use it. What it is given is exactly this page's text, and the panel says so.
+   */
+  const askAboutPage = (mode: AiMode, question: string): void => {
+    const source = sourceFor(currentPage, null);
+    if (source === null || source.pageText.trim() === '') {
+      setSelectionNotice('这一页还没有可提取的文字，暂时无法提问。');
+      return;
+    }
+    setSelectionNotice(null);
+    setSpotlight(null);
+    setPanel('ai');
+    ai.ask(source, mode, question);
+  };
+
+  /** Opens the short explanation for a suggestion, near the marker when there is one. */
+  const showSuggestion = (
+    suggestion: DifficultySuggestion,
+    spot?: { x: number; y: number },
+  ): void => {
+    if (suggestion.page !== currentPage) scrollToPage(suggestion.page);
+    setActiveSuggestion({
+      suggestion,
+      spot: spot ?? { x: window.innerWidth / 2, y: 200 },
+    });
+  };
+
+  /**
+   * Goes deeper: the assistant, opened on the very passage the suggestion quoted.
+   *
+   * This is a call the reader asked for by clicking, not one the app makes on its own — the
+   * panel's provider line says what it will cost before the answer arrives.
+   */
+  const explainSuggestion = (suggestion: DifficultySuggestion): void => {
+    setActiveSuggestion(null);
+    const anchor = suggestion.anchor;
+    if (anchor === null) {
+      setSelectionNotice('这条建议没有可定位的原文，没法带着它提问。');
+      return;
+    }
+    const source = sourceFor(suggestion.page, {
+      page: suggestion.page,
+      quote: anchor.quote,
+      prefix: anchor.prefix,
+      suffix: anchor.suffix,
+      rects: anchor.rects,
+      start: anchor.start,
+      end: anchor.end,
+    });
+    if (source === null) {
+      setSelectionNotice('这一页还没有渲染好，暂时无法提问。');
+      return;
+    }
+    setSpotlight(null);
+    setPanel('ai');
+    ai.ask(
+      source,
+      'walkthrough',
+      `请解释「${suggestion.title}」：它在这一页里是什么意思？为什么在这里出现？`,
+    );
+  };
+
+  /** Saves a suggestion as an ordinary note, marked as coming from the assistant. */
+  const saveSuggestionNote = (suggestion: DifficultySuggestion): void => {
+    const anchor = suggestion.anchor;
+    if (anchor === null) return;
+    onSaveAiNote(
+      {
+        page: suggestion.page,
+        quote: anchor.quote,
+        prefix: anchor.prefix,
+        suffix: anchor.suffix,
+        rects: anchor.rects,
+        start: anchor.start,
+        end: anchor.end,
+      },
+      {
+        note: `${suggestion.title}\n\n${suggestion.quick}\n\n${suggestion.why}`,
+        sourceLabel: 'AI 难点',
+      },
+    );
+    setActiveSuggestion(null);
+  };
+
+  const ignoreSuggestion = (id: string): void => {
+    scan.ignore(id);
+    setActiveSuggestion(null);
+  };
+
   const saveAiNote = (turn: AiTurn): void => {
-    if (ai.session === null || turn.answer === null) return;
-    onSaveAiNote(ai.session.source.anchor, {
+    const anchor = ai.session?.source.anchor ?? null;
+    // A note is anchored to text. A whole-page answer has no passage to point at, so it stays
+    // an answer — saving it would mean inventing a highlight that covers the page.
+    if (turn.answer === null || anchor === null) return;
+    onSaveAiNote(anchor, {
       note: turn.answer.answer,
       sourceLabel: turn.answer.providerLabel,
     });
   };
 
-  // The service's identity is only needed once the assistant is actually opened, so the app
-  // does not call out on startup.
+  // The service's identity is only needed once the assistant or the difficulty panel is
+  // actually opened, so the app does not call out on startup. Difficulty analysis also needs
+  // the model name for its cache key, and it keeps working after the panel is closed.
   useEffect(() => {
-    if (panel !== 'ai' || health !== null) return;
+    if (health !== null) return;
+    if (panel !== 'ai' && panel !== 'difficulty' && !scan.enabled) return;
     let cancelled = false;
     void (async () => {
       const found = await fetchAiHealth();
@@ -433,7 +653,7 @@ export function ReaderView({
     return () => {
       cancelled = true;
     };
-  }, [panel, health]);
+  }, [panel, health, scan.enabled]);
 
   // A notice is a passing remark, not a permanent state.
   useEffect(() => {
@@ -540,28 +760,7 @@ export function ReaderView({
             <Maximize2 size={14} aria-hidden="true" />
             适应宽度
           </button>
-          <button
-            type="button"
-            className="btn btn-quiet"
-            aria-pressed={panel === 'notes'}
-            onClick={() => {
-              setPanel((value) => (value === 'notes' ? null : 'notes'));
-            }}
-          >
-            <PanelRightOpen size={14} aria-hidden="true" />
-            笔记{here.length > 0 ? ` ${String(here.length)}` : ''}
-          </button>
-          <button
-            type="button"
-            className="btn btn-quiet"
-            aria-pressed={panel === 'ai'}
-            onClick={() => {
-              setPanel((value) => (value === 'ai' ? null : 'ai'));
-            }}
-          >
-            <Sparkles size={14} aria-hidden="true" />
-            AI 答疑
-          </button>
+          <PaperModeSwitch pref={paperMode.pref} onChange={paperMode.setPref} />
         </div>
       </div>
 
@@ -598,12 +797,21 @@ export function ReaderView({
               if (event.shiftKey || event.key === 'a') readSelection();
             }}
             onScroll={(event) => {
-              const page = pageAtOffset(topsRef.current, event.currentTarget.scrollTop);
+              const top = event.currentTarget.scrollTop;
+              const page = pageAtOffset(topsRef.current, top);
               const jump = jumping.current;
               if (jump !== null) {
                 if (Date.now() < jump.until && page !== jump.page) return;
                 jumping.current = null;
               }
+              // Remembered as (page, fraction of that page) so a reflow can put it back.
+              const pageTop = topsRef.current[page - 1] ?? 0;
+              const pageHeight = heightsRef.current[page - 1] ?? 0;
+              viewAnchor.current = {
+                page,
+                fraction:
+                  pageHeight > 0 ? Math.min(1, Math.max(0, (top - pageTop) / pageHeight)) : 0,
+              };
               setCurrentPage((previous) => (previous === page ? previous : page));
               // A toolbar hanging over a moving page would point at nothing.
               setPendingSelection(null);
@@ -632,6 +840,12 @@ export function ReaderView({
                       annotations={byPage.get(pageNumber) ?? []}
                       flashId={flashId}
                       spotlight={spotlight?.page === pageNumber ? spotlight.rects : null}
+                      palette={paperMode.palette}
+                      suggestions={suggestionsByPage.get(pageNumber) ?? []}
+                      onSuggestionClick={(id, spot) => {
+                        const suggestion = scan.all.find((entry) => entry.id === id);
+                        if (suggestion !== undefined) showSuggestion(suggestion, spot);
+                      }}
                     />
                   </div>
                 );
@@ -639,35 +853,132 @@ export function ReaderView({
             </div>
           </div>
 
-          {panel === 'notes' && (
-            <NotesPanel
-              annotations={annotations}
-              currentPdfSha256={pdfSha256}
-              activeId={activeAnnotationId}
-              onJump={jumpToAnnotation}
-              onEdit={onEditAnnotation}
-              onDelete={setPendingDelete}
-              onClose={() => {
-                setPanel(null);
-              }}
-            />
-          )}
+          {panel === null ? (
+            /*
+             * Collapsed, the side panel leaves a rail rather than disappearing. "Open the
+             * assistant" should be one click away from anywhere in the paper, and not behind a
+             * command the reader has to find first.
+             */
+            <div className="reader-rail" role="group" aria-label="侧边面板">
+              <button
+                type="button"
+                className="rail-btn"
+                aria-label="打开 AI 助手"
+                title="AI 助手"
+                onClick={() => {
+                  setPanel('ai');
+                }}
+              >
+                <Sparkles size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="rail-btn"
+                aria-label="打开智能难点"
+                title="智能难点"
+                onClick={() => {
+                  setPanel('difficulty');
+                }}
+              >
+                <Lightbulb size={17} aria-hidden="true" />
+                {scan.all.length > 0 && <span className="rail-count">{scan.all.length}</span>}
+              </button>
+              <button
+                type="button"
+                className="rail-btn"
+                aria-label="打开我的笔记"
+                title="我的笔记"
+                onClick={() => {
+                  setPanel('notes');
+                }}
+              >
+                <NotebookPen size={17} aria-hidden="true" />
+                {here.length > 0 && <span className="rail-count">{here.length}</span>}
+              </button>
+            </div>
+          ) : (
+            <div className="reader-side">
+              <div className="reader-side-tabs" role="group" aria-label="侧边面板">
+                <button
+                  type="button"
+                  className="chip"
+                  aria-pressed={panel === 'ai'}
+                  onClick={() => {
+                    setPanel('ai');
+                  }}
+                >
+                  AI 助手
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  aria-pressed={panel === 'difficulty'}
+                  onClick={() => {
+                    setPanel('difficulty');
+                  }}
+                >
+                  难点{scan.all.length > 0 ? ` ${String(scan.all.length)}` : ''}
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  aria-pressed={panel === 'notes'}
+                  onClick={() => {
+                    setPanel('notes');
+                  }}
+                >
+                  我的笔记{here.length > 0 ? ` ${String(here.length)}` : ''}
+                </button>
+              </div>
 
-          {panel === 'ai' && (
-            <AiPanel
-              session={ai.session}
-              busy={ai.busy}
-              health={health}
-              onFollowUp={ai.followUp}
-              onRetry={ai.retry}
-              onCancel={ai.cancel}
-              onClear={ai.clear}
-              onSaveNote={saveAiNote}
-              onJumpToCitation={jumpToCitation}
-              onClose={() => {
-                setPanel(null);
-              }}
-            />
+              {panel === 'ai' && (
+                <AiPanel
+                  session={ai.session}
+                  busy={ai.busy}
+                  health={health}
+                  currentPage={currentPage}
+                  onAskAboutPage={(question) => {
+                    askAboutPage('ask', question);
+                  }}
+                  onFollowUp={ai.followUp}
+                  onRetry={ai.retry}
+                  onCancel={ai.cancel}
+                  onClear={ai.clear}
+                  canSaveNote={ai.session?.source.anchor != null}
+                  onSaveNote={saveAiNote}
+                  onJumpToCitation={jumpToCitation}
+                  onClose={() => {
+                    setPanel(null);
+                  }}
+                />
+              )}
+
+              {panel === 'notes' && (
+                <NotesPanel
+                  annotations={annotations}
+                  currentPdfSha256={pdfSha256}
+                  activeId={activeAnnotationId}
+                  onJump={jumpToAnnotation}
+                  onEdit={onEditAnnotation}
+                  onDelete={setPendingDelete}
+                  onClose={() => {
+                    setPanel(null);
+                  }}
+                />
+              )}
+
+              {panel === 'difficulty' && (
+                <DifficultyPanel
+                  scan={scan}
+                  online={health?.online === true}
+                  currentPage={currentPage}
+                  onShow={showSuggestion}
+                  onClose={() => {
+                    setPanel(null);
+                  }}
+                />
+              )}
+            </div>
           )}
         </div>
       )}
@@ -681,6 +992,26 @@ export function ReaderView({
           onNote={saveAnnotation}
           onAsk={openAi}
           onDismiss={clearSelection}
+        />
+      )}
+
+      {activeSuggestion !== null && (
+        <SuggestionCard
+          suggestion={activeSuggestion.suggestion}
+          spot={activeSuggestion.spot}
+          canSaveNote={activeSuggestion.suggestion.anchor !== null}
+          onExplain={() => {
+            explainSuggestion(activeSuggestion.suggestion);
+          }}
+          onSaveNote={() => {
+            saveSuggestionNote(activeSuggestion.suggestion);
+          }}
+          onIgnore={() => {
+            ignoreSuggestion(activeSuggestion.suggestion.id);
+          }}
+          onDismiss={() => {
+            setActiveSuggestion(null);
+          }}
         />
       )}
 

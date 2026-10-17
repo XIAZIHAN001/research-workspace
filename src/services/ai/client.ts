@@ -10,7 +10,15 @@
  *   highlights, notes or reading position around it.
  */
 
-import type { AiAnswer, AiAskRequest, AiFailure, AiFailureKind, AiHealth } from './types';
+import type { ProposedDifficulty } from '../../domain/difficulty';
+import type {
+  AiAnswer,
+  AiAskRequest,
+  AiFailure,
+  AiFailureKind,
+  AiHealth,
+  AiPaperRef,
+} from './types';
 
 /** Matches the service's own default; the interface may lower it, never raise it. */
 export const DEFAULT_TIMEOUT_MS = 60_000;
@@ -158,5 +166,92 @@ export async function fetchAiHealth(options: AiClientOptions = {}): Promise<AiHe
     return candidate as AiHealth;
   } catch {
     return null;
+  }
+}
+
+/** What one page's analysis came back with. */
+export interface DifficultyAnalysis {
+  provider: string;
+  providerLabel: string;
+  model: string;
+  online: boolean;
+  page: number;
+  /** The rules that produced this, so the cache can key on them. */
+  rulesVersion: string;
+  status: 'valid' | 'recovered' | 'malformed';
+  suggestions: ProposedDifficulty[];
+  /** Suggestions whose quotation was not in the page text sent. */
+  rejected: number;
+}
+
+export type DifficultyOutcome =
+  { ok: true; value: DifficultyAnalysis } | { ok: false; failure: AiFailure };
+
+function isAnalysis(value: unknown): value is DifficultyAnalysis {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<DifficultyAnalysis>;
+  return (
+    typeof candidate.page === 'number' &&
+    typeof candidate.rulesVersion === 'string' &&
+    Array.isArray(candidate.suggestions)
+  );
+}
+
+/**
+ * Asks the local service what is worth understanding on one page.
+ *
+ * Same contract as `askAi`: no credential, a deadline, a cancellation, and a failure returned
+ * as a value. A failed analysis must never disturb the page it was analysing.
+ */
+export async function analyzeDifficulties(
+  request: { paper: AiPaperRef; pageText: string },
+  options: AiClientOptions = {},
+): Promise<DifficultyOutcome> {
+  const {
+    signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    fetchImpl = globalThis.fetch,
+    baseUrl = '',
+  } = options;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const relay = (): void => {
+    controller.abort();
+  };
+  signal?.addEventListener('abort', relay, { once: true });
+
+  try {
+    const response = await fetchImpl(`${baseUrl}/api/ai/difficulties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return { ok: false, failure: describeFailure('upstream') };
+    }
+
+    if (!response.ok) {
+      const code = isFailure(payload) ? payload.error : undefined;
+      return { ok: false, failure: describeFailure(kindFor(response.status, code)) };
+    }
+    if (!isAnalysis(payload)) return { ok: false, failure: describeFailure('upstream') };
+    return { ok: true, value: payload };
+  } catch {
+    if (signal?.aborted === true) return { ok: false, failure: describeFailure('cancelled') };
+    if (timedOut) return { ok: false, failure: describeFailure('timeout') };
+    return { ok: false, failure: describeFailure('offline') };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', relay);
   }
 }

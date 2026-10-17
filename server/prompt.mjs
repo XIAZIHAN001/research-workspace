@@ -54,6 +54,15 @@ export const MODES = {
 export const MODE_NAMES = Object.keys(MODES);
 
 /**
+ * What the primary passage is.
+ *
+ * `selection` — the reader selected text. `page` — they asked about the page they are reading,
+ * with nothing selected. It changes one label in the prompt and nothing else: the citation
+ * rules are identical, because the passages are the same kind of thing either way.
+ */
+export const SCOPES = ['selection', 'page'];
+
+/**
  * The line that separates the answer from its citation block.
  *
  * It exists because of a measured failure. The previous contract asked for one JSON object with
@@ -96,10 +105,14 @@ const GUARDRAILS = [
 ].join('\n');
 
 /** The instruction block for one mode, phrased as a task rather than as a permissive nudge. */
-function modeInstruction(mode, question) {
+function modeInstruction(mode, question, scope) {
   const chosen = MODES[mode];
-  if (mode !== 'ask') return `读者的请求：${chosen.instruction}`;
-  return `读者的请求：${chosen.instruction}\n读者的问题是：${question}`;
+  const lead =
+    scope === 'page'
+      ? '读者没有选中特定文字，问的是他正在读的这一页。缺少依据时请直说，不要假设整篇论文的内容。\n'
+      : '';
+  if (mode !== 'ask') return `${lead}读者的请求：${chosen.instruction}`;
+  return `${lead}读者的请求：${chosen.instruction}\n读者的问题是：${question}`;
 }
 
 export function isMode(value) {
@@ -194,6 +207,11 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
     return { ok: false, message: '必须且只能有一段被标记为 selection。' };
   }
 
+  const scope = raw.scope === undefined ? 'selection' : raw.scope;
+  if (!SCOPES.includes(scope)) {
+    return { ok: false, message: 'scope 必须是 selection 或 page。' };
+  }
+
   const question =
     raw.question === undefined ? '' : boundedText(raw.question, limits.questionChars);
   if (question === null)
@@ -227,16 +245,20 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
 
   return {
     ok: true,
-    value: { mode: raw.mode, question, paper, passages, history, layoutNotice },
+    value: { mode: raw.mode, question, paper, passages, history, layoutNotice, scope },
   };
 }
 
 /** The block of untrusted material, exactly as the model will see it. */
 export function renderPaperBlock(request) {
+  const pageScope = request.scope === 'page';
   const lines = [
     OPEN,
     `论文标题：${request.paper.title}`,
     `当前页：第 ${String(request.paper.page)} 页`,
+    pageScope
+      ? '阅读范围：读者正在读这一页，没有选中特定文字；下面提供的是这一页的正文。'
+      : '阅读范围：读者选中了下面这段原文，另外附了同页的上下文。',
   ];
   if (request.layoutNotice !== null && request.layoutNotice !== '') {
     lines.push(`排版提示（由阅读器测出，不是模型推断）：${request.layoutNotice}`);
@@ -244,7 +266,13 @@ export function renderPaperBlock(request) {
   for (const passage of request.passages) {
     lines.push(
       '',
-      `[${passage.id}] 第 ${String(passage.page)} 页${passage.selection ? '（读者选中的原文）' : '（同页上下文）'}`,
+      `[${passage.id}] 第 ${String(passage.page)} 页${
+        passage.selection
+          ? pageScope
+            ? '（这一页的正文）'
+            : '（读者选中的原文）'
+          : '（同页上下文）'
+      }`,
     );
     lines.push(neutraliseDelimiters(passage.text));
   }
@@ -267,7 +295,7 @@ export function buildMessages(request) {
   }
   messages.push({
     role: 'user',
-    content: `${renderPaperBlock(request)}\n\n${modeInstruction(request.mode, request.question)}`,
+    content: `${renderPaperBlock(request)}\n\n${modeInstruction(request.mode, request.question, request.scope ?? 'selection')}`,
   });
   return { system: GUARDRAILS, messages };
 }

@@ -14,6 +14,12 @@
 import { createServer } from 'node:http';
 import { LIMITS } from './config.mjs';
 import { verifyAnswer } from './citations.mjs';
+import {
+  DIFFICULTY_RULES_VERSION,
+  buildDifficultyMessages,
+  normalizeDifficultyRequest,
+  verifySuggestions,
+} from './difficulties.mjs';
 import { ProviderError } from './errors.mjs';
 import {
   BodyTooLarge,
@@ -200,6 +206,124 @@ export function createAiServer({
     }
   }
 
+  /**
+   * One page of the paper, analysed for the places worth understanding.
+   *
+   * Same guards as a question — rate, concurrency, body size, cancellation, no retries — and
+   * the same rule about what may leave: one page, and only when the reader turned this on.
+   */
+  async function handleDifficulties(request, response) {
+    const started = Date.now();
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+
+    const allowed = limiter.take();
+    if (!allowed.ok) {
+      sendJson(response, 429, {
+        error: 'rate-limit',
+        message: '本地服务一分钟内的请求次数已达上限，请稍后再试。',
+      });
+      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
+      return;
+    }
+    if (!gate.tryEnter()) {
+      sendJson(response, 429, { error: 'busy', message: '同时进行的模型请求太多，请稍后再试。' });
+      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
+      return;
+    }
+
+    const controller = new AbortController();
+    response.on('close', () => {
+      if (!response.writableEnded) controller.abort();
+    });
+
+    try {
+      let body;
+      try {
+        body = await readJsonBody(request, LIMITS.bodyBytes);
+      } catch (error) {
+        const tooLarge = error instanceof BodyTooLarge;
+        const status = tooLarge ? 413 : 400;
+        const message = tooLarge ? error.message : '请求体不是合法 JSON。';
+        sendJson(response, status, { error: 'bad-request', message });
+        log.request({ method: 'POST', path: url.pathname, status, ms: Date.now() - started });
+        return;
+      }
+
+      const normalized = normalizeDifficultyRequest(body);
+      if (!normalized.ok) {
+        sendJson(response, 400, { error: 'bad-request', message: normalized.message });
+        log.request({ method: 'POST', path: url.pathname, status: 400, ms: Date.now() - started });
+        return;
+      }
+      const page = normalized.value;
+      const { system, messages } = buildDifficultyMessages(page);
+
+      const outcome = await chosen.complete({
+        system,
+        messages,
+        maxTokens: config.answerTokens ?? LIMITS.answerTokens,
+        signal: controller.signal,
+        meta: {
+          task: 'difficulty',
+          title: page.paper.title,
+          page: page.paper.page,
+          pageText: page.pageText,
+        },
+      });
+
+      const verified = verifySuggestions(outcome.text, page.pageText);
+      sendJson(response, 200, {
+        provider: chosen.name,
+        providerLabel: chosen.label,
+        model: chosen.model,
+        online: chosen.name !== 'mock',
+        page: page.paper.page,
+        rulesVersion: DIFFICULTY_RULES_VERSION,
+        status: verified.status,
+        suggestions: verified.suggestions,
+        rejected: verified.diagnostics.rejected,
+        diagnostics: verified.diagnostics,
+        usage: outcome.usage ?? null,
+      });
+      log.request({
+        method: 'POST',
+        path: url.pathname,
+        status: 200,
+        ms: Date.now() - started,
+        provider: chosen.name,
+        model: chosen.model,
+        page: page.paper.page,
+        chars: page.pageText.length,
+        outputStatus: verified.status,
+        suggestions: verified.suggestions.length,
+        rejectedSuggestions: verified.diagnostics.rejected,
+      });
+    } catch (error) {
+      if (controller.signal.aborted && !response.writableEnded) {
+        log.request({ method: 'POST', path: url.pathname, status: 499, ms: Date.now() - started });
+        return;
+      }
+      const isProvider = error instanceof ProviderError;
+      const code = isProvider ? error.code : 'upstream';
+      const message = isProvider
+        ? error.message
+        : '本地服务分析这一页时出错了，没有发送其它页面的内容。';
+      const status =
+        code === 'timeout' ? 504 : code === 'auth' ? 502 : code === 'rate-limit' ? 429 : 502;
+      if (!response.writableEnded) sendJson(response, status, { error: code, message });
+      log.request({
+        method: 'POST',
+        path: url.pathname,
+        status,
+        ms: Date.now() - started,
+        provider: chosen.name,
+        model: chosen.model,
+      });
+    } finally {
+      gate.leave();
+    }
+  }
+
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     const origin = request.headers.origin;
@@ -247,6 +371,11 @@ export function createAiServer({
 
     if (url.pathname === '/api/ai/health') {
       sendJson(response, 200, health);
+      return;
+    }
+
+    if (url.pathname === '/api/ai/difficulties') {
+      void handleDifficulties(request, response);
       return;
     }
 

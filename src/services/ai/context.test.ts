@@ -167,6 +167,59 @@ describe('describeContext', () => {
  * 2829 characters, the service refuses any single history message over 2000, and the next
  * question came back 400. These are the rules that keep that from happening again.
  */
+/**
+ * A question about the page, asked without selecting anything.
+ *
+ * The assistant is not selection-only. What it gets is exactly this page's text — not the
+ * paper, and not a selection invented to fit the old shape of the request.
+ */
+describe('buildAskContext: a question about the page', () => {
+  const pageAsk = (overrides: Partial<Parameters<typeof buildAskContext>[0]> = {}): AiAskRequest =>
+    buildAskContext({
+      paperId: 'paper-1',
+      title: 'A Paper',
+      pdfSha256: 'a'.repeat(64),
+      page: 5,
+      pageText: 'x'.repeat(1200),
+      mode: 'ask',
+      question: '这一页讲了什么？',
+      ...overrides,
+    });
+
+  it('sends the page as the primary passage and nothing else', () => {
+    const request = pageAsk();
+    expect(request.scope).toBe('page');
+    expect(request.passages).toHaveLength(1);
+    expect(request.passages[0]?.id).toBe(PASSAGE_IDS.page);
+    expect(request.passages[0]?.selection).toBe(true);
+    expect(request.passages[0]?.page).toBe(5);
+    expect(request.passages[0]?.text).toBe('x'.repeat(1200));
+  });
+
+  it('still sends only one page, even when the page is long', () => {
+    const request = pageAsk({ pageText: 'y'.repeat(9000) });
+    expect(request.passages[0]?.text).toHaveLength(MAX_PASSAGE_CHARS);
+    expect(new Set(request.passages.map((passage) => passage.page))).toEqual(new Set([5]));
+  });
+
+  it('keeps the history, so a page conversation can be continued', () => {
+    const request = pageAsk({ history: [{ role: 'user', content: '上一问' }] });
+    expect(request.history).toEqual([{ role: 'user', content: '上一问' }]);
+  });
+
+  it('describes the range as the page, not as a selection', () => {
+    expect(describeContext(pageAsk())).toContain('这一页 1200 字');
+  });
+
+  it('treats an empty selection as a page question rather than an empty passage', () => {
+    // A selection that never happened arrives as start === end; sending an empty primary
+    // passage would be rejected by the service anyway.
+    const request = pageAsk({ start: 4, end: 4 });
+    expect(request.scope).toBe('page');
+    expect(request.passages[0]?.id).toBe(PASSAGE_IDS.page);
+  });
+});
+
 describe('buildHistory', () => {
   const long = 'x'.repeat(2829);
 

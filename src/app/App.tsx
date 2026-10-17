@@ -339,6 +339,7 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
               paper={readingPaper}
               blobs={blobStore}
               aiClient={ai}
+              theme={theme.resolved}
               onClose={closeReader}
               onReadingPosition={handleReadingPosition}
               onReplaceFile={() => {

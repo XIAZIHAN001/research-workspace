@@ -1,0 +1,196 @@
+{
+  "generatedAt": "2026-10-17T10:26:21.085Z",
+  "run": "2026-10-17T10-26-07",
+  "provider": "mock (offline)",
+  "providerIdentity": {
+    "ok": true,
+    "provider": "mock",
+    "label": "本地模拟（未连接在线模型）",
+    "model": "mock-1",
+    "reasoning": null,
+    "online": false,
+    "limits": {
+      "passages": 8,
+      "passageChars": 2000,
+      "totalContextChars": 6000,
+      "questionChars": 1000,
+      "requestsPerMinute": 30,
+      "answerTokens": 8192
+    }
+  },
+  "environment": {
+    "offlineFlag": true,
+    "aiProviderEnv": null,
+    "deepseekKeyPresent": false
+  },
+  "passed": 33,
+  "failed": 0,
+  "results": [
+    {
+      "name": "setup: the colour fixture is open in the reader",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "paper: the default mode follows the app theme into warm paper",
+      "passed": true,
+      "detail": "paper 246,241,230"
+    },
+    {
+      "name": "paper: colour survives the warm mode untouched",
+      "passed": true,
+      "detail": "red 217,26,26 blue 26,115,217"
+    },
+    {
+      "name": "paper: the original mode leaves the page exactly as rendered",
+      "passed": true,
+      "detail": "paper 255,255,255 mean 229"
+    },
+    {
+      "name": "paper: the dark mode changes the sheet itself, not just the shell around it",
+      "passed": true,
+      "detail": "paper 35,38,43 mean 49"
+    },
+    {
+      "name": "paper: text becomes light on dark, so it can still be read",
+      "passed": true,
+      "detail": "brightest ink 253"
+    },
+    {
+      "name": "paper: the coloured blocks keep their colour in dark mode",
+      "passed": true,
+      "detail": "red 217,26,26 blue 26,115,217"
+    },
+    {
+      "name": "paper: a highlight stays on the same words when the paper mode changes",
+      "passed": true,
+      "detail": "mode to mode 0.0px, to a fresh selection 0.0px"
+    },
+    {
+      "name": "paper: the chosen mode is still in force after a reload",
+      "passed": true,
+      "detail": "paper luminance 38"
+    },
+    {
+      "name": "paper: in follow mode the paper tracks the application theme",
+      "passed": true,
+      "detail": "paper luminance 241"
+    },
+    {
+      "name": "assistant: a permanent entrance exists in the reading workspace",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "assistant: it opens without any text being selected",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "assistant: a question about the page sends the page as the primary passage",
+      "passed": true,
+      "detail": "scope page · 153 chars"
+    },
+    {
+      "name": "assistant: it does not send the paper, and says what it did send",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "assistant: closing the panel leaves a compact entrance, not a blank column",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "assistant: the conversation is still there when the panel comes back",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "assistant: asking about a selection sends exactly that selection",
+      "passed": true,
+      "detail": "103 chars selected"
+    },
+    {
+      "name": "difficulty: the enable screen states what is sent, what it costs and what is covered",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "difficulty: nothing is analysed before the reader turns it on",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "difficulty: enabling analyses one page, and only this page",
+      "passed": true,
+      "detail": "153 chars sent"
+    },
+    {
+      "name": "difficulty: suggestions are drawn on the words they quote",
+      "passed": true,
+      "detail": "3 markers"
+    },
+    {
+      "name": "difficulty: a suggestion whose quotation was not in the text never becomes a marker",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "difficulty: clicking a marker shows the short explanation first",
+      "passed": true,
+      "detail": "384px wide marker"
+    },
+    {
+      "name": "difficulty: the card says it is AI output, not the paper",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "difficulty: going deeper asks about the very passage the suggestion quoted",
+      "passed": true,
+      "detail": "49 chars of context"
+    },
+    {
+      "name": "difficulty: ignoring one suggestion removes just that marker",
+      "passed": true,
+      "detail": "3 → 2 markers · 这一页的核心概念"
+    },
+    {
+      "name": "difficulty: hiding the markers leaves the suggestions and the page intact",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "difficulty: a cached page is not sent again after a reload",
+      "passed": true,
+      "detail": "1 requests in total"
+    },
+    {
+      "name": "difficulty: the markers come back from the cache, on the same words",
+      "passed": true,
+      "detail": "2 markers"
+    },
+    {
+      "name": "difficulty: a different file never inherits the first file’s markers",
+      "passed": true,
+      "detail": "first file's marker dvyjfa1 is absent"
+    },
+    {
+      "name": "regression: the reader still opens after all of this",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "calls: one assistant request per question, no automatic retries",
+      "passed": true,
+      "detail": "3 requests for 3 questions"
+    },
+    {
+      "name": "console: nothing failed except requests this run provoked",
+      "passed": true,
+      "detail": "0 unexpected, 0 total"
+    }
+  ],
+  "consoleIssues": []
+}

@@ -37,8 +37,8 @@ const ROOT = new URL('../../', import.meta.url);
  * the lesson is that the safe default for evidence is "write somewhere new".
  */
 const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const SHOT_DIR = new URL(`docs/screenshots-phase4.2/${RUN_STAMP}/`, ROOT);
-const REPORT_FILE = new URL(`docs/screenshots-phase4.2/${RUN_STAMP}/report.json`, ROOT);
+const SHOT_DIR = new URL(`docs/screenshots-phase5/${RUN_STAMP}/`, ROOT);
+const REPORT_FILE = new URL(`docs/screenshots-phase5/${RUN_STAMP}/report.json`, ROOT);
 const WORK_DIR = new URL('.cache/verify/', ROOT);
 const VITE_BIN = fileURLToPath(new URL('node_modules/vite/bin/vite.js', ROOT));
 const SERVER_ENTRY = fileURLToPath(new URL('server/start.mjs', ROOT));
@@ -161,6 +161,20 @@ async function startService() {
   }
   child.kill();
   throw new Error('the local AI service did not start');
+}
+
+/**
+ * Brings the assistant into view, whether the side panel is collapsed (a rail button) or open
+ * on another tab (a tab in the panel).
+ */
+async function openAiPanel(page) {
+  const panel = page.getByRole('complementary', { name: 'AI 精读助手' });
+  if ((await panel.count()) === 0) {
+    const rail = page.getByRole('button', { name: '打开 AI 助手' });
+    if ((await rail.count()) > 0) await rail.click();
+    else await page.getByRole('button', { name: /^AI 助手$/ }).click();
+  }
+  await panel.waitFor({ timeout: 5000 });
 }
 
 async function startPreview() {
@@ -317,6 +331,20 @@ async function main() {
 
   const service = await startService();
   const server = await startPreview();
+  // The page talks through the preview proxy, so the identity check has to be made through it.
+  // A preview started without AI_PORT proxies to the default port, which may be a paid service.
+  const proxied = await fetch(`${ORIGIN}api/ai/health`)
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+  if (proxied === null || proxied.provider !== 'mock' || proxied.online !== false) {
+    server.kill();
+    service.child.kill();
+    process.stderr.write(
+      `预览代理指向的不是离线服务（provider=${String(proxied?.provider)}）。\n` +
+        '验收在发出任何请求之前中止。\n',
+    );
+    process.exit(4);
+  }
   const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
   watch(page);
@@ -354,7 +382,7 @@ async function main() {
       { span: 4, offset: 0 },
       { span: 9, offset: 999 },
     );
-    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await toolbarOf(page).getByRole('button', { name: '向这段文字提问' }).click();
     const menu = page.getByRole('group', { name: '向 AI 提问' });
     await menu.waitFor({ timeout: 5000 });
     check(
@@ -482,8 +510,10 @@ async function main() {
     await page.reload();
     await reopenReader(page, 'AI 精读验收');
     // The notes panel is already open in a wide window; only narrow ones start with it closed.
-    const notesToggle = page.getByRole('button', { name: /^笔记/ });
-    if ((await notesToggle.getAttribute('aria-pressed')) !== 'true') await notesToggle.click();
+    // The side panel opens on the notes in a wide window; open that tab if it is not showing.
+    if ((await page.locator('.note-item').count()) === 0) {
+      await page.getByRole('button', { name: /^我的笔记/ }).click();
+    }
     const item = page.locator('.note-item').filter({ hasText: 'AI 辅助' }).first();
     await item.waitFor({ timeout: 10_000 });
     check('persistence: the saved note is still there after a reload, marked as AI-assisted', true);
@@ -493,14 +523,14 @@ async function main() {
     );
 
     // ---- 8. Translation ---------------------------------------------------
-    await page.getByRole('button', { name: /^AI 答疑/ }).click();
+    await openAiPanel(page);
     const toTranslate = await selectForToolbar(
       page,
       1,
       { span: 4, offset: 0 },
       { span: 6, offset: 999 },
     );
-    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await toolbarOf(page).getByRole('button', { name: '向这段文字提问' }).click();
     asksSent += 1;
     await page
       .getByRole('group', { name: '向 AI 提问' })
@@ -647,7 +677,7 @@ async function main() {
 
     // ---- 9c. Mathematics ----------------------------------------------------
     await selectForToolbar(page, 1, { span: 4, offset: 0 }, { span: 9, offset: 999 });
-    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await toolbarOf(page).getByRole('button', { name: '向这段文字提问' }).click();
     asksSent += 1;
     await page
       .getByRole('group', { name: '向 AI 提问' })
@@ -735,7 +765,7 @@ async function main() {
     await page.getByRole('button', { name: '返回' }).click();
     await importIntoProject(page, injectionFile);
     await selectForToolbar(page, 1, { span: 2, offset: 0 }, { span: 5, offset: 999 });
-    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await toolbarOf(page).getByRole('button', { name: '向这段文字提问' }).click();
     asksSent += 1;
     await page
       .getByRole('group', { name: '向 AI 提问' })
@@ -798,7 +828,7 @@ async function main() {
             .slice(0, 5)
             .map(
               (entry) =>
-                ` [${String(entry.ratio)} < ${String(entry.need)} ${entry.label.slice(0, 24)}]`,
+                ` [${String(entry.ratio)} < ${String(entry.need)} ${entry.label.slice(0, 60)}]`,
             )
             .join(''),
       );
@@ -847,7 +877,7 @@ async function main() {
       run !== null && run.count >= 8,
       `${String(run?.count ?? 0)} single-character spans`,
     );
-    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    await toolbarOf(page).getByRole('button', { name: '向这段文字提问' }).click();
     asksSent += 1;
     await page
       .getByRole('group', { name: '向 AI 提问' })

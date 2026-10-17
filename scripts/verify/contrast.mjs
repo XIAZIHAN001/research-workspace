@@ -58,10 +58,22 @@ function collectTargets() {
     range.selectNodeContents(node);
     const text_ = range.getBoundingClientRect();
     const own = element.getBoundingClientRect();
-    const left = Math.max(text_.left, own.left, 0);
-    const top = Math.max(text_.top, own.top, 0);
-    const right = Math.min(text_.right, own.right, window.innerWidth);
-    const bottom = Math.min(text_.bottom, own.bottom, window.innerHeight);
+    // A run that is partly scrolled out of its panel is measured only over the part a reader can
+    // actually see. Measuring the clipped remainder samples whatever is behind the panel edge,
+    // which is not a ratio anyone is looking at — and it reported a false failure once already.
+    let left = Math.max(text_.left, own.left, 0);
+    let top = Math.max(text_.top, own.top, 0);
+    let right = Math.min(text_.right, own.right, window.innerWidth);
+    let bottom = Math.min(text_.bottom, own.bottom, window.innerHeight);
+    for (let node_ = element; node_ !== null; node_ = node_.parentElement) {
+      const box = getComputedStyle(node_);
+      if (!/(auto|scroll|hidden)/.test(box.overflowX + box.overflowY)) continue;
+      const area = node_.getBoundingClientRect();
+      left = Math.max(left, area.left);
+      top = Math.max(top, area.top);
+      right = Math.min(right, area.right);
+      bottom = Math.min(bottom, area.bottom);
+    }
     if (right - left < 1 || bottom - top < 1) continue;
     targets.push({
       label: label(element, text),
@@ -137,7 +149,7 @@ async function measure({ png, targets }) {
     const worst = Math.min(ratio(fgLum, darkest), ratio(fgLum, lightest));
     const large = t.size >= 24 || (t.size >= 18.66 && t.weight >= 700);
     results.push({
-      label: t.label,
+      label: `${t.label} @${String(Math.round(t.x))},${String(Math.round(t.y))}`,
       ratio: Math.round(worst * 100) / 100,
       need: large ? 3 : 4.5,
       translucent: fg.alpha < 1,
