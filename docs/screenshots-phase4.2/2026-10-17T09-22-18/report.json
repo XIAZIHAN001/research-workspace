@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-17T09:17:22.401Z",
-  "run": "2026-10-17T09-17-10",
+  "generatedAt": "2026-10-17T09:22:30.166Z",
+  "run": "2026-10-17T09-22-18",
   "provider": "mock (offline, through the real local service)",
   "providerIdentity": {
     "ok": true,
@@ -50,7 +50,7 @@
     {
       "name": "request: it carries the paper identity, the page and the file hash",
       "passed": true,
-      "detail": "sent {\"id\":\"6a189fb0-88f8-49e0-a11e-4106cc516441\",\"title\":\"2610.22294\",\"page\":1,\"pdfSha256\":\"8b9ccec04b42a53da4dedc96f01203ba7a1cb3c2a599371f2395186246db8188\"} for 6a189fb0-88f sha 8b9ccec0"
+      "detail": "sent {\"id\":\"77f2bfb6-a396-4ce7-abcb-eb9d89fd4226\",\"title\":\"2610.22294\",\"page\":1,\"pdfSha256\":\"8b9ccec04b42a53da4dedc96f01203ba7a1cb3c2a599371f2395186246db8188\"} for 77f2bfb6-a39 sha 8b9ccec0"
     },
     {
       "name": "request: it is a structured request, not a chat transcript",
@@ -250,12 +250,12 @@
     {
       "name": "themes: every visible text run meets its contrast requirement in light",
       "passed": true,
-      "detail": "71 runs, 0 below their requirement"
+      "detail": "70 runs, 0 below their requirement"
     },
     {
       "name": "themes: every visible text run meets its contrast requirement in dark",
       "passed": true,
-      "detail": "71 runs, 0 below their requirement"
+      "detail": "70 runs, 0 below their requirement"
     },
     {
       "name": "log: every line is a structured record, not a dump",

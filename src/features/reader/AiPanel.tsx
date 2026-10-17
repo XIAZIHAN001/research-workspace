@@ -211,7 +211,9 @@ function Diagnostics({ answer }: { answer: AiAnswer }) {
         <dt>解析状态</dt>
         <dd>
           {STATUS_LABEL[answer.status] ?? answer.status}
-          {diagnostics.recovery === null
+          {/* A reply that followed the contract has no recovery rule to name, and `sentinel`
+              is our word for it, not the reader's. */}
+          {answer.status === 'valid' || diagnostics.recovery === null
             ? ''
             : `（${RECOVERY_LABEL[diagnostics.recovery] ?? diagnostics.recovery}）`}
         </dd>
