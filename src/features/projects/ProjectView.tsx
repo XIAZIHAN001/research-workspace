@@ -1,13 +1,21 @@
 import { FileUp, Library, Pencil, SquareArrowOutUpRight, Unlink } from 'lucide-react';
+import { useState } from 'react';
+import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
+import { KnowledgeView } from '../knowledge/KnowledgeView';
+import type { KnowledgeApi } from '../knowledge/useKnowledgeApi';
 import { PaperRow } from '../papers/PaperRow';
 
 interface ProjectViewProps {
   project: Project;
   /** The knowledge-base registry, for resolving the papers this project references. */
   papers: Record<string, Paper>;
-  onOpenReader: (paperId: string) => void;
+  /** Every annotation in the workspace; the knowledge view filters them to this project. */
+  annotations: readonly Annotation[];
+  knowledge: KnowledgeApi;
+  /** `focus` takes the reader straight to a quotation — used by a concept's evidence. */
+  onOpenReader: (paperId: string, focus?: { page: number; quote: string }) => void;
   /** Attach or replace the PDF of a paper. */
   onImportFile: (paperId: string) => void;
   onEditPaper: (paperId: string) => void;
@@ -30,6 +38,8 @@ const LONG_TITLE = 40;
 export function ProjectView({
   project,
   papers,
+  annotations,
+  knowledge,
   onOpenReader,
   onImportFile,
   onEditPaper,
@@ -37,6 +47,7 @@ export function ProjectView({
   onImportNew,
   onLinkFromLibrary,
 }: ProjectViewProps) {
+  const [zone, setZone] = useState<'papers' | 'knowledge'>('papers');
   const corePaper = papers[project.corePaperId] ?? null;
   const related = project.relatedPaperIds
     .map((paperId) => papers[paperId])
@@ -52,121 +63,156 @@ export function ProjectView({
         {project.name}
       </h1>
 
-      <section className="project-section" aria-labelledby="core-paper-heading">
-        <div className="section-head">
-          <h2 id="core-paper-heading" className="section-title">
-            核心论文
-          </h2>
-          <button type="button" className="btn btn-quiet" onClick={onLinkFromLibrary}>
-            <Library size={14} aria-hidden="true" />
-            从论文库关联
-          </button>
-        </div>
-        {corePaper === null ? (
-          <p className="project-note">这篇论文的记录已经不在了，可以重新导入一份 PDF。</p>
-        ) : (
-          <PaperRow paper={corePaper}>
-            {corePaper.pdf !== undefined && (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  onOpenReader(corePaper.id);
-                }}
-              >
-                <SquareArrowOutUpRight size={14} aria-hidden="true" />
-                阅读
+      <div className="project-modes" role="group" aria-label="项目内容">
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={zone === 'papers'}
+          onClick={() => {
+            setZone('papers');
+          }}
+        >
+          文献
+        </button>
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={zone === 'knowledge'}
+          onClick={() => {
+            setZone('knowledge');
+          }}
+        >
+          知识
+        </button>
+      </div>
+
+      {zone === 'knowledge' ? (
+        <KnowledgeView
+          project={project}
+          papers={papers}
+          annotations={annotations}
+          api={knowledge}
+          onOpenReader={onOpenReader}
+        />
+      ) : (
+        <>
+          <section className="project-section" aria-labelledby="core-paper-heading">
+            <div className="section-head">
+              <h2 id="core-paper-heading" className="section-title">
+                核心论文
+              </h2>
+              <button type="button" className="btn btn-quiet" onClick={onLinkFromLibrary}>
+                <Library size={14} aria-hidden="true" />
+                从论文库关联
               </button>
+            </div>
+            {corePaper === null ? (
+              <p className="project-note">这篇论文的记录已经不在了，可以重新导入一份 PDF。</p>
+            ) : (
+              <PaperRow paper={corePaper}>
+                {corePaper.pdf !== undefined && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      onOpenReader(corePaper.id);
+                    }}
+                  >
+                    <SquareArrowOutUpRight size={14} aria-hidden="true" />
+                    阅读
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  onClick={() => {
+                    onImportFile(corePaper.id);
+                  }}
+                >
+                  <FileUp size={14} aria-hidden="true" />
+                  {corePaper.pdf === undefined ? '导入 PDF' : '替换 PDF'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  onClick={() => {
+                    onEditPaper(corePaper.id);
+                  }}
+                >
+                  <Pencil size={14} aria-hidden="true" />
+                  编辑
+                </button>
+              </PaperRow>
             )}
-            <button
-              type="button"
-              className="btn btn-quiet"
-              onClick={() => {
-                onImportFile(corePaper.id);
-              }}
-            >
-              <FileUp size={14} aria-hidden="true" />
-              {corePaper.pdf === undefined ? '导入 PDF' : '替换 PDF'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-quiet"
-              onClick={() => {
-                onEditPaper(corePaper.id);
-              }}
-            >
-              <Pencil size={14} aria-hidden="true" />
-              编辑
-            </button>
-          </PaperRow>
-        )}
-      </section>
+          </section>
 
-      <section className="project-section" aria-labelledby="related-heading">
-        <div className="section-head">
-          <h2 id="related-heading" className="section-title">
-            关联论文
-          </h2>
-          <span className="section-count">{related.length} 篇</span>
-          <button type="button" className="btn btn-quiet" onClick={onImportNew}>
-            <FileUp size={14} aria-hidden="true" />
-            导入新论文
-          </button>
-        </div>
-        {related.length === 0 ? (
-          <p className="project-note">
-            还没有关联论文。可以从论文库关联已有的论文，或者导入一份新的 PDF。
-          </p>
-        ) : (
-          <ul className="paper-list">
-            {related.map((paper) => (
-              <li key={paper.id}>
-                <PaperRow paper={paper}>
-                  {paper.pdf !== undefined && (
-                    <button
-                      type="button"
-                      className="btn btn-quiet"
-                      onClick={() => {
-                        onOpenReader(paper.id);
-                      }}
-                    >
-                      <SquareArrowOutUpRight size={14} aria-hidden="true" />
-                      阅读
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-quiet"
-                    onClick={() => {
-                      onImportFile(paper.id);
-                    }}
-                  >
-                    <FileUp size={14} aria-hidden="true" />
-                    {paper.pdf === undefined ? '导入 PDF' : '替换 PDF'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-quiet"
-                    onClick={() => {
-                      onUnlinkPaper(paper.id);
-                    }}
-                  >
-                    <Unlink size={14} aria-hidden="true" />
-                    移出项目
-                  </button>
-                </PaperRow>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          <section className="project-section" aria-labelledby="related-heading">
+            <div className="section-head">
+              <h2 id="related-heading" className="section-title">
+                关联论文
+              </h2>
+              <span className="section-count">{related.length} 篇</span>
+              <button type="button" className="btn btn-quiet" onClick={onImportNew}>
+                <FileUp size={14} aria-hidden="true" />
+                导入新论文
+              </button>
+            </div>
+            {related.length === 0 ? (
+              <p className="project-note">
+                还没有关联论文。可以从论文库关联已有的论文，或者导入一份新的 PDF。
+              </p>
+            ) : (
+              <ul className="paper-list">
+                {related.map((paper) => (
+                  <li key={paper.id}>
+                    <PaperRow paper={paper}>
+                      {paper.pdf !== undefined && (
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          onClick={() => {
+                            onOpenReader(paper.id);
+                          }}
+                        >
+                          <SquareArrowOutUpRight size={14} aria-hidden="true" />
+                          阅读
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        onClick={() => {
+                          onImportFile(paper.id);
+                        }}
+                      >
+                        <FileUp size={14} aria-hidden="true" />
+                        {paper.pdf === undefined ? '导入 PDF' : '替换 PDF'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        onClick={() => {
+                          onUnlinkPaper(paper.id);
+                        }}
+                      >
+                        <Unlink size={14} aria-hidden="true" />
+                        移出项目
+                      </button>
+                    </PaperRow>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-      <dl className="facts">
-        <div>
-          <dt>创建于</dt>
-          <dd>{dateFormat.format(project.createdAt)}</dd>
-        </div>
-      </dl>
+          <dl className="facts">
+            <div>
+              <dt>创建于</dt>
+              <dd>{dateFormat.format(project.createdAt)}</dd>
+            </div>
+          </dl>
+        </>
+      )}
     </article>
   );
 }

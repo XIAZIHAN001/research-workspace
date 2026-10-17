@@ -11,6 +11,7 @@
  * - the response is JSON, and nothing in it is ever served as HTML.
  */
 
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { LIMITS } from './config.mjs';
 import { verifyAnswer } from './citations.mjs';
@@ -56,8 +57,19 @@ export function createAiServer({
   const limiter = new RateLimiter(LIMITS.requestsPerMinute);
   const gate = new ConcurrencyGate(LIMITS.concurrentRequests);
 
+  /**
+   * Identifies *this process*, not this build.
+   *
+   * Phase 5 ended with two questions going to a service nobody meant to talk to. A port being
+   * answered on is not evidence that it is the process a test started, so every service now
+   * says which run it belongs to and the verification scripts pin it.
+   */
+  const instanceId = randomUUID();
+
   const health = {
     ok: true,
+    instanceId,
+    startedAt: new Date().toISOString(),
     provider: chosen.name,
     label: chosen.label,
     model: chosen.model,

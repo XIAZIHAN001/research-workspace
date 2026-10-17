@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { launchBrowser } from './browser.mjs';
+import { requireOfflineProxy } from './offline.mjs';
 import { auditContrast } from './contrast.mjs';
 import { buildFragmentedPdf, buildInjectionPdf } from './sample-pdf.mjs';
 import { boxDistance, clearSelection, selectSpans, unionBox } from './text-selection.mjs';
@@ -331,20 +332,12 @@ async function main() {
 
   const service = await startService();
   const server = await startPreview();
-  // The page talks through the preview proxy, so the identity check has to be made through it.
-  // A preview started without AI_PORT proxies to the default port, which may be a paid service.
-  const proxied = await fetch(`${ORIGIN}api/ai/health`)
-    .then((response) => (response.ok ? response.json() : null))
-    .catch(() => null);
-  if (proxied === null || proxied.provider !== 'mock' || proxied.online !== false) {
-    server.kill();
-    service.child.kill();
-    process.stderr.write(
-      `预览代理指向的不是离线服务（provider=${String(proxied?.provider)}）。\n` +
-        '验收在发出任何请求之前中止。\n',
-    );
-    process.exit(4);
-  }
+  // The page talks through the preview proxy: check the identity of *that* path, and pin
+  // it to the service process this run started.
+  await requireOfflineProxy(ORIGIN, {
+    expectedInstance: service.health.instanceId,
+    label: 'AI 验收',
+  });
   const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
   watch(page);
@@ -954,6 +947,7 @@ async function main() {
         run: RUN_STAMP,
         provider: 'mock (offline, through the real local service)',
         providerIdentity: service.health,
+        instanceId: service.health.instanceId,
         // Recorded so the report says, by itself, that this run could not have spent anything.
         environment: {
           offlineFlag: true,

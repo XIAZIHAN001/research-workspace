@@ -13,6 +13,7 @@ import './styles/glass.css';
 import './styles/layout.css';
 import './styles/components.css';
 import './styles/reader.css';
+import './styles/knowledge.css';
 
 const container = document.getElementById('root');
 if (container === null) throw new Error('Missing #root element');

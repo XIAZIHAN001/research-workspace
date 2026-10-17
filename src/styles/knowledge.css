@@ -1,0 +1,546 @@
+/* The knowledge zone is a workspace, not a column of prose: a project page that is showing it
+   gets more width, and goes back to a reading width when the papers are showing again. */
+.project:has(.knowledge) {
+  width: min(1080px, 100%);
+}
+
+/* The project page's two zones: the papers it is about, and the knowledge they built. */
+.project-modes {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+/* The project's knowledge: one list, one graph, one detail pane. */
+
+.knowledge {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.knowledge-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.knowledge-head .section-title {
+  margin: 0;
+  margin-right: auto;
+}
+
+.knowledge-modes {
+  display: flex;
+  gap: 4px;
+}
+
+.knowledge-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  color: var(--text-2);
+}
+
+.knowledge-search input {
+  width: 11rem;
+  padding: 5px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.knowledge-notice {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.knowledge-create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+.kb-input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.kb-select {
+  padding: 5px 8px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  max-width: 100%;
+}
+
+.knowledge-candidates {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+
+.knowledge-candidates-head {
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.knowledge-candidates ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-candidates li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+}
+
+.candidate-name {
+  font-weight: 600;
+}
+
+.candidate-meta {
+  margin-right: auto;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.knowledge-empty {
+  margin: 0;
+  padding: 16px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+.knowledge-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+/* A graph needs width, so in that mode it gets the larger column and the detail keeps a
+   readable one beside it. */
+.knowledge-body[data-mode='graph'] {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+}
+
+.knowledge-graph-pane {
+  max-height: 60vh;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+@media (max-width: 900px) {
+  .knowledge-body,
+  .knowledge-body[data-mode='graph'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.knowledge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.knowledge-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--glass-fill);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.concept-card[data-selected='true'] {
+  border-left-color: var(--accent);
+  background: var(--row-active);
+}
+
+.concept-card-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.concept-card-summary {
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.concept-card-meta {
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+
+.kb-badge {
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.kb-badge-ai {
+  border-color: color-mix(in srgb, var(--text) 25%, transparent);
+  color: var(--text-2);
+}
+
+/* --- the detail pane ------------------------------------------------------ */
+
+.concept-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--glass-fill);
+}
+
+.concept-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.concept-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  margin-right: auto;
+  font-size: 16px;
+}
+
+.concept-edit {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.concept-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.concept-summary {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.concept-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.concept-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.concept-block h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.concept-hint {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.concept-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-links li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-remove {
+  padding: 0 3px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-remove:hover {
+  color: var(--danger);
+}
+
+.kb-kind {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-2);
+  font-size: 10px;
+}
+
+.concept-relation-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/* --- evidence ------------------------------------------------------------- */
+
+.evidence-list,
+.evidence-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidence-row {
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+}
+
+.evidence-row[data-stale='true'] {
+  border-left-color: var(--text-2);
+  opacity: 0.85;
+}
+
+.evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.evidence-paper {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.evidence-page {
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+
+.evidence-quote {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.evidence-note {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.evidence-stale {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.evidence-picker li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  font-size: 11.5px;
+}
+
+.evidence-picker .evidence-quote {
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- the graph ------------------------------------------------------------ */
+
+.concept-graph {
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+.concept-node rect {
+  fill: var(--glass-fill-strong);
+  stroke: var(--hairline);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.concept-node text {
+  fill: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.concept-node[data-status='suggested'] rect {
+  stroke-dasharray: 4 3;
+}
+
+.concept-node[data-selected='true'] rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.concept-node:focus-visible rect {
+  stroke: var(--focus);
+  stroke-width: 2;
+}
+
+.concept-edge {
+  fill: none;
+  stroke: var(--ring);
+  stroke-width: 1.5;
+  color: var(--ring);
+}
+
+.concept-edge[data-kind='related'] {
+  stroke-dasharray: 3 4;
+}
+
+.concept-edge[data-kind='extends'] {
+  stroke-dasharray: 7 4;
+}
+
+.concept-edge[data-status='suggested'] {
+  stroke-dasharray: 2 5;
+  opacity: 0.55;
+}
+
+/* Narrow windows: the project page already scrolls, so the graph may be taller than wide. */
+@media (max-width: 760px) {
+  .knowledge-head .knowledge-search input {
+    width: 7rem;
+  }
+
+  .knowledge-list {
+    max-height: 45vh;
+  }
+}
+
+/* The dialog note under a destructive confirmation. */
+.dialog-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font-size: 11.5px;
+}

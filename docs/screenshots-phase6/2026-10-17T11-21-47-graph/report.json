@@ -1,0 +1,114 @@
+{
+  "generatedAt": "2026-10-17T11:21:57.663Z",
+  "run": "2026-10-17T11-21-47",
+  "provider": "mock (offline)",
+  "providerIdentity": {
+    "ok": true,
+    "instanceId": "fa65e5a3-fbdc-48e5-86c2-a5bdb7c4443b",
+    "startedAt": "2026-10-17T11:21:47.550Z",
+    "provider": "mock",
+    "label": "本地模拟（未连接在线模型）",
+    "model": "mock-1",
+    "reasoning": null,
+    "online": false,
+    "limits": {
+      "passages": 8,
+      "passageChars": 2000,
+      "totalContextChars": 6000,
+      "questionChars": 1000,
+      "requestsPerMinute": 30,
+      "answerTokens": 8192
+    }
+  },
+  "instanceId": "fa65e5a3-fbdc-48e5-86c2-a5bdb7c4443b",
+  "passed": 17,
+  "failed": 0,
+  "results": [
+    {
+      "name": "reading: the page produced difficulty suggestions to build knowledge from",
+      "passed": true,
+      "detail": "3 markers"
+    },
+    {
+      "name": "concept: a difficulty on the page became a concept in the project",
+      "passed": true,
+      "detail": "这一页的核心概念"
+    },
+    {
+      "name": "concept: it is marked as unconfirmed AI output, not as the reader’s own knowledge",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "evidence: opening it lands on the paper with the quoted words marked",
+      "passed": true,
+      "detail": "colour 第 1 页 来自难点标注 “Black text on white paper, "
+    },
+    {
+      "name": "concept: confirming removes the unconfirmed badge",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "navigation: the concept now lists the knowledge it depends on",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "navigation: and the dependency knows what depends on it",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "graph: every concept is a node, and the relation is an edge",
+      "passed": true,
+      "detail": "2 nodes, 1 edges"
+    },
+    {
+      "name": "identity: the same name creates a second concept, not a merge",
+      "passed": true,
+      "detail": "3 concepts"
+    },
+    {
+      "name": "deletion: removing a relation leaves both concepts in place",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: the knowledge zone does not overflow in dark mode",
+      "passed": true,
+      "detail": "1000px wide"
+    },
+    {
+      "name": "layout: the knowledge zone reflows in a narrow window without sideways overflow",
+      "passed": true,
+      "detail": "526px wide, overflow 0px"
+    },
+    {
+      "name": "deletion: removing the project does not delete the knowledge it contributed",
+      "passed": true,
+      "detail": "3 concepts still stored"
+    },
+    {
+      "name": "deletion: the surviving concepts are unlinked from the deleted project, not removed",
+      "passed": true,
+      "detail": "3 unlinked"
+    },
+    {
+      "name": "safety: the service this run started was the offline mock",
+      "passed": true,
+      "detail": "instance fa65e5a3"
+    },
+    {
+      "name": "safety: difficulty analysis ran only against the offline service",
+      "passed": true,
+      "detail": "1 analysis request(s)"
+    },
+    {
+      "name": "console: nothing failed unexpectedly",
+      "passed": true,
+      "detail": "0 unexpected"
+    }
+  ],
+  "consoleIssues": []
+}

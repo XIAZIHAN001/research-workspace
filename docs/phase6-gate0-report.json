@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-10-17T11:25:02.216Z",
+  "decoyPort": 8836,
+  "mockPort": 8837,
+  "passed": 10,
+  "failed": 0,
+  "results": [
+    {
+      "name": "mock: the offline service starts as a mock with its own instance id",
+      "passed": true,
+      "detail": "instance 13800fad"
+    },
+    {
+      "name": "guard: a preview pointing at a paid service is refused, with the reason named",
+      "passed": true,
+      "detail": "reason online-provider"
+    },
+    {
+      "name": "guard: the refusal ends the process with the documented exit code",
+      "passed": true,
+      "detail": "exit 4"
+    },
+    {
+      "name": "guard: nothing but the health probe ever reached the paid service",
+      "passed": true,
+      "detail": "2 requests, 0 business"
+    },
+    {
+      "name": "guard: a preview started without AI_PORT is refused before any browser opens",
+      "passed": true,
+      "detail": "reason online-provider"
+    },
+    {
+      "name": "guard: a correctly wired preview reports the offline mock this run started",
+      "passed": true,
+      "detail": "instance 13800fad"
+    },
+    {
+      "name": "traffic: a business request through the preview is answered by the offline mock",
+      "passed": true,
+      "detail": "200 · mock"
+    },
+    {
+      "name": "traffic: the paid service received nothing while that request was made",
+      "passed": true,
+      "detail": "0 new requests at the decoy"
+    },
+    {
+      "name": "traffic: exactly one upstream call, so no implicit retry happened",
+      "passed": true,
+      "detail": "1 call(s) at the mock"
+    },
+    {
+      "name": "guard: a mock from a different run is refused even though it is a mock",
+      "passed": true,
+      "detail": "exit 4"
+    }
+  ]
+}

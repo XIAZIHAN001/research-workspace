@@ -5,6 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { launchBrowser } from './browser.mjs';
+import { requireOfflineProxy } from './offline.mjs';
 import { buildColourPdf } from './sample-pdf.mjs';
 import { boxDistance, selectSpans, unionBox } from './text-selection.mjs';
 
@@ -344,7 +345,15 @@ const near = (one, other, tolerance) =>
   Math.abs(one[1] - other[1]) <= tolerance &&
   Math.abs(one[2] - other[2]) <= tolerance;
 
-/** Waits until the canvas reports the paper colour this mode should have. */
+const RED = [217, 26, 26];
+
+/**
+ * Waits until the canvas reports the paper colour this mode should have.
+ *
+ * Every wait also requires the red block to be drawn. A canvas that has only been cleared to
+ * its background is white, which passes a "is it white" test — and that race made the original
+ * mode check fail intermittently with a page that had not finished rendering.
+ */
 async function waitForPaper(page, pageNumber, predicate, timeoutMs = 8000) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
@@ -367,20 +376,12 @@ async function main() {
 
   const service = await startService();
   const server = await startPreview();
-  // Identity through the proxy, not just of the service: this is the path the page actually
-  // uses, and the whole point is to prove it reaches the offline mock.
-  const proxied = await fetch(`${ORIGIN}api/ai/health`)
-    .then((response) => (response.ok ? response.json() : null))
-    .catch(() => null);
-  if (proxied === null || proxied.provider !== 'mock' || proxied.online !== false) {
-    server.kill();
-    service.child.kill();
-    process.stderr.write(
-      `预览代理指向的不是离线服务（provider=${String(proxied?.provider)}）。\n` +
-        '验收在发出任何请求之前中止。\n',
-    );
-    process.exit(4);
-  }
+  // The page talks through the preview proxy: check the identity of *that* path, and pin
+  // it to the service process this run started.
+  await requireOfflineProxy(ORIGIN, {
+    expectedInstance: service.health.instanceId,
+    label: '沉浸式验收',
+  });
   const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
   watch(page);
@@ -402,7 +403,11 @@ async function main() {
 
     // ---- A. Paper modes ----------------------------------------------------
     // The app starts in its light theme, so the paper follows into warm.
-    const warm = await waitForPaper(page, 1, (sample) => sample.paper[0] > 200);
+    const warm = await waitForPaper(
+      page,
+      1,
+      (sample) => sample.paper[0] > 200 && near(sample.red, RED, 60),
+    );
     check(
       'paper: the default mode follows the app theme into warm paper',
       (await page.locator('.pdf-page[data-page="1"]').getAttribute('data-paper')) === 'warm' &&
@@ -429,7 +434,11 @@ async function main() {
     );
 
     await page.getByRole('button', { name: '深灰' }).click();
-    const dark = await waitForPaper(page, 1, (sample) => sample.paperLum < 80);
+    const dark = await waitForPaper(
+      page,
+      1,
+      (sample) => sample.paperLum < 80 && near(sample.red, RED, 60),
+    );
     check(
       'paper: the dark mode changes the sheet itself, not just the shell around it',
       dark !== null && dark.paperLum < 70 && dark.mean < 120,
@@ -495,7 +504,11 @@ async function main() {
     await page.waitForTimeout(300);
     await page.reload();
     await reopenReader(page, '沉浸式阅读验收');
-    const afterReload = await waitForPaper(page, 1, (sample) => sample.paperLum < 80);
+    const afterReload = await waitForPaper(
+      page,
+      1,
+      (sample) => sample.paperLum < 80 && near(sample.red, RED, 60),
+    );
     check(
       'paper: the chosen mode is still in force after a reload',
       afterReload !== null &&
@@ -507,7 +520,11 @@ async function main() {
     // Follow the app theme again, and check it really follows.
     await page.getByRole('button', { name: '跟随外观' }).click();
     await page.getByRole('button', { name: '浅色' }).click();
-    const followed = await waitForPaper(page, 1, (sample) => sample.paperLum > 200);
+    const followed = await waitForPaper(
+      page,
+      1,
+      (sample) => sample.paperLum > 200 && near(sample.red, RED, 60),
+    );
     check(
       'paper: in follow mode the paper tracks the application theme',
       followed !== null && followed.paperLum > 200,
@@ -781,6 +798,7 @@ async function main() {
         run: RUN_STAMP,
         provider: 'mock (offline)',
         providerIdentity: service.health,
+        instanceId: service.health.instanceId,
         environment: {
           offlineFlag: true,
           aiProviderEnv: process.env.AI_PROVIDER ?? null,

@@ -26,6 +26,8 @@
     "verify:annotations": "node scripts/verify/annotations.mjs",
     "verify:ai": "node scripts/verify/ai-reading.mjs",
     "verify:immersive": "node scripts/verify/immersive.mjs",
+    "verify:guard": "node scripts/verify/guard-probe.mjs",
+    "verify:graph": "node scripts/verify/graph.mjs",
     "verify:real": "node scripts/verify/real-paper.mjs",
     "verify:live": "node scripts/verify/live-api.mjs",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"

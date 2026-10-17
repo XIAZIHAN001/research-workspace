@@ -1,5 +1,5 @@
 import { PanelLeftOpen } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CreateProjectDialog } from '../features/projects/CreateProjectDialog';
 import { ProjectView } from '../features/projects/ProjectView';
 import { Sidebar } from '../features/projects/Sidebar';
@@ -20,6 +20,8 @@ import { probePdf } from '../features/reader/pdfjs';
 import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
+import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
+import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createAnnotation } from '../domain/annotation';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
@@ -48,6 +50,8 @@ interface AppProps {
   probe?: ProbePdf;
   /** The assistant's transport; injected in tests, the local service in the app. */
   ai?: AiClient;
+  /** The knowledge graph's storage; created on first use when not supplied. */
+  knowledgeStore?: KnowledgeStore;
 }
 
 type View = 'home' | 'project' | 'library' | 'reader';
@@ -83,7 +87,14 @@ function loadIssueNotice(issue: LoadIssue): string {
   return `${reason[issue.kind]}${kept}在确认数据恢复之前，请不要清理浏览器数据。`;
 }
 
-export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe, ai }: AppProps) {
+export function App({
+  store,
+  welcomeProvider = mockWelcomeProvider,
+  blobs,
+  probe,
+  ai,
+  knowledgeStore,
+}: AppProps) {
   const { projects, papers, annotations, selected, persisted, issue, actions } = useProjects(store);
   const theme = useTheme();
   const sidebar = useSidebar();
@@ -91,6 +102,11 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
   const now = useNow();
   // One blob store per app instance: the reader keys its loading effect on this identity.
   const blobStore = useMemo(() => blobs ?? createPdfBlobStore(), [blobs]);
+  const knowledge = useMemo(() => knowledgeStore ?? createKnowledgeStore(), [knowledgeStore]);
+  // Subscribed at the top so a dispatch anywhere re-renders the project view, the reader and
+  // the sidebar from the same snapshot.
+  useSyncExternalStore(knowledge.subscribe, knowledge.getSnapshot);
+  const knowledgeApi = useKnowledgeApi(knowledge, makeId);
 
   const [view, setView] = useState<View>('home');
   const [creating, setCreating] = useState(false);
@@ -98,6 +114,8 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
   const [readingPaperId, setReadingPaperId] = useState<string | null>(null);
+  /** Where to land in the reader, set when opening a paper from a concept's evidence. */
+  const [readingFocus, setReadingFocus] = useState<{ page: number; quote: string } | null>(null);
   const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -185,6 +203,9 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
 
   const closeReader = useCallback(() => {
     if (readingPaperId !== null) flushReadingPosition(readingPaperId);
+    // The focus is a one-shot instruction for the open that asked for it; leaving it set would
+    // make the next ordinary open jump to a quotation nobody asked for.
+    setReadingFocus(null);
     setView(selected === null ? 'home' : 'project');
   }, [flushReadingPosition, readingPaperId, selected]);
 
@@ -199,8 +220,9 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
     closeOverlay();
   };
 
-  const openReader = (paperId: string) => {
+  const openReader = (paperId: string, focus?: { page: number; quote: string }) => {
     setReadingPaperId(paperId);
+    setReadingFocus(focus ?? null);
     setView('reader');
     closeOverlay();
   };
@@ -209,7 +231,11 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
     if (pendingDelete === null) return;
     // Removing another project must not pull the user away from the page they are reading.
     const removingOpenProject = pendingDelete.id === selected?.id;
-    actions.remove(pendingDelete.id);
+    const projectId = pendingDelete.id;
+    actions.remove(projectId);
+    // The knowledge graph is shared between projects: removing one unlinks it from the concepts
+    // it names and deletes nothing. Another project's knowledge survives untouched.
+    knowledge.dispatch({ type: 'project/detach', projectId, at: Date.now() });
     setPendingDelete(null);
     if (removingOpenProject) {
       setReadingPaperId(null);
@@ -340,6 +366,7 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
               blobs={blobStore}
               aiClient={ai}
               theme={theme.resolved}
+              focus={readingFocus}
               onClose={closeReader}
               onReadingPosition={handleReadingPosition}
               onReplaceFile={() => {
@@ -373,6 +400,36 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
               onEditAnnotation={actions.updateAnnotation}
               onDeleteAnnotation={(annotation) => {
                 actions.removeAnnotation(annotation.id);
+              }}
+              canSaveConcept={selected !== null}
+              onSaveConcept={(suggestion) => {
+                if (selected === null) return;
+                const projectId = selected.id;
+                const conceptId = knowledgeApi.createConcept({
+                  name: suggestion.title,
+                  summary: suggestion.quick,
+                  projectIds: [projectId],
+                  origin: 'ai',
+                  status: 'suggested',
+                });
+                const anchor = suggestion.anchor;
+                if (anchor === null) return;
+                knowledgeApi.addEvidence({
+                  conceptId,
+                  paperId: readingPaper.id,
+                  pdfSha256: readingPaper.pdf?.sha256 ?? '',
+                  page: suggestion.page,
+                  quote: anchor.quote,
+                  prefix: anchor.prefix,
+                  suffix: anchor.suffix,
+                  rects: anchor.rects,
+                  source: 'difficulty',
+                  suggestionId: suggestion.id,
+                  note: suggestion.why,
+                });
+                setNotice(
+                  `已经把「${suggestion.title}」记为概念（待确认），可以在项目页的「知识」里查看。`,
+                );
               }}
               onSaveAiNote={(anchor, draft) => {
                 // An explanation the reader chose to keep becomes an ordinary annotation with
@@ -434,6 +491,8 @@ export function App({ store, welcomeProvider = mockWelcomeProvider, blobs, probe
           <ProjectView
             project={selected}
             papers={papers}
+            annotations={annotations}
+            knowledge={knowledgeApi}
             onOpenReader={openReader}
             onImportFile={(paperId) => {
               setImportRequest({ mode: 'attach', paperId, projectId: selected.id });

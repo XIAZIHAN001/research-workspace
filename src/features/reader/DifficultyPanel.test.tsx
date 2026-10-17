@@ -183,8 +183,10 @@ describe('SuggestionCard', () => {
     suggestion: suggestion(),
     spot: { x: 400, y: 400 },
     canSaveNote: true,
+    canSaveConcept: true,
     onExplain: vi.fn(),
     onSaveNote: vi.fn(),
+    onSaveConcept: vi.fn(),
     onIgnore: vi.fn(),
     onDismiss: vi.fn(),
   };

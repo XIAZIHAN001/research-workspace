@@ -70,12 +70,23 @@ interface ReaderViewProps {
   ) => void;
   /** Saves an assistant's answer as a note in the reader's own list, marked as such. */
   onSaveAiNote: (anchor: SelectionAnchor, draft: { note: string; sourceLabel: string }) => void;
+  /** Files a difficulty suggestion as a concept in the project the reader came from. */
+  onSaveConcept?: (suggestion: DifficultySuggestion) => void;
+  /** False when the paper was opened outside a project, where there is no graph to file into. */
+  canSaveConcept?: boolean;
   onEditAnnotation: (id: string, edit: AnnotationEdit) => void;
   onDeleteAnnotation: (annotation: Annotation) => void;
   /** Injectable so tests and the browser checks can supply a deterministic assistant. */
   aiClient?: AiClient;
   /** The application's resolved theme, which the paper follows until the reader chooses. */
   theme: 'light' | 'dark';
+  /**
+   * A quotation to land on, when the reader was opened from a concept's evidence.
+   *
+   * It is a one-shot instruction: the reader scrolls to the page and marks the words, and the
+   * caller clears it on close so an ordinary open never inherits it.
+   */
+  focus?: { page: number; quote: string } | null;
 }
 
 /** Below this width the notes panel covers part of the page instead of taking a column. */
@@ -128,10 +139,13 @@ export function ReaderView({
   annotations,
   onCreateAnnotation,
   onSaveAiNote,
+  onSaveConcept,
+  canSaveConcept = false,
   onEditAnnotation,
   onDeleteAnnotation,
   aiClient,
   theme,
+  focus = null,
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
   const paperMode = usePaperMode(theme);
@@ -352,6 +366,36 @@ export function ReaderView({
     const top = topsRef.current[stored - 1];
     if (container !== null && top !== undefined) container.scrollTop = Math.max(0, top - PAGE_GAP);
   }, [state, measurable, paper.reading?.page]);
+
+  /**
+   * Lands on a quotation a concept pointed at.
+   *
+   * The jump uses the same conservative matching as a citation: the page is opened either way,
+   * but the words are only marked when they are found exactly once — and when they are not, the
+   * reader is told rather than shown an approximate place.
+   */
+  useEffect(() => {
+    if (focus === null || !measurable) return;
+    // Started from a callback rather than the effect body: the jump changes state, and doing
+    // that synchronously inside an effect cascades renders.
+    void (async () => {
+      scrollToPage(focus.page);
+      const page = await waitForRenderedPage(scrollRef.current, focus.page);
+      if (page === null) {
+        setSelectionNotice('这一页还没有渲染完，暂时无法标出这条出处；已经跳到该页。');
+        return;
+      }
+      const located = locateAnchor(page, { quote: focus.quote, prefix: '', suffix: '' });
+      if (located.match.kind === 'found') {
+        setSelectionNotice(null);
+        setSpotlight({ page: focus.page, rects: located.rects });
+      } else if (located.match.kind === 'ambiguous') {
+        setSelectionNotice('这条出处在这一页出现了多次，无法确定是哪一处。');
+      } else {
+        setSelectionNotice('这条出处没有在这一页的文字里找到，可能是提取时残缺了。');
+      }
+    })();
+  }, [focus, measurable, scrollToPage]);
 
   // Report the page the reader is on. The caller decides whether it is worth persisting.
   useEffect(() => {
@@ -1000,6 +1044,11 @@ export function ReaderView({
           suggestion={activeSuggestion.suggestion}
           spot={activeSuggestion.spot}
           canSaveNote={activeSuggestion.suggestion.anchor !== null}
+          canSaveConcept={canSaveConcept}
+          onSaveConcept={() => {
+            onSaveConcept?.(activeSuggestion.suggestion);
+            setActiveSuggestion(null);
+          }}
           onExplain={() => {
             explainSuggestion(activeSuggestion.suggestion);
           }}

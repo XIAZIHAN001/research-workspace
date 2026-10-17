@@ -82,7 +82,11 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     // The local AI service is Node-side, but its tests need no Node-only environment: Node's
     // built-ins stay available under jsdom, so both halves share one runner and one gate.
-    include: ['src/**/*.test.{ts,tsx}', 'server/**/*.test.mjs'],
+    include: ['src/**/*.test.{ts,tsx}', 'server/**/*.test.mjs', 'scripts/**/*.test.mjs'],
+    // Several server tests start a real HTTP service on a real port, and the whole suite runs
+    // forty jsdom environments at once. Five seconds is enough in isolation and was not enough
+    // under that load — which showed up as intermittent failures in tests that had not changed.
+    testTimeout: 15_000,
     css: false,
   },
 });

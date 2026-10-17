@@ -1,4 +1,4 @@
-import { BookOpenCheck, Lightbulb, MessageCircleQuestion, X } from 'lucide-react';
+import { BookOpenCheck, Lightbulb, MessageCircleQuestion, Network, X } from 'lucide-react';
 import { useEffect } from 'react';
 import {
   DIFFICULTY_KIND_LABEL,
@@ -11,8 +11,11 @@ interface SuggestionCardProps {
   /** Where the marker is, in viewport coordinates. */
   spot: { x: number; y: number };
   canSaveNote: boolean;
+  /** False when the paper is not open from a project, so there is nothing to file it under. */
+  canSaveConcept: boolean;
   onExplain: () => void;
   onSaveNote: () => void;
+  onSaveConcept: () => void;
   onIgnore: () => void;
   onDismiss: () => void;
 }
@@ -32,8 +35,10 @@ export function SuggestionCard({
   suggestion,
   spot,
   canSaveNote,
+  canSaveConcept,
   onExplain,
   onSaveNote,
+  onSaveConcept,
   onIgnore,
   onDismiss,
 }: SuggestionCardProps) {
@@ -97,6 +102,16 @@ export function SuggestionCard({
         >
           <BookOpenCheck size={14} aria-hidden="true" />
           存为笔记
+        </button>
+        <button
+          type="button"
+          className="btn btn-quiet"
+          disabled={!canSaveConcept}
+          title={canSaveConcept ? undefined : '从科研项目里打开这篇论文，才能把它记成概念'}
+          onClick={onSaveConcept}
+        >
+          <Network size={14} aria-hidden="true" />
+          存为概念
         </button>
         <button type="button" className="btn btn-quiet" onClick={onIgnore}>
           忽略
