@@ -9,12 +9,10 @@
 
 import {
   EMPTY_KNOWLEDGE,
-  RELATION_KINDS,
-  type Concept,
-  type ConceptEvidence,
-  type ConceptRelation,
+  isConceptRecord,
+  isEvidenceRecord,
+  isRelationRecord,
   type KnowledgeState,
-  type RelationKind,
 } from '../domain/knowledge';
 import { knowledgeReducer, type KnowledgeAction } from '../domain/knowledgeState';
 import { defaultStore, readItem, writeItem, type KeyValueStore } from './storage';
@@ -36,54 +34,6 @@ export interface KnowledgeLoad {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
-}
-
-function isConcept(value: unknown): value is Concept {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.id === 'string' &&
-    value.id !== '' &&
-    typeof value.name === 'string' &&
-    value.name !== '' &&
-    isStringArray(value.aliases) &&
-    typeof value.summary === 'string' &&
-    (value.origin === 'user' || value.origin === 'ai') &&
-    (value.status === 'confirmed' || value.status === 'suggested') &&
-    isStringArray(value.projectIds) &&
-    typeof value.createdAt === 'number' &&
-    typeof value.updatedAt === 'number'
-  );
-}
-
-function isEvidence(value: unknown): value is ConceptEvidence {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.id === 'string' &&
-    typeof value.conceptId === 'string' &&
-    typeof value.paperId === 'string' &&
-    typeof value.pdfSha256 === 'string' &&
-    typeof value.page === 'number' &&
-    typeof value.quote === 'string' &&
-    typeof value.note === 'string' &&
-    Array.isArray(value.rects)
-  );
-}
-
-function isRelation(value: unknown): value is ConceptRelation {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.id === 'string' &&
-    typeof value.from === 'string' &&
-    typeof value.to === 'string' &&
-    typeof value.kind === 'string' &&
-    RELATION_KINDS.includes(value.kind as RelationKind) &&
-    (value.status === 'confirmed' || value.status === 'suggested') &&
-    (value.origin === 'user' || value.origin === 'ai')
-  );
 }
 
 /**
@@ -120,9 +70,11 @@ export function loadKnowledge(store: KeyValueStore | null = defaultStore()): Kno
     };
   }
 
-  const concepts = parsed.concepts.filter(isConcept);
-  const evidence = Array.isArray(parsed.evidence) ? parsed.evidence.filter(isEvidence) : [];
-  const relations = Array.isArray(parsed.relations) ? parsed.relations.filter(isRelation) : [];
+  const concepts = parsed.concepts.filter(isConceptRecord);
+  const evidence = Array.isArray(parsed.evidence) ? parsed.evidence.filter(isEvidenceRecord) : [];
+  const relations = Array.isArray(parsed.relations)
+    ? parsed.relations.filter(isRelationRecord)
+    : [];
   const dropped =
     parsed.concepts.length -
     concepts.length +

@@ -20,6 +20,7 @@ import { probePdf } from '../features/reader/pdfjs';
 import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
+import { BackupDialog } from '../features/backup/BackupDialog';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createAnnotation } from '../domain/annotation';
@@ -27,6 +28,7 @@ import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
 import type { Project } from '../domain/project';
+import type { ProjectsState } from '../domain/projectsState';
 import { daysBetween } from '../domain/time';
 import type { ProjectsStore } from '../services/projectsStore';
 import { createPdfBlobStore, type PdfBlobStore } from '../services/pdfStore';
@@ -52,6 +54,8 @@ interface AppProps {
   ai?: AiClient;
   /** The knowledge graph's storage; created on first use when not supplied. */
   knowledgeStore?: KnowledgeStore;
+  /** Set when start-up had to finish or roll back a restore that was interrupted. */
+  restoreNotice?: 'completed' | 'clean' | 'rolled-back' | 'blocked';
 }
 
 type View = 'home' | 'project' | 'library' | 'reader';
@@ -94,6 +98,7 @@ export function App({
   probe,
   ai,
   knowledgeStore,
+  restoreNotice,
 }: AppProps) {
   const { projects, papers, annotations, selected, persisted, issue, actions } = useProjects(store);
   const theme = useTheme();
@@ -119,6 +124,10 @@ export function App({
   const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [projectZone, setProjectZone] = useState<'papers' | 'knowledge'>('papers');
+  const [knowledgeMode, setKnowledgeMode] = useState<'list' | 'graph'>('list');
+  const [knowledgeSelectedId, setKnowledgeSelectedId] = useState<string | null>(null);
+  const [backupOpen, setBackupOpen] = useState(false);
 
   const paperList = useMemo(
     () =>
@@ -126,6 +135,11 @@ export function App({
         one.title.localeCompare(other.title, 'zh-Hans-CN'),
       ),
     [papers],
+  );
+  /** The workspace in the shape the backup service reads — the same state the stores persist. */
+  const projectsState = useMemo<ProjectsState>(
+    () => ({ projects, papers, annotations, selectedId: selected?.id ?? null }),
+    [projects, papers, annotations, selected?.id],
   );
   const readingPaper = readingPaperId === null ? null : (papers[readingPaperId] ?? null);
   // Notes follow the paper, so every project that opens it sees the same ones.
@@ -215,7 +229,19 @@ export function App({
   };
 
   const selectProject = (id: string) => {
+    if (id !== selected?.id) {
+      setProjectZone('papers');
+      setKnowledgeSelectedId(null);
+    }
     actions.select(id);
+    setView('project');
+    closeOverlay();
+  };
+
+  /** Follow a concept into another project that shares it, without losing the concept. */
+  const openProjectKnowledge = (projectId: string) => {
+    actions.select(projectId);
+    setProjectZone('knowledge');
     setView('project');
     closeOverlay();
   };
@@ -309,6 +335,9 @@ export function App({
         }}
         onRequestDelete={setPendingDelete}
         onThemeChange={theme.setPref}
+        onBackup={() => {
+          setBackupOpen(true);
+        }}
       />
 
       {sidebar.narrow && sidebar.open && (
@@ -355,6 +384,14 @@ export function App({
         {notice !== null && (
           <p className="banner" role="status">
             {notice}
+          </p>
+        )}
+
+        {(restoreNotice === 'rolled-back' || restoreNotice === 'blocked') && (
+          <p className="banner banner-warning" role="status">
+            {restoreNotice === 'rolled-back'
+              ? '上一次恢复在写入过程中中断，启动时已把数据还原到恢复前的状态。'
+              : '上一次恢复中断，且自动还原没有完全成功。恢复日志仍保留着，请先导出备份再继续操作。'}
           </p>
         )}
 
@@ -493,6 +530,14 @@ export function App({
             papers={papers}
             annotations={annotations}
             knowledge={knowledgeApi}
+            projects={projects}
+            zone={projectZone}
+            onZoneChange={setProjectZone}
+            knowledgeMode={knowledgeMode}
+            knowledgeSelectedId={knowledgeSelectedId}
+            onKnowledgeMode={setKnowledgeMode}
+            onKnowledgeSelect={setKnowledgeSelectedId}
+            onOpenProject={openProjectKnowledge}
             onOpenReader={openReader}
             onImportFile={(paperId) => {
               setImportRequest({ mode: 'attach', paperId, projectId: selected.id });
@@ -531,6 +576,8 @@ export function App({
         onCreate={(title) => {
           const created = actions.create(title);
           if (created === null) return false;
+          setProjectZone('papers');
+          setKnowledgeSelectedId(null);
           setView('project');
           closeOverlay();
           return true;
@@ -591,6 +638,21 @@ export function App({
       >
         <p>确定删除《{pendingDelete?.name}》吗？项目记录会从本机移除，此操作无法撤销。</p>
       </ConfirmDialog>
+
+      {backupOpen && (
+        <BackupDialog
+          open
+          onClose={() => {
+            setBackupOpen(false);
+          }}
+          projects={projectsState}
+          knowledge={knowledgeApi.state}
+          blobs={blobStore}
+          onReload={() => {
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 }

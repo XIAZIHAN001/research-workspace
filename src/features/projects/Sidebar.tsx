@@ -1,4 +1,4 @@
-import { House, Library, PanelLeftClose, Plus, Settings2 } from 'lucide-react';
+import { HardDriveDownload, House, Library, PanelLeftClose, Plus, Settings2 } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Project } from '../../domain/project';
 import { ThemeSwitch } from '../theme/ThemeSwitch';
@@ -32,6 +32,8 @@ interface SidebarProps {
   onCancelRename: () => void;
   onRequestDelete: (project: Project) => void;
   onThemeChange: (pref: ThemePref) => void;
+  /** Opens the export/restore dialog. */
+  onBackup: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -155,6 +157,10 @@ export function Sidebar(props: SidebarProps) {
       </nav>
 
       <div className="sidebar-foot">
+        <button type="button" className="btn btn-quiet" onClick={props.onBackup}>
+          <HardDriveDownload size={14} aria-hidden="true" />
+          备份与恢复
+        </button>
         <button
           type="button"
           className="btn btn-quiet"

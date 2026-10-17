@@ -51,6 +51,8 @@
   --accent-soft: rgb(29 107 145 / 0.12);
   --danger: #b3322b;
   --danger-ink: #ffffff;
+  --ok: #1f6b3a;
+  --warn: #8a5a00;
   --field-edge: rgb(15 27 37 / 0.5);
   --focus: #1d6b91;
 
@@ -97,6 +99,8 @@
   --accent-soft: rgb(134 195 230 / 0.16);
   --danger: #f29b93;
   --danger-ink: #2a0d0b;
+  --ok: #7ed0a0;
+  --warn: #e8c27a;
   --field-edge: rgb(255 255 255 / 0.42);
   --focus: #86c3e6;
 

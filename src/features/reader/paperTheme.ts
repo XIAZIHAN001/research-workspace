@@ -22,7 +22,7 @@
 export type PaperMode = 'auto' | 'original' | 'warm' | 'dark';
 export type PaperPalette = 'original' | 'warm' | 'dark';
 
-export const PAPER_STORAGE_KEY = 'rw.paper';
+export { PAPER_STORAGE_KEY } from '../../app/config';
 
 export const PAPER_MODE_LABEL: Record<PaperMode, string> = {
   auto: '跟随外观',

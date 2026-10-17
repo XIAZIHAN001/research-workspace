@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
+import type { Project } from '../../domain/project';
 import {
   EVIDENCE_SOURCE_LABEL,
   RELATION_KIND_LABEL,
@@ -19,9 +20,13 @@ interface ConceptDetailProps {
   concept: Concept;
   projectId: string;
   papers: Record<string, Paper>;
+  /** Every project, so the concept's own project links can be read and changed. */
+  projects: readonly Project[];
   annotations: readonly Annotation[];
   api: KnowledgeApi;
   onOpenReader: (paperId: string, focus?: { page: number; quote: string }) => void;
+  /** Switch to another project that shares this concept. */
+  onOpenProject: (projectId: string) => void;
   onSelect: (id: string) => void;
   onRequestDelete: () => void;
   onNotice: (text: string | null) => void;
@@ -44,9 +49,11 @@ export function ConceptDetail({
   concept,
   projectId,
   papers,
+  projects,
   annotations,
   api,
   onOpenReader,
+  onOpenProject,
   onSelect,
   onRequestDelete,
   onNotice,
@@ -57,6 +64,7 @@ export function ConceptDetail({
   const [relationKind, setRelationKind] = useState<RelationKind>('prerequisite');
   const [relationTarget, setRelationTarget] = useState('');
   const [addingEvidence, setAddingEvidence] = useState(false);
+  const [projectToJoin, setProjectToJoin] = useState('');
 
   const state = api.state;
   const projectConcepts = state.concepts.filter((entry) => entry.projectIds.includes(projectId));
@@ -65,7 +73,11 @@ export function ConceptDetail({
     .sort((one, other) => other.createdAt - one.createdAt);
   const relations = relationsFor(state, concept.id);
   const suggested = suggestionsFor(state, concept.id);
-  const paperCount = papersOf(state, concept.id).length;
+  const usedPapers = papersOf(state, concept.id);
+  const linkedProjects = concept.projectIds
+    .map((id) => projects.find((project) => project.id === id))
+    .filter((project): project is Project => project !== undefined);
+  const joinable = projects.filter((project) => !concept.projectIds.includes(project.id));
 
   const nameOf = (id: string): string =>
     state.concepts.find((entry) => entry.id === id)?.name ?? '（已删除）';
@@ -218,9 +230,87 @@ export function ConceptDetail({
 
       {concept.summary !== '' && <p className="concept-summary">{concept.summary}</p>}
       <p className="concept-meta">
-        出现在 {paperCount} 篇论文里 · {evidence.length} 处出处 · 本项目共 {projectConcepts.length}{' '}
-        个概念
+        出现在 {usedPapers.length} 篇论文里 · {evidence.length} 处出处 · 本项目共{' '}
+        {projectConcepts.length} 个概念
+        {evidence.length === 0 && ' · 尚无原文出处'}
       </p>
+
+      <section className="concept-block" aria-labelledby={`projects-${concept.id}`}>
+        <h4 id={`projects-${concept.id}`}>所属项目</h4>
+        {linkedProjects.length === 0 ? (
+          <p className="concept-hint">
+            这个概念还没有加入任何项目；它仍保存在知识库里，加入项目后就会出现在那个项目的「知识」里。
+          </p>
+        ) : (
+          <ul className="concept-links">
+            {linkedProjects.map((project) => (
+              <li key={project.id}>
+                <button
+                  type="button"
+                  className="link-btn"
+                  title="打开这个项目"
+                  onClick={() => {
+                    onOpenProject(project.id);
+                  }}
+                >
+                  {project.name}
+                </button>
+                {project.id === projectId && <span className="kb-kind">当前</span>}
+                <button
+                  type="button"
+                  className="link-remove"
+                  aria-label={`从《${project.name}》移出这个概念`}
+                  onClick={() => {
+                    api.unlinkProject(concept.id, project.id);
+                    onNotice(
+                      `已从《${project.name}》移出「${concept.name}」。概念、出处与其他项目都不受影响。`,
+                    );
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {joinable.length > 0 && (
+          <div className="concept-relation-form">
+            <select
+              className="kb-select"
+              aria-label="加入项目"
+              value={projectToJoin}
+              onChange={(event) => {
+                setProjectToJoin(event.target.value);
+              }}
+            >
+              <option value="">加入其他项目…</option>
+              {joinable.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              disabled={projectToJoin === ''}
+              aria-label="加入项目"
+              onClick={() => {
+                const target = projects.find((project) => project.id === projectToJoin);
+                if (target === undefined) return;
+                api.linkProject(concept.id, target.id);
+                onNotice(`已把「${concept.name}」加入《${target.name}》。`);
+                setProjectToJoin('');
+              }}
+            >
+              加入
+            </button>
+          </div>
+        )}
+        <p className="concept-hint">
+          移出项目只改变它出现在哪个项目里，不删除概念、出处或任何笔记。
+        </p>
+      </section>
 
       <section className="concept-block" aria-labelledby={`prereq-${concept.id}`}>
         <h4 id={`prereq-${concept.id}`}>前置知识</h4>
@@ -374,6 +464,36 @@ export function ConceptDetail({
         </div>
         <p className="concept-hint">{RELATION_HINT[relationKind]}</p>
       </section>
+
+      {usedPapers.length > 0 && (
+        <section className="concept-block" aria-labelledby={`papers-${concept.id}`}>
+          <h4 id={`papers-${concept.id}`}>涉及论文</h4>
+          <ul className="concept-papers">
+            {usedPapers.map(({ paperId, count }) => {
+              const paper = papers[paperId];
+              return (
+                <li key={paperId}>
+                  <span className="concept-paper-title">
+                    {paper?.title ?? '（论文已不在库中）'}
+                  </span>
+                  <span className="concept-card-meta">{count} 处出处</span>
+                  {paper !== undefined && paper.pdf !== undefined && (
+                    <button
+                      type="button"
+                      className="btn btn-quiet"
+                      onClick={() => {
+                        onOpenReader(paperId);
+                      }}
+                    >
+                      打开论文
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="concept-block" aria-labelledby={`evidence-${concept.id}`}>
         <h4 id={`evidence-${concept.id}`}>论文与出处</h4>

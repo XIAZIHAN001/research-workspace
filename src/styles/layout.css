@@ -81,6 +81,11 @@
   font-size: 13px;
 }
 
+.main > .banner.banner-warning {
+  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
 .scrim {
   position: absolute;
   inset: 0;

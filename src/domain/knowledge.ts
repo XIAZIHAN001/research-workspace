@@ -141,6 +141,102 @@ export function normalizeConceptName(name: string): string {
   return name.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+/** Shape check for one stored concept. Shared by the store and the backup reader. */
+export function isConceptRecord(value: unknown): value is Concept {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    value.id !== '' &&
+    typeof value.name === 'string' &&
+    value.name !== '' &&
+    isStringArray(value.aliases) &&
+    typeof value.summary === 'string' &&
+    (value.origin === 'user' || value.origin === 'ai') &&
+    (value.status === 'confirmed' || value.status === 'suggested') &&
+    isStringArray(value.projectIds) &&
+    typeof value.createdAt === 'number' &&
+    typeof value.updatedAt === 'number'
+  );
+}
+
+export function isEvidenceRecord(value: unknown): value is ConceptEvidence {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.conceptId === 'string' &&
+    typeof value.paperId === 'string' &&
+    typeof value.pdfSha256 === 'string' &&
+    /^[0-9a-f]{64}$/.test(value.pdfSha256) &&
+    typeof value.page === 'number' &&
+    Number.isInteger(value.page) &&
+    value.page >= 1 &&
+    typeof value.quote === 'string' &&
+    typeof value.note === 'string' &&
+    Array.isArray(value.rects)
+  );
+}
+
+export function isRelationRecord(value: unknown): value is ConceptRelation {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === 'string' &&
+    typeof value.from === 'string' &&
+    typeof value.to === 'string' &&
+    typeof value.kind === 'string' &&
+    RELATION_KINDS.includes(value.kind as RelationKind) &&
+    (value.status === 'confirmed' || value.status === 'suggested') &&
+    (value.origin === 'user' || value.origin === 'ai')
+  );
+}
+
+/**
+ * Strict reader for a whole knowledge payload, used where the caller must not accept a
+ * partial graph — restoring a backup, above all. The lenient path in `knowledgeStore`
+ * still keeps what it understands and copies the rest aside; this one says no to the lot,
+ * so a restore either writes a graph whose references all resolve or writes nothing.
+ */
+export function parseKnowledgeState(value: unknown): KnowledgeState | null {
+  if (!isRecord(value)) return null;
+  const version = value.version ?? 1;
+  if (version !== 1) return null;
+  if (!Array.isArray(value.concepts) || !Array.isArray(value.evidence)) return null;
+  if (!Array.isArray(value.relations)) return null;
+  const concepts = value.concepts.filter(isConceptRecord);
+  const evidence = value.evidence.filter(isEvidenceRecord);
+  const relations = value.relations.filter(isRelationRecord);
+  if (
+    concepts.length !== value.concepts.length ||
+    evidence.length !== value.evidence.length ||
+    relations.length !== value.relations.length
+  ) {
+    return null;
+  }
+  const conceptIds = new Set(concepts.map((concept) => concept.id));
+  if (conceptIds.size !== concepts.length) return null;
+  const evidenceIds = new Set<string>();
+  for (const entry of evidence) {
+    if (!conceptIds.has(entry.conceptId)) return null;
+    if (evidenceIds.has(entry.id)) return null;
+    evidenceIds.add(entry.id);
+  }
+  const relationIds = new Set<string>();
+  for (const relation of relations) {
+    if (!conceptIds.has(relation.from) || !conceptIds.has(relation.to)) return null;
+    if (relation.from === relation.to) return null;
+    if (relationIds.has(relation.id)) return null;
+    relationIds.add(relation.id);
+  }
+  return { version: 1, concepts, evidence, relations };
+}
+
 export interface ConceptInput {
   name: string;
   summary?: string;
@@ -222,6 +318,33 @@ export function linkConceptToProject(
     concepts: state.concepts.map((concept) =>
       concept.id === id && !concept.projectIds.includes(projectId)
         ? { ...concept, projectIds: [...concept.projectIds, projectId], updatedAt: now }
+        : concept,
+    ),
+  };
+}
+
+/**
+ * Stops showing a concept in one project.
+ *
+ * The concept, its occurrences and its relations are untouched, and every other project that
+ * names it keeps doing so. A concept left with no project still exists in the knowledge base;
+ * it simply has no project view to appear in until it is linked again.
+ */
+export function unlinkConceptFromProject(
+  state: KnowledgeState,
+  id: string,
+  projectId: string,
+  now: number,
+): KnowledgeState {
+  return {
+    ...state,
+    concepts: state.concepts.map((concept) =>
+      concept.id === id && concept.projectIds.includes(projectId)
+        ? {
+            ...concept,
+            projectIds: concept.projectIds.filter((entry) => entry !== projectId),
+            updatedAt: now,
+          }
         : concept,
     ),
   };

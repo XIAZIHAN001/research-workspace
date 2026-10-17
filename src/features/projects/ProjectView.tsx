@@ -1,5 +1,4 @@
 import { FileUp, Library, Pencil, SquareArrowOutUpRight, Unlink } from 'lucide-react';
-import { useState } from 'react';
 import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
@@ -14,6 +13,16 @@ interface ProjectViewProps {
   /** Every annotation in the workspace; the knowledge view filters them to this project. */
   annotations: readonly Annotation[];
   knowledge: KnowledgeApi;
+  /** Every project, so a concept can be seen and shared across them. */
+  projects: readonly Project[];
+  /** Which half of the page is showing. Kept above the reader so a return lands where you were. */
+  zone: 'papers' | 'knowledge';
+  onZoneChange: (zone: 'papers' | 'knowledge') => void;
+  knowledgeMode: 'list' | 'graph';
+  knowledgeSelectedId: string | null;
+  onKnowledgeMode: (mode: 'list' | 'graph') => void;
+  onKnowledgeSelect: (id: string | null) => void;
+  onOpenProject: (projectId: string) => void;
   /** `focus` takes the reader straight to a quotation — used by a concept's evidence. */
   onOpenReader: (paperId: string, focus?: { page: number; quote: string }) => void;
   /** Attach or replace the PDF of a paper. */
@@ -40,6 +49,14 @@ export function ProjectView({
   papers,
   annotations,
   knowledge,
+  projects,
+  zone,
+  onZoneChange,
+  knowledgeMode,
+  knowledgeSelectedId,
+  onKnowledgeMode,
+  onKnowledgeSelect,
+  onOpenProject,
   onOpenReader,
   onImportFile,
   onEditPaper,
@@ -47,7 +64,6 @@ export function ProjectView({
   onImportNew,
   onLinkFromLibrary,
 }: ProjectViewProps) {
-  const [zone, setZone] = useState<'papers' | 'knowledge'>('papers');
   const corePaper = papers[project.corePaperId] ?? null;
   const related = project.relatedPaperIds
     .map((paperId) => papers[paperId])
@@ -69,7 +85,7 @@ export function ProjectView({
           className="chip"
           aria-pressed={zone === 'papers'}
           onClick={() => {
-            setZone('papers');
+            onZoneChange('papers');
           }}
         >
           文献
@@ -79,7 +95,7 @@ export function ProjectView({
           className="chip"
           aria-pressed={zone === 'knowledge'}
           onClick={() => {
-            setZone('knowledge');
+            onZoneChange('knowledge');
           }}
         >
           知识
@@ -91,7 +107,13 @@ export function ProjectView({
           project={project}
           papers={papers}
           annotations={annotations}
+          projects={projects}
           api={knowledge}
+          mode={knowledgeMode}
+          selectedId={knowledgeSelectedId}
+          onModeChange={onKnowledgeMode}
+          onSelect={onKnowledgeSelect}
+          onOpenProject={onOpenProject}
           onOpenReader={onOpenReader}
         />
       ) : (

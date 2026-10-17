@@ -93,6 +93,80 @@ export interface DifficultyPageRecord {
   rejected: number;
 }
 
+/** The whole cache: analysed pages plus the reader's dismissals, per file. */
+export interface DifficultyState {
+  pages: Record<string, DifficultyPageRecord>;
+  /** Suggestion ids the reader has dismissed, per file hash. */
+  ignored: Record<string, string[]>;
+}
+
+/** The reader's two switches: whether new pages are analysed, and whether marks are drawn. */
+export interface DifficultyPrefs {
+  enabled: boolean;
+  markersVisible: boolean;
+}
+
+export const DEFAULT_DIFFICULTY_PREFS: DifficultyPrefs = { enabled: false, markersVisible: true };
+
+/** Enough for a long paper read end to end, bounded so storage cannot fill up. */
+export const MAX_DIFFICULTY_PAGES = 400;
+
+/** Drops the oldest analysed pages once the cache is over its bound. */
+export function trimDifficultyPages(
+  pages: Record<string, DifficultyPageRecord>,
+  max: number = MAX_DIFFICULTY_PAGES,
+): Record<string, DifficultyPageRecord> {
+  const keys = Object.keys(pages);
+  if (keys.length <= max) return pages;
+  const ordered = keys
+    .map((key) => ({ key, at: pages[key]?.analysedAt ?? 0 }))
+    .sort((one, other) => other.at - one.at)
+    .slice(0, max);
+  const kept: Record<string, DifficultyPageRecord> = {};
+  for (const { key } of ordered) {
+    const record = pages[key];
+    if (record !== undefined) kept[key] = record;
+  }
+  return kept;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function isDifficultyPageRecord(value: unknown): value is DifficultyPageRecord {
+  if (!isRecord(value)) return false;
+  if (typeof value.paperId !== 'string' || typeof value.pdfSha256 !== 'string') return false;
+  if (typeof value.page !== 'number' || !Number.isInteger(value.page)) return false;
+  if (typeof value.model !== 'string' || typeof value.rulesVersion !== 'string') return false;
+  if (typeof value.analysedAt !== 'number') return false;
+  return Array.isArray(value.suggestions) && typeof value.rejected === 'number';
+}
+
+/**
+ * Strict reader for a cached-pages payload, for restoring a backup.
+ *
+ * The store itself is deliberately forgiving — this cache is disposable — but a backup is
+ * not: if any record is the wrong shape, the file is reported as damaged rather than
+ * restoring a cache whose entries mean something different from what they claim.
+ */
+export function parseDifficultyState(value: unknown): DifficultyState | null {
+  if (!isRecord(value)) return null;
+  if ((value.version ?? 1) !== 1) return null;
+  if (!isRecord(value.pages) || !isRecord(value.ignored)) return null;
+  const pages: Record<string, DifficultyPageRecord> = {};
+  for (const [key, entry] of Object.entries(value.pages)) {
+    if (!isDifficultyPageRecord(entry)) return null;
+    pages[key] = entry;
+  }
+  const ignored: Record<string, string[]> = {};
+  for (const [key, entry] of Object.entries(value.ignored)) {
+    if (!Array.isArray(entry) || !entry.every((id) => typeof id === 'string')) return null;
+    ignored[key] = entry;
+  }
+  return { pages, ignored };
+}
+
 export const LOCATION_LABEL: Record<DifficultyLocation, string> = {
   found: '已定位',
   ambiguous: '位置有歧义，未标注',

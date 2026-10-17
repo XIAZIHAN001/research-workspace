@@ -13,7 +13,15 @@ interface KnowledgeViewProps {
   project: Project;
   papers: Record<string, Paper>;
   annotations: readonly Annotation[];
+  /** Every project, for the concept's cross-project links. */
+  projects: readonly Project[];
   api: KnowledgeApi;
+  /** Kept above the reader so coming back lands on the same concept and the same view. */
+  mode: 'list' | 'graph';
+  selectedId: string | null;
+  onModeChange: (mode: 'list' | 'graph') => void;
+  onSelect: (id: string | null) => void;
+  onOpenProject: (projectId: string) => void;
   onOpenReader: (paperId: string, focus?: { page: number; quote: string }) => void;
 }
 
@@ -36,12 +44,16 @@ export function KnowledgeView({
   project,
   papers,
   annotations,
+  projects,
   api,
+  mode,
+  selectedId,
+  onModeChange,
+  onSelect,
+  onOpenProject,
   onOpenReader,
 }: KnowledgeViewProps) {
-  const [mode, setMode] = useState<'list' | 'graph'>('list');
   const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newSummary, setNewSummary] = useState('');
@@ -74,7 +86,7 @@ export function KnowledgeView({
     setNewName('');
     setNewSummary('');
     setCreating(false);
-    setSelectedId(id);
+    onSelect(id);
     setNotice(null);
   };
 
@@ -102,7 +114,7 @@ export function KnowledgeView({
     for (const entry of candidate.evidence) {
       api.addEvidence({ ...entry, conceptId: id });
     }
-    setSelectedId(id);
+    onSelect(id);
     setCandidates((current) =>
       current === null ? null : current.filter((entry) => entry !== candidate),
     );
@@ -127,7 +139,7 @@ export function KnowledgeView({
             className="chip"
             aria-pressed={mode === 'list'}
             onClick={() => {
-              setMode('list');
+              onModeChange('list');
             }}
           >
             列表
@@ -137,7 +149,7 @@ export function KnowledgeView({
             className="chip"
             aria-pressed={mode === 'graph'}
             onClick={() => {
-              setMode('graph');
+              onModeChange('graph');
             }}
           >
             关系图
@@ -285,7 +297,7 @@ export function KnowledgeView({
                 concepts={concepts}
                 relations={state.relations}
                 selectedId={selected?.id ?? null}
-                onSelect={setSelectedId}
+                onSelect={onSelect}
               />
             ) : visible.length === 0 ? (
               <p className="knowledge-empty">没有匹配的概念。</p>
@@ -306,16 +318,20 @@ export function KnowledgeView({
                       <button
                         type="button"
                         className="concept-card"
+                        data-concept-name={concept.name}
                         data-selected={concept.id === selected?.id}
                         aria-pressed={concept.id === selected?.id}
                         onClick={() => {
-                          setSelectedId(concept.id);
+                          onSelect(concept.id);
                         }}
                       >
                         <span className="concept-card-name">
                           {concept.name}
                           {concept.status === 'suggested' && (
                             <span className="kb-badge">待确认</span>
+                          )}
+                          {evidenceCount === 0 && (
+                            <span className="kb-badge kb-badge-empty">尚无出处</span>
                           )}
                         </span>
                         {concept.summary !== '' && (
@@ -338,10 +354,12 @@ export function KnowledgeView({
               concept={selected}
               projectId={project.id}
               papers={papers}
+              projects={projects}
               annotations={projectAnnotations}
               api={api}
               onOpenReader={onOpenReader}
-              onSelect={setSelectedId}
+              onOpenProject={onOpenProject}
+              onSelect={onSelect}
               onRequestDelete={() => {
                 setPendingDelete(selected);
               }}
@@ -359,7 +377,7 @@ export function KnowledgeView({
         onConfirm={() => {
           if (pendingDelete !== null) api.deleteConcept(pendingDelete.id);
           setPendingDelete(null);
-          setSelectedId(null);
+          onSelect(null);
         }}
         onClose={() => {
           setPendingDelete(null);

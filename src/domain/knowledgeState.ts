@@ -18,6 +18,7 @@ import {
   detachProjectFromKnowledge,
   linkConceptToProject,
   mergeConcepts,
+  unlinkConceptFromProject,
   updateConcept,
   type Concept,
   type ConceptEvidence,
@@ -40,6 +41,7 @@ export type KnowledgeAction =
   | { type: 'concept/delete'; id: string }
   | { type: 'concept/merge'; sourceId: string; targetId: string; at: number }
   | { type: 'concept/linkProject'; id: string; projectId: string; at: number }
+  | { type: 'concept/unlinkProject'; id: string; projectId: string; at: number }
   | { type: 'evidence/add'; input: EvidenceInput; id: string; at: number }
   | { type: 'evidence/remove'; id: string }
   | { type: 'relation/create'; input: RelationInput; id: string; at: number }
@@ -75,6 +77,9 @@ export function knowledgeReducer(state: KnowledgeState, action: KnowledgeAction)
 
     case 'concept/linkProject':
       return linkConceptToProject(state, action.id, action.projectId, action.at);
+
+    case 'concept/unlinkProject':
+      return unlinkConceptFromProject(state, action.id, action.projectId, action.at);
 
     case 'evidence/add': {
       const evidence = createEvidence(action.input, () => action.id, action.at);

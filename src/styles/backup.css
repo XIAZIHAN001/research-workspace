@@ -1,0 +1,226 @@
+/* The backup dialog is wider than a confirmation: it has to show what is in the file, what the
+   merge would do, and what was verified before a reader can decide. */
+.dialog:has(.backup-section) {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(88vh, 940px);
+  overflow: auto;
+}
+
+.backup-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--glass-fill);
+}
+
+.backup-section h3 {
+  font: 600 14px/1.4 var(--font-display);
+}
+
+.backup-copy {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The input is driven by a labelled button; keeping it focusable-to-scripts only is enough. */
+.backup-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+.backup-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+
+.backup-file-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.backup-file-line svg {
+  align-self: center;
+  color: var(--text-2);
+}
+
+.backup-file-size {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.backup-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.backup-counts div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+}
+
+.backup-counts dt {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.backup-counts dd {
+  margin: 0;
+  font: 600 15px/1.2 var(--font-display);
+}
+
+.backup-summary {
+  margin: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.backup-message {
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.backup-message p,
+.backup-message ul {
+  margin: 0;
+}
+
+.backup-message ul {
+  padding-left: 18px;
+}
+
+.backup-message.is-success {
+  border-color: color-mix(in srgb, var(--ok) 42%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.backup-message.is-warning {
+  border-color: color-mix(in srgb, var(--warn) 46%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.backup-message.is-error {
+  border-color: color-mix(in srgb, var(--danger) 46%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.backup-message.is-info {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  background: var(--accent-soft);
+}
+
+.backup-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--r-sm);
+}
+
+.backup-choice legend {
+  padding: 0 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.backup-choice label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.backup-acknowledge {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.backup-acknowledge input,
+.backup-choice input {
+  margin-top: 2px;
+}
+
+.backup-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backup-warning-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.backup-footnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.backup-footnote svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+@media (max-width: 560px) {
+  .dialog:has(.backup-section) {
+    width: calc(100vw - 16px);
+  }
+
+  .backup-counts {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

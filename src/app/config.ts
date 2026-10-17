@@ -1,5 +1,6 @@
 /** Storage keys and shared constants. Keep THEME_STORAGE_KEY in sync with public/theme-init.js. */
 export const THEME_STORAGE_KEY = 'rw.theme';
+export const PAPER_STORAGE_KEY = 'rw.paper';
 export const SIDEBAR_STORAGE_KEY = 'rw.sidebar';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';
 export const PROJECTS_STORAGE_KEY = 'rw.projects';

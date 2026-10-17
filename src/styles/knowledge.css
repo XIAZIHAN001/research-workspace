@@ -471,10 +471,49 @@
 /* --- the graph ------------------------------------------------------------ */
 
 .concept-graph {
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--hairline);
   border-radius: var(--r-md);
   background: var(--glass-fill);
+}
+
+.concept-graph-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.concept-graph-scroll {
+  overflow: auto;
+  padding: 8px;
+}
+
+.concept-graph-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+.concept-graph-legend span[data-kind] {
+  display: inline-block;
+  width: 16px;
+  border-top: 2px solid var(--text-2);
+}
+
+.concept-graph-legend span[data-kind='suggested'] {
+  border-top-style: dashed;
+  opacity: 0.6;
+}
+
+.concept-node {
+  cursor: pointer;
 }
 
 .concept-node rect {
@@ -543,4 +582,39 @@
   margin: 8px 0 0;
   color: var(--text-2);
   font-size: 11.5px;
+}
+
+/* A concept with no quotation behind it says so, in the list and in the detail. */
+.kb-badge-empty {
+  border-color: color-mix(in srgb, var(--text-3) 40%, transparent);
+  color: var(--text-3);
+}
+
+.concept-papers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-papers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.concept-paper-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.concept-papers .btn {
+  margin-left: auto;
 }

@@ -12,3 +12,4 @@ docs/*report.json
 # Acceptance reports are evidence: once a phase is signed off, its report is not touched again
 # — not even to re-align a markdown table. New reports are formatted before they are committed.
 docs/Phase*.md
+docs/screenshots-*/

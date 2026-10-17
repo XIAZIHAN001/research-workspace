@@ -306,7 +306,14 @@ async function main() {
     const detail = detailOf(page, firstConcept);
     check(
       'navigation: the concept now lists the knowledge it depends on',
-      (await detail.locator('.concept-links').first().innerText()).includes('Bilinear pairing'),
+      // The first link list is now 所属项目; the prerequisite block is the one named 前置知识.
+      (
+        await detail
+          .locator('.concept-block', { hasText: '前置知识' })
+          .first()
+          .locator('.concept-links')
+          .innerText()
+      ).includes('Bilinear pairing'),
     );
     // Exact: the remove button's aria-label also contains the name.
     await detail.getByRole('button', { name: 'Bilinear pairing', exact: true }).click();

@@ -39,6 +39,8 @@ export interface KnowledgeApi {
   deleteConcept: (id: string) => void;
   mergeConcept: (sourceId: string, targetId: string) => void;
   linkProject: (conceptId: string, projectId: string) => void;
+  /** Stops showing the concept in one project. Nothing is deleted. */
+  unlinkProject: (conceptId: string, projectId: string) => void;
   addEvidence: (input: EvidenceInput) => void;
   removeEvidence: (id: string) => void;
   createRelation: (input: RelationInput) => { ok: boolean; reason?: string };
@@ -164,6 +166,9 @@ export function useKnowledgeApi(
       },
       linkProject: (conceptId, projectId) => {
         dispatch({ type: 'concept/linkProject', id: conceptId, projectId, at: now() });
+      },
+      unlinkProject: (conceptId, projectId) => {
+        dispatch({ type: 'concept/unlinkProject', id: conceptId, projectId, at: now() });
       },
       addEvidence: (input) => {
         dispatch({ type: 'evidence/add', input, id: makeId(), at: now() });

@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
@@ -86,20 +86,32 @@ const nextId = (): string => {
 function Harness({
   store,
   annotations = [],
+  projects = [PROJECT],
   onOpenReader = vi.fn(),
+  onOpenProject = vi.fn(),
 }: {
   store: KnowledgeStore;
   annotations?: Annotation[];
+  projects?: (typeof PROJECT)[];
   onOpenReader?: (paperId: string, focus?: { page: number; quote: string }) => void;
+  onOpenProject?: (projectId: string) => void;
 }) {
   useSyncExternalStore(store.subscribe, store.getSnapshot);
   const api = useKnowledgeApi(store, nextId, () => 100);
+  const [mode, setMode] = useState<'list' | 'graph'>('list');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   return (
     <KnowledgeView
       project={PROJECT}
       papers={PAPERS}
       annotations={annotations}
+      projects={projects}
       api={api}
+      mode={mode}
+      selectedId={selectedId}
+      onModeChange={setMode}
+      onSelect={setSelectedId}
+      onOpenProject={onOpenProject}
       onOpenReader={onOpenReader}
     />
   );
@@ -149,8 +161,13 @@ describe('KnowledgeView: concepts', () => {
     await createConcept('Beta');
     await userEvent.click(screen.getByRole('button', { name: '关系图' }));
     const graph = screen.getByRole('group', { name: '概念关系图' });
-    const nodes = within(graph).getAllByRole('button');
-    expect(nodes.map((node) => node.getAttribute('aria-label')).sort()).toEqual(['Alpha', 'Beta']);
+    const nodes = [...graph.querySelectorAll('.concept-node')];
+    expect(
+      nodes
+        .map((node) => node.getAttribute('aria-label'))
+        .filter((label): label is string => label !== null)
+        .sort(),
+    ).toEqual(['Alpha', 'Beta']);
     await userEvent.click(screen.getByRole('button', { name: '列表' }));
     expect(within(screen.getByLabelText('概念列表')).getByText('Alpha')).toBeInTheDocument();
   });
@@ -507,5 +524,66 @@ describe('unknown actions', () => {
       id: 'nothing',
     } satisfies KnowledgeAction);
     expect(state).toEqual(EMPTY_KNOWLEDGE);
+  });
+});
+
+describe('KnowledgeView: concepts across projects', () => {
+  it('joins another project, opens it, and leaves without deleting anything', async () => {
+    const second = { ...PROJECT, id: 'project-2', name: 'Second Project' };
+    const disk = memory();
+    const store = createKnowledgeStore(disk);
+    store.dispatch({
+      type: 'concept/create',
+      input: { name: 'Shared idea', projectIds: ['project-1'] },
+      id: 'concept-1',
+      at: 1,
+    });
+    store.dispatch({
+      type: 'evidence/add',
+      input: {
+        conceptId: 'concept-1',
+        paperId: 'paper-1',
+        pdfSha256: SHA_A,
+        page: 1,
+        quote: 'a quotation',
+        rects: [],
+        source: 'manual',
+      },
+      id: 'evidence-1',
+      at: 2,
+    });
+    const onOpenProject = vi.fn();
+    render(<Harness store={store} projects={[PROJECT, second]} onOpenProject={onOpenProject} />);
+    const detail = screen.getByRole('region', { name: '概念：Shared idea' });
+
+    await userEvent.selectOptions(
+      within(detail).getByRole('combobox', { name: '加入项目' }),
+      'project-2',
+    );
+    await userEvent.click(within(detail).getByRole('button', { name: '加入项目' }));
+    expect(store.getSnapshot().state.concepts[0]?.projectIds).toEqual(['project-1', 'project-2']);
+
+    await userEvent.click(within(detail).getByRole('button', { name: 'Second Project' }));
+    expect(onOpenProject).toHaveBeenCalledWith('project-2');
+
+    await userEvent.click(
+      within(detail).getByRole('button', { name: '从《A Study》移出这个概念' }),
+    );
+    expect(store.getSnapshot().state.concepts[0]?.projectIds).toEqual(['project-2']);
+    // The occurrence is untouched: leaving a project is a view change, not a deletion.
+    expect(store.getSnapshot().state.evidence).toHaveLength(1);
+  });
+
+  it('marks a concept that has no quotation behind it', () => {
+    const disk = memory();
+    const store = createKnowledgeStore(disk);
+    store.dispatch({
+      type: 'concept/create',
+      input: { name: 'Bare idea', projectIds: ['project-1'] },
+      id: 'concept-1',
+      at: 1,
+    });
+    render(<Harness store={store} />);
+    expect(screen.getByText('尚无出处')).toBeInTheDocument();
   });
 });
