@@ -274,7 +274,7 @@ describe('suggestions versus knowledge', () => {
     expect(next.concepts[0]?.origin).toBe('ai');
   });
 
-  it('does not overwrite a confirmed relation when the same one is suggested again', () => {
+  it('does not add a second copy of an already confirmed relation', () => {
     let state = concept(EMPTY_KNOWLEDGE, 'A');
     state = concept(state, 'B');
     const [a, b] = state.concepts;
@@ -298,13 +298,11 @@ describe('suggestions versus knowledge', () => {
       ],
       evidence: [],
     });
-    // The reducer only rejects duplicate ids; a second edge with a different id is a different
-    // statement, and it arrives as a suggestion that the reader can compare and dismiss.
-    expect(suggested.relations).toHaveLength(2);
-    expect(suggested.relations.find((entry) => entry.id === state.relations[0]?.id)?.status).toBe(
-      'confirmed',
-    );
-    expect(suggested.relations.find((entry) => entry.id === 'r-ai')?.status).toBe('suggested');
+    // The reader already confirmed this dependency. A suggestion that says the same thing is
+    // not a second statement worth reviewing; it is a duplicate, and is left out.
+    expect(suggested.relations).toHaveLength(1);
+    expect(suggested.relations[0]?.id).toBe(state.relations[0]?.id);
+    expect(suggested.relations[0]?.status).toBe('confirmed');
   });
 });
 

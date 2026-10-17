@@ -1,0 +1,573 @@
+/* The reader's knowledge panel: local knowledge first, and a context plan before any model
+   call. It sits in the same column as the assistant and the notes, so it inherits their
+   constraints: a fixed width, its own scroll area, and nothing that can widen the reader. */
+
+.reader-side > .knowledge-panel {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.knowledge-panel {
+  display: flex;
+  flex: 0 0 360px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--glass-fill);
+  overflow: hidden;
+}
+
+.knowledge-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.knowledge-panel-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  margin-right: auto;
+  font-size: 15px;
+}
+
+.knowledge-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.knowledge-panel-source {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.knowledge-panel-quote {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 5.5em;
+  overflow: auto;
+}
+
+.knowledge-panel-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.knowledge-panel-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.knowledge-panel-block h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+
+.knowledge-panel .btn {
+  flex: 0 0 auto;
+}
+
+.knowledge-panel-busy,
+.knowledge-panel-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+  font-size: 12px;
+}
+
+.knowledge-panel-error {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.knowledge-panel-error p {
+  margin: 0;
+  flex: 1 1 100%;
+}
+
+.knowledge-panel-again {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* --- local concepts ------------------------------------------------------- */
+
+.knowledge-concept-list,
+.knowledge-suggestion-list,
+.knowledge-evidence-list,
+.knowledge-plan-list,
+.knowledge-skipped ul,
+.knowledge-rejected ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-concept,
+.knowledge-suggestion-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+}
+
+.knowledge-concept-head,
+.knowledge-suggestion-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.knowledge-concept-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.knowledge-match-kind,
+.knowledge-evidence-verification,
+.knowledge-evidence-stale,
+.knowledge-plan-chars,
+.knowledge-plan-truncated,
+.knowledge-plan-label,
+.knowledge-plan-reason,
+.knowledge-path-note {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.knowledge-evidence-stale,
+.knowledge-plan-truncated {
+  color: var(--warn);
+}
+
+.knowledge-concept-summary,
+.knowledge-suggestion-why {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.knowledge-concept-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.knowledge-label {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.knowledge-concept-actions,
+.knowledge-suggestion-actions,
+.knowledge-plan-actions,
+.knowledge-pending .concept-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.knowledge-kind-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.knowledge-kind-edit .kb-select,
+.kb-select-kind {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+/* --- learning path -------------------------------------------------------- */
+
+.knowledge-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+}
+
+.knowledge-path-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.knowledge-path-note {
+  flex-basis: 100%;
+}
+
+.learning-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.learning-path li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.learning-path li + li::before {
+  content: '→';
+  color: var(--text-2);
+}
+
+.learning-path-index {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.learning-path li[data-current='true'] .link-btn {
+  font-weight: 700;
+}
+
+/* --- evidence ------------------------------------------------------------- */
+
+.knowledge-evidence-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 8px;
+  border-left: 2px solid var(--hairline);
+}
+
+.knowledge-evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.knowledge-evidence-quote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.knowledge-evidence-list .link-btn {
+  align-self: flex-start;
+  font-size: 11px;
+}
+
+.suggested-relation {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.suggested-relation-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.suggested-relation-why {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.suggested-relation-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 8px;
+  border-left: 2px solid var(--hairline);
+  list-style: none;
+  font-size: 12px;
+}
+
+/* --- support labels ------------------------------------------------------- */
+
+.kb-support {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.kb-support-direct {
+  background: rgb(31 107 58 / 0.14);
+  color: var(--ok);
+}
+
+.kb-support-inferred {
+  background: rgb(138 90 0 / 0.16);
+  color: var(--warn);
+}
+
+.kb-support-external {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* --- the context plan ----------------------------------------------------- */
+
+.knowledge-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill-strong);
+}
+
+.knowledge-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.knowledge-plan-summary {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.knowledge-plan-list {
+  gap: 5px;
+}
+
+.knowledge-plan-list li {
+  padding: 4px 0;
+  border-top: 1px dashed var(--hairline);
+}
+
+.knowledge-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.knowledge-plan-reason {
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+
+.knowledge-plan-cost {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.knowledge-plan-cost[data-online='true'] {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.knowledge-plan-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--warn);
+}
+
+.knowledge-plan-actions {
+  margin-top: 2px;
+}
+
+.knowledge-plan-hint {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.knowledge-plan-done {
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+
+.knowledge-plan-done summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+
+.knowledge-plan-done ul,
+.knowledge-skipped ul,
+.knowledge-rejected ul {
+  margin-top: 6px;
+}
+
+/* --- results -------------------------------------------------------------- */
+
+.knowledge-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.knowledge-results-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.knowledge-process-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.knowledge-mock-warning,
+.knowledge-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: rgb(138 90 0 / 0.12);
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.knowledge-mock-warning {
+  border: 1px dashed var(--warn);
+}
+
+.knowledge-suggestion-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.knowledge-suggestion-block h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.knowledge-skipped,
+.knowledge-rejected {
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.knowledge-skipped summary,
+.knowledge-rejected summary {
+  cursor: pointer;
+}
+
+.knowledge-skipped li,
+.knowledge-rejected li {
+  display: flex;
+  gap: 5px;
+  padding: 2px 0;
+  line-height: 1.45;
+}
+
+/* Narrow windows: the panel becomes the same overlay the other side panels use. */
+@media (max-width: 1100px) {
+  .knowledge-panel {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+.knowledge-caveat {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.knowledge-source {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-evidence-paper {
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

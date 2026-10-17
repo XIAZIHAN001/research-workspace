@@ -54,12 +54,13 @@ function isLoopback(origin) {
   return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
 }
 
-/** Only the two known endpoints exist; there is no passthrough of any kind. */
+/** Only the known endpoints exist; there is no passthrough of any kind. */
 export function checkPath(pathname) {
   if (
     pathname === '/api/ai/health' ||
     pathname === '/api/ai/ask' ||
-    pathname === '/api/ai/difficulties'
+    pathname === '/api/ai/difficulties' ||
+    pathname === '/api/ai/knowledge'
   ) {
     return { ok: true };
   }

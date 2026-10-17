@@ -11,6 +11,7 @@
  */
 
 import type { ProposedDifficulty } from '../../domain/difficulty';
+import type { KnowledgeAnalysis, KnowledgeRequest } from './knowledgeTypes';
 import type {
   AiAnswer,
   AiAskRequest,
@@ -246,6 +247,89 @@ export async function analyzeDifficulties(
     }
     if (!isAnalysis(payload)) return { ok: false, failure: describeFailure('upstream') };
     return { ok: true, value: payload };
+  } catch {
+    if (signal?.aborted === true) return { ok: false, failure: describeFailure('cancelled') };
+    if (timedOut) return { ok: false, failure: describeFailure('timeout') };
+    return { ok: false, failure: describeFailure('offline') };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', relay);
+  }
+}
+
+/** What one knowledge analysis came back with. */
+export type KnowledgeOutcome =
+  { ok: true; analysis: KnowledgeAnalysis } | { ok: false; failure: AiFailure };
+
+const KNOWLEDGE_STATUSES = new Set(['valid', 'recovered', 'malformed', 'incomplete']);
+
+function isKnowledgeAnalysis(value: unknown): value is KnowledgeAnalysis {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<KnowledgeAnalysis>;
+  if (!Array.isArray(candidate.concepts) || !Array.isArray(candidate.relations)) return false;
+  if (typeof candidate.status !== 'string' || !KNOWLEDGE_STATUSES.has(candidate.status)) {
+    // An older service process, or one that does not speak this protocol. The reply is still
+    // readable as suggestions, but it did not follow the contract; saying so is more honest than
+    // claiming `valid`.
+    candidate.status = 'recovered';
+  }
+  if (!Array.isArray(candidate.rejectedDetails)) candidate.rejectedDetails = [];
+  if (!Array.isArray(candidate.warnings)) candidate.warnings = [];
+  if (typeof candidate.diagnostics !== 'object') candidate.diagnostics = null;
+  if (typeof candidate.rulesVersion !== 'string') candidate.rulesVersion = '';
+  return true;
+}
+
+/**
+ * Asks the local service for evidence-backed concepts and relations.
+ *
+ * Same contract as every other call: no credential, a deadline, a cancellation, and a failure
+ * returned as a value. A failed analysis must leave the reader's knowledge graph untouched,
+ * which is why nothing is written until this function returns a result.
+ */
+export async function analyzeKnowledge(
+  request: KnowledgeRequest,
+  options: AiClientOptions = {},
+): Promise<KnowledgeOutcome> {
+  const {
+    signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    fetchImpl = globalThis.fetch,
+    baseUrl = '',
+  } = options;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const relay = (): void => {
+    controller.abort();
+  };
+  signal?.addEventListener('abort', relay, { once: true });
+
+  try {
+    const response = await fetchImpl(`${baseUrl}/api/ai/knowledge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return { ok: false, failure: describeFailure('upstream') };
+    }
+
+    if (!response.ok) {
+      const code = isFailure(payload) ? payload.error : undefined;
+      return { ok: false, failure: describeFailure(kindFor(response.status, code)) };
+    }
+    if (!isKnowledgeAnalysis(payload)) return { ok: false, failure: describeFailure('upstream') };
+    return { ok: true, analysis: payload };
   } catch {
     if (signal?.aborted === true) return { ok: false, failure: describeFailure('cancelled') };
     if (timedOut) return { ok: false, failure: describeFailure('timeout') };

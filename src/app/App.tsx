@@ -253,6 +253,23 @@ export function App({
     closeOverlay();
   };
 
+  /**
+   * Leaves the paper and opens one concept where it belongs in the knowledge view.
+   *
+   * The reading position is saved first, so following a prerequisite does not cost the reader
+   * the place they were reading.
+   */
+  const openConceptFromReader = (conceptId: string, projectId: string) => {
+    if (readingPaperId !== null) flushReadingPosition(readingPaperId);
+    actions.select(projectId);
+    setProjectZone('knowledge');
+    setKnowledgeSelectedId(conceptId);
+    setReadingFocus(null);
+    setReadingPaperId(null);
+    setView('project');
+    closeOverlay();
+  };
+
   const confirmDelete = () => {
     if (pendingDelete === null) return;
     // Removing another project must not pull the user away from the page they are reading.
@@ -438,6 +455,10 @@ export function App({
               onDeleteAnnotation={(annotation) => {
                 actions.removeAnnotation(annotation.id);
               }}
+              knowledge={knowledgeApi}
+              projects={projects}
+              projectId={selected?.id ?? null}
+              onOpenConceptInProject={openConceptFromReader}
               canSaveConcept={selected !== null}
               onSaveConcept={(suggestion) => {
                 if (selected === null) return;

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Lightbulb,
   Maximize2,
+  Network,
   NotebookPen,
   Sparkles,
   ZoomIn,
@@ -18,13 +19,18 @@ import type {
 } from '../../domain/annotation';
 import type { DifficultySuggestion } from '../../domain/difficulty';
 import type { Paper } from '../../domain/papers';
+import type { Project } from '../../domain/project';
 import type { PdfBlobStore } from '../../services/pdfStore';
+import { makeId } from '../../services/ids';
 import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { DifficultyPanel } from './DifficultyPanel';
+import { KnowledgePanel } from './KnowledgePanel';
+import { useKnowledgeAnalysis } from './useKnowledgeAnalysis';
+import type { KnowledgeApi } from '../knowledge/useKnowledgeApi';
 import { inspectPageLayout, measureFragmentation } from './layout';
 import { NotesPanel } from './NotesPanel';
 import { PaperModeSwitch } from './PaperModeSwitch';
@@ -74,6 +80,14 @@ interface ReaderViewProps {
   onSaveConcept?: (suggestion: DifficultySuggestion) => void;
   /** False when the paper was opened outside a project, where there is no graph to file into. */
   canSaveConcept?: boolean;
+  /** The shared knowledge graph, for the reader's local "related knowledge" panel. */
+  knowledge: KnowledgeApi;
+  /** Every project, for the concept's cross-project links in that panel. */
+  projects: readonly Project[];
+  /** The project the reader came from, or null when the paper was opened from the library. */
+  projectId: string | null;
+  /** Leaves the reader and opens a concept in the project's knowledge view. */
+  onOpenConceptInProject: (conceptId: string, projectId: string) => void;
   onEditAnnotation: (id: string, edit: AnnotationEdit) => void;
   onDeleteAnnotation: (annotation: Annotation) => void;
   /** Injectable so tests and the browser checks can supply a deterministic assistant. */
@@ -141,6 +155,10 @@ export function ReaderView({
   onSaveAiNote,
   onSaveConcept,
   canSaveConcept = false,
+  knowledge,
+  projects,
+  projectId,
+  onOpenConceptInProject,
   onEditAnnotation,
   onDeleteAnnotation,
   aiClient,
@@ -169,7 +187,7 @@ export function ReaderView({
   const [flashId, setFlashId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Annotation | null>(null);
   /** Which of the side panels is showing, if any. */
-  const [panel, setPanel] = useState<'notes' | 'ai' | 'difficulty' | null>(() =>
+  const [panel, setPanel] = useState<'notes' | 'ai' | 'difficulty' | 'knowledge' | null>(() =>
     typeof window.matchMedia === 'function' && !window.matchMedia(NOTES_OVERLAY_QUERY).matches
       ? 'notes'
       : null,
@@ -247,6 +265,13 @@ export function ReaderView({
     model: health?.model ?? '',
     currentPage,
     pageTextFor,
+    locate: locateQuote,
+  });
+
+  const knowledgeAnalysis = useKnowledgeAnalysis({
+    doc: state.status === 'ready' ? state.doc : null,
+    knowledge,
+    makeId,
     locate: locateQuote,
   });
 
@@ -517,33 +542,36 @@ export function ReaderView({
   };
 
   /**
-   * Follows a citation back to the page it came from.
+   * Follows any verified quotation back to its page.
    *
-   * The citation was verified against the passages the service sent, so its page is a fact and
-   * jumping there is always right. Where on the page it points, though, is found by matching the
-   * quoted text — and when that is ambiguous or fails, the reader is told, exactly as they are
-   * for a saved highlight. Nothing is highlighted on a guess.
+   * Used by assistant citations and by knowledge evidence. The page is a fact from our own
+   * record; where on the page it points is found by matching the quoted text — and when that is
+   * ambiguous or fails, the reader is told. Nothing is highlighted on a guess.
    */
-  const jumpToCitation = (citation: AiCitation): void => {
-    scrollToPage(citation.page);
+  const jumpToQuote = (page: number, quote: string): void => {
+    scrollToPage(page);
     setFlashId(null);
     setSpotlight(null);
     void (async () => {
-      const page = await waitForRenderedPage(scrollRef.current, citation.page);
-      if (page === null) {
+      const pageElement = await waitForRenderedPage(scrollRef.current, page);
+      if (pageElement === null) {
         setSelectionNotice('这一页还没有渲染完，暂时无法标出引用位置；已经跳到该页。');
         return;
       }
-      const located = locateAnchor(page, { quote: citation.quote, prefix: '', suffix: '' });
+      const located = locateAnchor(pageElement, { quote, prefix: '', suffix: '' });
       if (located.match.kind === 'found') {
         setSelectionNotice(null);
-        setSpotlight({ page: citation.page, rects: located.rects });
+        setSpotlight({ page, rects: located.rects });
       } else if (located.match.kind === 'ambiguous') {
         setSelectionNotice('这段原文在这一页出现了多次，无法确定引用的是哪一处。');
       } else {
         setSelectionNotice('这段引文没有在这一页的文字里找到，可能是提取时残缺了。');
       }
     })();
+  };
+
+  const jumpToCitation = (citation: AiCitation): void => {
+    jumpToQuote(citation.page, citation.quote);
   };
 
   /** Turns the reader's selection into a question for the assistant. */
@@ -596,6 +624,45 @@ export function ReaderView({
     setSpotlight(null);
     setPanel('ai');
     ai.ask(source, mode, question);
+  };
+
+  /**
+   * Opens the knowledge panel for a selection, or for the page when nothing is selected.
+   *
+   * This is deliberately local: it assembles the context and reads the existing graph. No
+   * request leaves the machine until the reader presses "开始分析" inside the panel.
+   */
+  const openKnowledge = (anchor: SelectionAnchor | null): void => {
+    const page = anchor?.page ?? currentPage;
+    const source = sourceFor(page, anchor);
+    if (source === null || source.pageText.trim() === '') {
+      setSelectionNotice('这一页还没有可提取的文字，暂时无法查看相关知识。');
+      return;
+    }
+    setSelectionNotice(null);
+    setSpotlight(null);
+    setPanel('knowledge');
+    knowledgeAnalysis.open({
+      paperId: paper.id,
+      title: paper.title,
+      pdfSha256: pdfSha256 ?? '',
+      currentPage: page,
+      projectId,
+      selection: anchor,
+      pageText: source.pageText,
+      annotations: here,
+      difficulties: scan.all,
+    });
+    if (anchor !== null) clearSelection();
+  };
+
+  /** The tab and the rail open the current session when there is one, and create one if not. */
+  const showKnowledgePanel = (): void => {
+    if (knowledgeAnalysis.context === null || knowledgeAnalysis.context.paperId !== paper.id) {
+      openKnowledge(null);
+      return;
+    }
+    setPanel('knowledge');
   };
 
   /** Opens the short explanation for a suggestion, near the marker when there is one. */
@@ -688,7 +755,7 @@ export function ReaderView({
   // the model name for its cache key, and it keeps working after the panel is closed.
   useEffect(() => {
     if (health !== null) return;
-    if (panel !== 'ai' && panel !== 'difficulty' && !scan.enabled) return;
+    if (panel !== 'ai' && panel !== 'difficulty' && panel !== 'knowledge' && !scan.enabled) return;
     let cancelled = false;
     void (async () => {
       const found = await fetchAiHealth();
@@ -918,6 +985,15 @@ export function ReaderView({
               <button
                 type="button"
                 className="rail-btn"
+                aria-label="打开相关知识"
+                title="相关知识"
+                onClick={showKnowledgePanel}
+              >
+                <Network size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="rail-btn"
                 aria-label="打开智能难点"
                 title="智能难点"
                 onClick={() => {
@@ -952,6 +1028,14 @@ export function ReaderView({
                   }}
                 >
                   AI 助手
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  aria-pressed={panel === 'knowledge'}
+                  onClick={showKnowledgePanel}
+                >
+                  知识
                 </button>
                 <button
                   type="button"
@@ -997,6 +1081,23 @@ export function ReaderView({
                 />
               )}
 
+              {panel === 'knowledge' && (
+                <KnowledgePanel
+                  paper={paper}
+                  projectId={projectId}
+                  projects={projects}
+                  knowledge={knowledge}
+                  analysis={knowledgeAnalysis}
+                  health={health}
+                  onClose={() => {
+                    setPanel(null);
+                  }}
+                  onJumpToQuote={jumpToQuote}
+                  onOpenConceptInProject={onOpenConceptInProject}
+                  onNotice={setSelectionNotice}
+                />
+              )}
+
               {panel === 'notes' && (
                 <NotesPanel
                   annotations={annotations}
@@ -1035,6 +1136,9 @@ export function ReaderView({
           }}
           onNote={saveAnnotation}
           onAsk={openAi}
+          onKnowledge={() => {
+            openKnowledge(pendingSelection.anchor);
+          }}
           onDismiss={clearSelection}
         />
       )}

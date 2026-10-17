@@ -1,4 +1,4 @@
-import { Highlighter, MessageSquarePlus, SendHorizontal, Sparkles, X } from 'lucide-react';
+import { Highlighter, MessageSquarePlus, Network, SendHorizontal, Sparkles, X } from 'lucide-react';
 import { useState, type SubmitEvent } from 'react';
 import {
   ANNOTATION_KINDS,
@@ -17,11 +17,13 @@ interface AnnotationToolbarProps {
   onNote: (draft: { kind: AnnotationKind; note: string }) => void;
   /** Asks the assistant about the selection. */
   onAsk: (mode: AiMode, question: string) => void;
+  /** Opens the local knowledge panel for this selection. Does not call a model. */
+  onKnowledge: () => void;
   onDismiss: () => void;
 }
 
 /** Half the toolbar's widest state, used to keep the whole thing on screen. */
-const HALF_WIDTH = { actions: 200, menu: 200 };
+const HALF_WIDTH = { actions: 230, menu: 200 };
 const EDGE = 8;
 /**
  * Roughly how tall each state is, used to keep the bottom edge on screen.
@@ -31,7 +33,7 @@ const EDGE = 8;
  * they could not be clicked at all. Measured, not measured *precisely*: it only has to be close
  * enough to keep the buttons reachable, and the stylesheet caps the height as a backstop.
  */
-const HEIGHT = { actions: 44, menu: 280 };
+const HEIGHT = { actions: 84, menu: 280 };
 
 const AI_MODES: readonly AiMode[] = ['explain', 'walkthrough', 'formula', 'translate', 'ask'];
 
@@ -48,6 +50,7 @@ export function AnnotationToolbar({
   onHighlight,
   onNote,
   onAsk,
+  onKnowledge,
   onDismiss,
 }: AnnotationToolbarProps) {
   const [composing, setComposing] = useState(false);
@@ -203,6 +206,10 @@ export function AnnotationToolbar({
           >
             <Sparkles size={14} aria-hidden="true" />
             向这段文字提问
+          </button>
+          <button type="button" className="btn btn-quiet" onClick={onKnowledge}>
+            <Network size={14} aria-hidden="true" />
+            查看相关知识
           </button>
           <button type="button" className="icon-btn" aria-label="关闭" onClick={onDismiss}>
             <X size={14} aria-hidden="true" />

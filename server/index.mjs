@@ -21,6 +21,11 @@ import {
   normalizeDifficultyRequest,
   verifySuggestions,
 } from './difficulties.mjs';
+import {
+  buildKnowledgeMessages,
+  normalizeKnowledgeRequest,
+  verifyKnowledgeSuggestions,
+} from './knowledge.mjs';
 import { ProviderError } from './errors.mjs';
 import {
   BodyTooLarge,
@@ -86,6 +91,9 @@ export function createAiServer({
       // Reported so a live run can record, in its own evidence, which ceiling produced the
       // result — and so a stale process cannot silently keep using the old one.
       answerTokens: config.answerTokens ?? LIMITS.answerTokens,
+      knowledgePassages: LIMITS.knowledgePassages,
+      knowledgeContextChars: LIMITS.knowledgeContextChars,
+      knowledgePages: LIMITS.knowledgePages,
     },
   };
 
@@ -336,6 +344,137 @@ export function createAiServer({
     }
   }
 
+  /**
+   * A bounded set of passages, analysed for concepts and the relations between them.
+   *
+   * Same guards as every other endpoint — rate, concurrency, body size, cancellation, no
+   * retries — and the same rule about what may leave: only the passages the reader's own
+   * context plan listed, never the whole paper.
+   */
+  async function handleKnowledge(request, response) {
+    const started = Date.now();
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+
+    const allowed = limiter.take();
+    if (!allowed.ok) {
+      sendJson(response, 429, {
+        error: 'rate-limit',
+        message: '本地服务一分钟内的请求次数已达上限，请稍后再试。',
+      });
+      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
+      return;
+    }
+    if (!gate.tryEnter()) {
+      sendJson(response, 429, { error: 'busy', message: '同时进行的模型请求太多，请稍后再试。' });
+      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
+      return;
+    }
+
+    const controller = new AbortController();
+    response.on('close', () => {
+      if (!response.writableEnded) controller.abort();
+    });
+
+    try {
+      let body;
+      try {
+        body = await readJsonBody(request, LIMITS.bodyBytes);
+      } catch (error) {
+        const tooLarge = error instanceof BodyTooLarge;
+        const status = tooLarge ? 413 : 400;
+        const message = tooLarge ? error.message : '请求体不是合法 JSON。';
+        sendJson(response, status, { error: 'bad-request', message });
+        log.request({ method: 'POST', path: url.pathname, status, ms: Date.now() - started });
+        return;
+      }
+
+      const normalized = normalizeKnowledgeRequest(body);
+      if (!normalized.ok) {
+        sendJson(response, 400, { error: 'bad-request', message: normalized.message });
+        log.request({ method: 'POST', path: url.pathname, status: 400, ms: Date.now() - started });
+        return;
+      }
+      const knowledgeRequest = normalized.value;
+      const { system, messages } = buildKnowledgeMessages(knowledgeRequest);
+
+      const outcome = await chosen.complete({
+        system,
+        messages,
+        maxTokens: config.answerTokens ?? LIMITS.answerTokens,
+        signal: controller.signal,
+        meta: {
+          task: 'knowledge',
+          paper: knowledgeRequest.paper,
+          focus: knowledgeRequest.focus,
+          passages: knowledgeRequest.passages,
+          existingConcepts: knowledgeRequest.existingConcepts,
+          existingRelations: knowledgeRequest.existingRelations,
+        },
+      });
+
+      const verified = verifyKnowledgeSuggestions(outcome.text, knowledgeRequest, {
+        truncated: outcome.truncated === true,
+      });
+      const payload = {
+        provider: chosen.name,
+        providerLabel: chosen.label,
+        model: chosen.model,
+        online: chosen.name !== 'mock',
+        rulesVersion: verified.rulesVersion,
+        status: verified.status,
+        groundedInText: verified.groundedInText,
+        concepts: verified.concepts,
+        relations: verified.relations,
+        rejected: verified.rejected,
+        rejectedDetails: verified.rejectedDetails,
+        warnings: verified.warnings,
+        diagnostics: {
+          ...verified.diagnostics,
+          finishReason: typeof outcome.finishReason === 'string' ? outcome.finishReason : null,
+        },
+        usage: outcome.usage ?? null,
+      };
+      sendJson(response, 200, payload);
+      log.request({
+        method: 'POST',
+        path: url.pathname,
+        status: 200,
+        ms: Date.now() - started,
+        provider: chosen.name,
+        model: chosen.model,
+        pages: new Set(knowledgeRequest.passages.map((passage) => passage.page)).size,
+        chars: knowledgeRequest.passages.reduce((sum, passage) => sum + passage.text.length, 0),
+        outputStatus: verified.status,
+        concepts: verified.concepts.length,
+        relations: verified.relations.length,
+        rejected: verified.rejected,
+      });
+    } catch (error) {
+      if (controller.signal.aborted && !response.writableEnded) {
+        log.request({ method: 'POST', path: url.pathname, status: 499, ms: Date.now() - started });
+        return;
+      }
+      const isProvider = error instanceof ProviderError;
+      const code = isProvider ? error.code : 'upstream';
+      const message = isProvider
+        ? error.message
+        : '本地服务分析知识关联时出错了，没有发送其它页面的内容。';
+      const status =
+        code === 'timeout' ? 504 : code === 'auth' ? 502 : code === 'rate-limit' ? 429 : 502;
+      if (!response.writableEnded) sendJson(response, status, { error: code, message });
+      log.request({
+        method: 'POST',
+        path: url.pathname,
+        status,
+        ms: Date.now() - started,
+        provider: chosen.name,
+        model: chosen.model,
+      });
+    } finally {
+      gate.leave();
+    }
+  }
+
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     const origin = request.headers.origin;
@@ -388,6 +527,11 @@ export function createAiServer({
 
     if (url.pathname === '/api/ai/difficulties') {
       void handleDifficulties(request, response);
+      return;
+    }
+
+    if (url.pathname === '/api/ai/knowledge') {
+      void handleKnowledge(request, response);
       return;
     }
 

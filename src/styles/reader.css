@@ -294,7 +294,7 @@
 .annotation-toolbar {
   position: fixed;
   z-index: 20;
-  max-width: min(400px, 92vw);
+  max-width: min(560px, 94vw);
   /* A backstop for the component's clamp: if the menu is taller than it estimates, it scrolls
      rather than disappearing past the bottom of the window. */
   max-height: calc(100vh - 120px);
@@ -307,6 +307,7 @@
 
 .annotation-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   align-items: center;
 }

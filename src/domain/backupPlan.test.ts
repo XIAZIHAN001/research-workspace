@@ -8,6 +8,7 @@ import type { DifficultyPageRecord, DifficultyState } from './difficulty';
 import {
   EMPTY_PREFERENCES,
   DEFAULT_RESTORE_CHOICE,
+  collectConflicts,
   mergeRestore,
   parseBackupData,
   planRestore,
@@ -651,5 +652,167 @@ describe('planning a restore', () => {
       now: NOW,
     });
     expect(plan.blockers.length).toBe(1);
+  });
+});
+
+describe('Phase 8: suggestion evidence in backups', () => {
+  const currentProjects: ProjectsState = {
+    projects: [project('p1', '项目', 'paper1')],
+    papers: {
+      paper1: paper('paper1', '论文一', {
+        pdf: { sha256: SHA_A, name: 'a.pdf', bytes: 1, pageCount: 1, addedAt: 1 },
+      }),
+    },
+    annotations: [],
+    selectedId: 'p1',
+  };
+  const c1 = concept('c1', 'KZG commitment', ['p1']);
+  const c2 = concept('c2', 'Bilinear pairing', ['p1']);
+
+  it('keeps support, explanation, model and evidence links through a merge', () => {
+    const occurrence: ConceptEvidence = {
+      ...evidence('e1', 'c1', 'paper1'),
+      relationId: 'r1',
+      verification: 'located',
+      source: 'ai',
+    };
+    const incoming: ConceptRelation = {
+      ...relation('r1', 'c1', 'c2'),
+      status: 'suggested',
+      origin: 'ai',
+      support: 'direct',
+      rationale: 'the paper says so',
+      provider: 'mock',
+      providerLabel: '本地模拟',
+      model: 'mock-1',
+      rulesVersion: 'k1',
+      evidenceIds: ['e1'],
+    };
+    const merged = mergeRestore(
+      source(currentProjects, { version: 1, concepts: [c1, c2], evidence: [], relations: [] }),
+      contents({
+        knowledge: { version: 1, concepts: [], evidence: [occurrence], relations: [incoming] },
+      }),
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    const restored = merged.knowledge.relations.find((entry) => entry.id === 'r1');
+    expect(restored?.status).toBe('suggested');
+    expect(restored?.support).toBe('direct');
+    expect(restored?.rationale).toBe('the paper says so');
+    expect(restored?.model).toBe('mock-1');
+    expect(restored?.evidenceIds).toEqual(['e1']);
+    expect(merged.knowledge.evidence[0]?.relationId).toBe('r1');
+    expect(merged.knowledge.evidence[0]?.verification).toBe('located');
+  });
+
+  it('keeps an occurrence as concept evidence when its relation was skipped', () => {
+    const current: KnowledgeState = {
+      version: 1,
+      concepts: [c1, c2],
+      evidence: [],
+      relations: [{ ...relation('r-existing', 'c2', 'c1'), status: 'confirmed' }],
+    };
+    const incomingKnowledge: KnowledgeState = {
+      version: 1,
+      concepts: [],
+      evidence: [
+        {
+          ...evidence('e1', 'c1', 'paper1'),
+          relationId: 'r-cycle',
+          verification: 'verbatim',
+        },
+      ],
+      relations: [
+        {
+          ...relation('r-cycle', 'c1', 'c2'),
+          status: 'suggested',
+          origin: 'ai',
+          support: 'inferred',
+          evidenceIds: ['e1'],
+        },
+      ],
+    };
+    const merged = mergeRestore(
+      source(currentProjects, current),
+      contents({ knowledge: incomingKnowledge }),
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(merged.knowledge.relations.some((entry) => entry.id === 'r-cycle')).toBe(false);
+    const kept = merged.knowledge.evidence.find((entry) => entry.id === 'e1');
+    expect(kept).toBeDefined();
+    expect(kept?.relationId).toBeUndefined();
+  });
+
+  it('treats different support or explanation as a same-id conflict', () => {
+    const currentRelation: ConceptRelation = {
+      ...relation('r1', 'c1', 'c2'),
+      support: 'direct',
+      rationale: 'one explanation',
+    };
+    const incomingRelation: ConceptRelation = {
+      ...relation('r1', 'c1', 'c2'),
+      support: 'inferred',
+      rationale: 'one explanation',
+    };
+    const conflicts = collectConflicts(
+      source(currentProjects, {
+        version: 1,
+        concepts: [c1, c2],
+        evidence: [],
+        relations: [currentRelation],
+      }),
+      contents({
+        knowledge: {
+          version: 1,
+          concepts: [],
+          evidence: [],
+          relations: [incomingRelation],
+        },
+      }),
+    );
+    expect(conflicts.some((entry) => entry.kind === 'relation' && entry.id === 'r1')).toBe(true);
+  });
+
+  it('reads a Phase 7 knowledge payload and refuses dangling Phase 8 links', () => {
+    const legacy = rawData({
+      projects: {
+        version: 5,
+        projects: [project('p1', '项目', 'paper1')],
+        papers: {
+          paper1: paper('paper1', '论文一', {
+            pdf: { sha256: SHA_A, name: 'a.pdf', bytes: 1, pageCount: 1, addedAt: 1 },
+          }),
+        },
+        annotations: [],
+        selectedId: 'p1',
+      },
+      knowledge: {
+        version: 1,
+        concepts: [c1],
+        evidence: [evidence('e1', 'c1', 'paper1')],
+        relations: [],
+      },
+    });
+    expect(parseBackupData(legacy).ok).toBe(true);
+
+    const danglingRelation = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
+    (danglingRelation.knowledge as { evidence: unknown[] }).evidence = [
+      { ...evidence('e1', 'c1', 'paper1'), relationId: 'r-missing' },
+    ];
+    expect(parseBackupData(danglingRelation).ok).toBe(false);
+
+    const danglingEvidence = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
+    (danglingEvidence.knowledge as { concepts: unknown[] }).concepts = [c1, c2];
+    (danglingEvidence.knowledge as { relations: unknown[] }).relations = [
+      {
+        ...relation('r1', 'c1', 'c2'),
+        evidenceIds: ['e-missing'],
+      },
+    ];
+    expect(parseBackupData(danglingEvidence).ok).toBe(false);
   });
 });

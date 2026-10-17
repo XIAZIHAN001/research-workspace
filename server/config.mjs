@@ -26,6 +26,7 @@ export const PROVIDER_NAMES = ['mock', 'deepseek'];
 export const ROUTES = {
   health: '/api/ai/health',
   ask: '/api/ai/ask',
+  knowledge: '/api/ai/knowledge',
 };
 
 export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
@@ -74,6 +75,15 @@ export const LIMITS = {
   /** Requests allowed per minute, per process. A runaway loop costs money; this caps it. */
   requestsPerMinute: 30,
   concurrentRequests: 4,
+  /**
+   * Knowledge analysis is stricter than a question on purpose: it may look at several pages of
+   * the same paper, so the page count, passage count and total characters are bounded together.
+   * A larger context does not buy a better graph; it buys a bigger bill and a harder review.
+   */
+  knowledgePassages: 8,
+  knowledgeContextChars: 9000,
+  knowledgePages: 6,
+  existingConcepts: 60,
 };
 
 /**

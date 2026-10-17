@@ -193,10 +193,15 @@ describe('KnowledgeView: relations', () => {
     await userEvent.click(screen.getByRole('button', { name: '添加关系' }));
 
     const detail = screen.getByRole('region', { name: '概念：KZG commitment' });
-    expect(within(detail).getByRole('button', { name: 'Bilinear pairing' })).toBeInTheDocument();
+    expect(
+      within(detail).getAllByRole('button', { name: 'Bilinear pairing' }).length,
+    ).toBeGreaterThan(0);
 
-    // And from the prerequisite's side, KZG depends on it.
-    await userEvent.click(within(detail).getByRole('button', { name: 'Bilinear pairing' }));
+    // And from the prerequisite's side, KZG depends on it. The first matching button is the
+    // confirmed prerequisite list; the learning path repeats the name further down.
+    await userEvent.click(
+      within(detail).getAllByRole('button', { name: 'Bilinear pairing' })[0] as HTMLElement,
+    );
     const other = screen.getByRole('region', { name: '概念：Bilinear pairing' });
     expect(within(other).getByText(/被这些概念依赖/)).toBeInTheDocument();
     expect(within(other).getByRole('button', { name: 'KZG commitment' })).toBeInTheDocument();
@@ -288,7 +293,7 @@ describe('KnowledgeView: relations', () => {
 
     await userEvent.click(within(detail).getByRole('button', { name: '采纳' }));
     expect(within(detail).queryByText(/AI 建议的关系/)).not.toBeInTheDocument();
-    expect(within(detail).getByRole('button', { name: 'B' })).toBeInTheDocument();
+    expect(within(detail).getAllByRole('button', { name: 'B' }).length).toBeGreaterThan(0);
   });
 });
 

@@ -30,6 +30,7 @@
     "verify:graph": "node scripts/verify/graph.mjs",
     "verify:backup": "node scripts/verify/backup.mjs",
     "verify:knowledge-real": "node scripts/verify/real-knowledge.mjs",
+    "verify:knowledge-ai": "node scripts/verify/knowledge-ai.mjs",
     "verify:real": "node scripts/verify/real-paper.mjs",
     "verify:live": "node scripts/verify/live-api.mjs",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"

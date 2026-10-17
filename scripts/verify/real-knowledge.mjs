@@ -466,9 +466,11 @@ async function main() {
     await cardOf(page, '多目标少样本提示').click();
     await detailOf(page, '多目标少样本提示')
       .getByRole('button', { name: '扩散语言模型', exact: true })
+      .first()
       .click();
     await detailOf(page, '扩散语言模型')
       .getByRole('button', { name: '语言模型', exact: true })
+      .first()
       .click();
     check(
       'navigation: a three-level chain can be walked (multi-target → diffusion → language model)',
@@ -477,9 +479,11 @@ async function main() {
     await cardOf(page, '时间序列语言模型').click();
     await detailOf(page, '时间序列语言模型')
       .getByRole('button', { name: '视觉语言模型', exact: true })
+      .first()
       .click();
     await detailOf(page, '视觉语言模型')
       .getByRole('button', { name: '语言模型', exact: true })
+      .first()
       .click();
     check(
       'navigation: the second chain also reaches the shared concept (TSLM → VLM → language model)',

@@ -396,6 +396,8 @@ function evidenceKey(entry: ConceptEvidence): unknown[] {
     entry.source,
     entry.annotationId ?? null,
     entry.suggestionId ?? null,
+    entry.relationId ?? null,
+    entry.verification ?? null,
     entry.note,
   ];
 }
@@ -408,6 +410,13 @@ function relationKey(relation: ConceptRelation): unknown[] {
     relation.status,
     relation.origin,
     relation.note,
+    relation.support ?? null,
+    relation.rationale ?? null,
+    relation.provider ?? null,
+    relation.providerLabel ?? null,
+    relation.model ?? null,
+    relation.rulesVersion ?? null,
+    relation.evidenceIds ?? [],
   ];
 }
 
@@ -809,7 +818,7 @@ export function mergeRestore(
       stats.relationsSkipped += 1;
       continue;
     }
-    const needsCycleCheck = incoming.kind === 'prerequisite' && incoming.status === 'confirmed';
+    const needsCycleCheck = incoming.kind === 'prerequisite';
     if (needsCycleCheck && wouldCycle(knowledge, incoming.from, incoming.to, incoming.kind)) {
       warnings.push('备份里有一条前置关系会在本机形成循环依赖，已跳过。');
       stats.relationsSkipped += 1;
@@ -818,6 +827,38 @@ export function mergeRestore(
     knowledge.relations = [...knowledge.relations, incoming];
     stats.relationsAdded += 1;
   }
+
+  // Phase 8 adds an optional link from an occurrence to the relation it grounds. A relation can
+  // be skipped by the cycle check above, and an occurrence can be skipped because its paper is
+  // missing; after the merge both sides are reconciled so no stored link dangles. An occurrence
+  // whose relation did not survive is kept as concept evidence rather than deleted — its
+  // quotation is still a real place in the paper.
+  const keptRelationIds = new Set(knowledge.relations.map((relation) => relation.id));
+  knowledge.evidence = knowledge.evidence.map((entry) =>
+    entry.relationId !== undefined && !keptRelationIds.has(entry.relationId)
+      ? { ...entry, relationId: undefined }
+      : entry,
+  );
+  const keptEvidenceIds = new Set(knowledge.evidence.map((entry) => entry.id));
+  const evidenceByRelation = new Map<string, string[]>();
+  for (const entry of knowledge.evidence) {
+    if (entry.relationId === undefined) continue;
+    const list = evidenceByRelation.get(entry.relationId) ?? [];
+    list.push(entry.id);
+    evidenceByRelation.set(entry.relationId, list);
+  }
+  knowledge.relations = knowledge.relations.map((relation) => {
+    const linked = evidenceByRelation.get(relation.id);
+    const declared = (relation.evidenceIds ?? []).filter((id) => keptEvidenceIds.has(id));
+    const merged = [...new Set([...declared, ...(linked ?? [])])];
+    if (
+      merged.length === (relation.evidenceIds ?? []).length &&
+      merged.every((id, index) => (relation.evidenceIds ?? [])[index] === id)
+    ) {
+      return relation;
+    }
+    return { ...relation, evidenceIds: merged };
+  });
 
   /* Difficulties: a disposable cache, merged without ever discarding a dismissal. */
   const pages = { ...current.difficulties.pages };

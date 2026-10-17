@@ -5,7 +5,10 @@ import type { Project } from '../../domain/project';
 import {
   EVIDENCE_SOURCE_LABEL,
   RELATION_KIND_LABEL,
+  RELATION_SUPPORT_LABEL,
+  evidenceForRelation,
   isStaleEvidence,
+  learningPath,
   papersOf,
   relationsFor,
   suggestionsFor,
@@ -69,7 +72,7 @@ export function ConceptDetail({
   const state = api.state;
   const projectConcepts = state.concepts.filter((entry) => entry.projectIds.includes(projectId));
   const evidence = state.evidence
-    .filter((entry) => entry.conceptId === concept.id)
+    .filter((entry) => entry.conceptId === concept.id && entry.relationId === undefined)
     .sort((one, other) => other.createdAt - one.createdAt);
   const relations = relationsFor(state, concept.id);
   const suggested = suggestionsFor(state, concept.id);
@@ -78,6 +81,7 @@ export function ConceptDetail({
     .map((id) => projects.find((project) => project.id === id))
     .filter((project): project is Project => project !== undefined);
   const joinable = projects.filter((project) => !concept.projectIds.includes(project.id));
+  const path = learningPath(state, concept.id);
 
   const nameOf = (id: string): string =>
     state.concepts.find((entry) => entry.id === id)?.name ?? '（已删除）';
@@ -318,23 +322,90 @@ export function ConceptDetail({
           <p className="concept-hint">还没有记录它依赖什么。</p>
         ) : (
           <ul className="concept-links">
-            {prerequisites.map((relation) => (
-              <li key={relation.id}>
-                <button type="button" className="link-btn" onClick={() => onSelect(relation.to)}>
-                  {nameOf(relation.to)}
-                </button>
-                <button
-                  type="button"
-                  className="link-remove"
-                  aria-label={`删除指向 ${nameOf(relation.to)} 的前置关系`}
-                  onClick={() => {
-                    api.deleteRelation(relation.id);
-                  }}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
+            {prerequisites.map((relation) => {
+              const evidence = evidenceForRelation(state, relation.id);
+              return (
+                <li key={relation.id} className="confirmed-relation">
+                  <div className="suggested-relation-head">
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => onSelect(relation.to)}
+                    >
+                      {nameOf(relation.to)}
+                    </button>
+                    {relation.support !== undefined && (
+                      <span className={`kb-support kb-support-${relation.support}`}>
+                        {RELATION_SUPPORT_LABEL[relation.support]}
+                      </span>
+                    )}
+                    <select
+                      className="kb-select kb-select-kind"
+                      aria-label={`把与 ${nameOf(relation.to)} 的关系改为`}
+                      value={relation.kind}
+                      onChange={(event) => {
+                        const result = api.updateRelationKind(
+                          relation.id,
+                          event.target.value as RelationKind,
+                        );
+                        onNotice(result.ok ? '关系类型已修改。' : (result.reason ?? '无法修改。'));
+                      }}
+                    >
+                      {(Object.keys(RELATION_KIND_LABEL) as RelationKind[]).map((kind) => (
+                        <option key={kind} value={kind}>
+                          {RELATION_KIND_LABEL[kind]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="link-remove"
+                      aria-label={`删除指向 ${nameOf(relation.to)} 的前置关系`}
+                      onClick={() => {
+                        api.deleteRelation(relation.id);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {relation.rationale !== undefined && relation.rationale !== '' && (
+                    <p className="suggested-relation-why">
+                      <span className="knowledge-label">模型解释</span>
+                      {relation.rationale}
+                    </p>
+                  )}
+                  {evidence.length > 0 && (
+                    <ul className="suggested-relation-evidence">
+                      {evidence.map((entry) => (
+                        <li key={entry.id}>
+                          <span
+                            className="evidence-paper"
+                            title={`文件 ${entry.pdfSha256.slice(0, 12)}…`}
+                          >
+                            {papers[entry.paperId]?.title ?? '（论文已不在库中）'}
+                          </span>
+                          <span className="kb-kind">第 {entry.page} 页</span>
+                          <span className="evidence-quote">“{entry.quote}”</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            disabled={papers[entry.paperId]?.pdf?.sha256 !== entry.pdfSha256}
+                            onClick={() => {
+                              onOpenReader(entry.paperId, {
+                                page: entry.page,
+                                quote: entry.quote,
+                              });
+                            }}
+                          >
+                            回到原文
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
         {dependents.length > 0 && (
@@ -352,28 +423,116 @@ export function ConceptDetail({
         )}
       </section>
 
+      {path.length > 1 && (
+        <section className="concept-block" aria-labelledby={`path-${concept.id}`}>
+          <h4 id={`path-${concept.id}`}>学习路径</h4>
+          <ol className="learning-path">
+            {path.map((entry, index) => (
+              <li key={entry.id} data-current={entry.id === concept.id}>
+                <span className="learning-path-index">{index + 1}</span>
+                <button
+                  type="button"
+                  className="link-btn"
+                  disabled={entry.id === concept.id}
+                  onClick={() => {
+                    onSelect(entry.id);
+                  }}
+                >
+                  {entry.name}
+                </button>
+                {entry.id === concept.id && <span className="kb-kind">当前</span>}
+              </li>
+            ))}
+          </ol>
+          <p className="concept-hint">
+            从基础到当前概念，只使用你确认过的前置关系；同层分支按名称排序，不代表唯一正确的学习顺序。
+          </p>
+        </section>
+      )}
+
       {(related.length > 0 || extendsEdges.length > 0) && (
         <section className="concept-block" aria-labelledby={`related-${concept.id}`}>
           <h4 id={`related-${concept.id}`}>相关与扩展</h4>
           <ul className="concept-links">
             {[...related, ...extendsEdges].map((relation) => {
               const other = relation.from === concept.id ? relation.to : relation.from;
+              const evidence = evidenceForRelation(state, relation.id);
               return (
-                <li key={relation.id}>
-                  <span className="kb-kind">{RELATION_KIND_LABEL[relation.kind]}</span>
-                  <button type="button" className="link-btn" onClick={() => onSelect(other)}>
-                    {nameOf(other)}
-                  </button>
-                  <button
-                    type="button"
-                    className="link-remove"
-                    aria-label={`删除与 ${nameOf(other)} 的关系`}
-                    onClick={() => {
-                      api.deleteRelation(relation.id);
-                    }}
-                  >
-                    ×
-                  </button>
+                <li key={relation.id} className="confirmed-relation">
+                  <div className="suggested-relation-head">
+                    <span className="kb-kind">{RELATION_KIND_LABEL[relation.kind]}</span>
+                    <button type="button" className="link-btn" onClick={() => onSelect(other)}>
+                      {nameOf(other)}
+                    </button>
+                    {relation.support !== undefined && (
+                      <span className={`kb-support kb-support-${relation.support}`}>
+                        {RELATION_SUPPORT_LABEL[relation.support]}
+                      </span>
+                    )}
+                    <select
+                      className="kb-select kb-select-kind"
+                      aria-label={`把与 ${nameOf(other)} 的关系改为`}
+                      value={relation.kind}
+                      onChange={(event) => {
+                        const result = api.updateRelationKind(
+                          relation.id,
+                          event.target.value as RelationKind,
+                        );
+                        onNotice(result.ok ? '关系类型已修改。' : (result.reason ?? '无法修改。'));
+                      }}
+                    >
+                      {(Object.keys(RELATION_KIND_LABEL) as RelationKind[]).map((kind) => (
+                        <option key={kind} value={kind}>
+                          {RELATION_KIND_LABEL[kind]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="link-remove"
+                      aria-label={`删除与 ${nameOf(other)} 的关系`}
+                      onClick={() => {
+                        api.deleteRelation(relation.id);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {relation.rationale !== undefined && relation.rationale !== '' && (
+                    <p className="suggested-relation-why">
+                      <span className="knowledge-label">模型解释</span>
+                      {relation.rationale}
+                    </p>
+                  )}
+                  {evidence.length > 0 && (
+                    <ul className="suggested-relation-evidence">
+                      {evidence.map((entry) => (
+                        <li key={entry.id}>
+                          <span
+                            className="evidence-paper"
+                            title={`文件 ${entry.pdfSha256.slice(0, 12)}…`}
+                          >
+                            {papers[entry.paperId]?.title ?? '（论文已不在库中）'}
+                          </span>
+                          <span className="kb-kind">第 {entry.page} 页</span>
+                          <span className="evidence-quote">“{entry.quote}”</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            disabled={papers[entry.paperId]?.pdf?.sha256 !== entry.pdfSha256}
+                            onClick={() => {
+                              onOpenReader(entry.paperId, {
+                                page: entry.page,
+                                quote: entry.quote,
+                              });
+                            }}
+                          >
+                            回到原文
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
@@ -387,29 +546,101 @@ export function ConceptDetail({
           <ul className="concept-links">
             {suggested.relations.map((relation: ConceptRelation) => {
               const other = relation.from === concept.id ? relation.to : relation.from;
+              const evidence = evidenceForRelation(state, relation.id);
               return (
-                <li key={relation.id}>
-                  <span className="kb-kind">{RELATION_KIND_LABEL[relation.kind]}</span>
-                  <span>{nameOf(other)}</span>
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() => {
-                      api.confirmRelation(relation.id);
-                    }}
-                  >
-                    采纳
-                  </button>
-                  <button
-                    type="button"
-                    className="link-remove"
-                    aria-label="忽略这条建议"
-                    onClick={() => {
-                      api.deleteRelation(relation.id);
-                    }}
-                  >
-                    ×
-                  </button>
+                <li key={relation.id} className="suggested-relation">
+                  <div className="suggested-relation-head">
+                    <span className="kb-kind">{RELATION_KIND_LABEL[relation.kind]}</span>
+                    <span>{nameOf(other)}</span>
+                    {relation.support !== undefined && (
+                      <span className={`kb-support kb-support-${relation.support}`}>
+                        {RELATION_SUPPORT_LABEL[relation.support]}
+                      </span>
+                    )}
+                    {evidence.length === 0 && <span className="kb-badge">待验证：无逐字引文</span>}
+                  </div>
+                  {relation.rationale !== undefined && relation.rationale !== '' && (
+                    <p className="suggested-relation-why">
+                      <span className="knowledge-label">模型解释</span>
+                      {relation.rationale}
+                    </p>
+                  )}
+                  {evidence.length > 0 && (
+                    <ul className="suggested-relation-evidence">
+                      {evidence.map((entry) => (
+                        <li key={entry.id}>
+                          <span
+                            className="evidence-paper"
+                            title={`文件 ${entry.pdfSha256.slice(0, 12)}…`}
+                          >
+                            {papers[entry.paperId]?.title ?? '（论文已不在库中）'}
+                          </span>
+                          <span className="kb-kind">第 {entry.page} 页</span>
+                          <span className="evidence-quote">“{entry.quote}”</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            disabled={papers[entry.paperId]?.pdf?.sha256 !== entry.pdfSha256}
+                            onClick={() => {
+                              onOpenReader(entry.paperId, {
+                                page: entry.page,
+                                quote: entry.quote,
+                              });
+                            }}
+                          >
+                            回到原文
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="concept-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        const result = api.confirmRelation(relation.id);
+                        onNotice(
+                          result.ok ? '已采纳这条关系。' : (result.reason ?? '无法采纳这条关系。'),
+                        );
+                      }}
+                    >
+                      采纳
+                    </button>
+                    <label className="knowledge-kind-edit">
+                      <span className="sr-only">改为哪种关系</span>
+                      <select
+                        className="kb-select"
+                        value={relation.kind}
+                        onChange={(event) => {
+                          const result = api.updateRelationKind(
+                            relation.id,
+                            event.target.value as RelationKind,
+                          );
+                          onNotice(
+                            result.ok ? '关系类型已修改。' : (result.reason ?? '无法修改。'),
+                          );
+                        }}
+                      >
+                        {(Object.keys(RELATION_KIND_LABEL) as RelationKind[]).map((kind) => (
+                          <option key={kind} value={kind}>
+                            {RELATION_KIND_LABEL[kind]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="link-remove"
+                      aria-label="忽略这条建议"
+                      onClick={() => {
+                        api.deleteRelation(relation.id);
+                        onNotice('已忽略这条关系建议。');
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </li>
               );
             })}

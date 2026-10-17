@@ -1,13 +1,19 @@
 import { useCallback, useMemo } from 'react';
 import {
+  confirmRelationChecked,
   createRelation,
+  mergeSuggestions,
   normalizeConceptName,
+  updateRelationKind,
   type Concept,
   type ConceptEvidence,
   type ConceptInput,
   type EvidenceInput,
   type KnowledgeState,
   type RelationInput,
+  type RelationKind,
+  type SuggestionBatch,
+  type SuggestionReport,
 } from '../../domain/knowledge';
 import type { KnowledgeAction } from '../../domain/knowledgeState';
 import type { KnowledgeStore } from '../../services/knowledgeStore';
@@ -44,8 +50,12 @@ export interface KnowledgeApi {
   addEvidence: (input: EvidenceInput) => void;
   removeEvidence: (id: string) => void;
   createRelation: (input: RelationInput) => { ok: boolean; reason?: string };
-  confirmRelation: (id: string) => void;
+  /** Confirms only if the relation still makes a coherent graph; a refusal carries its reason. */
+  confirmRelation: (id: string) => { ok: boolean; reason?: string };
+  updateRelationKind: (id: string, kind: RelationKind) => { ok: boolean; reason?: string };
   deleteRelation: (id: string) => void;
+  /** Adds an analysis batch, enforcing provenance/dedupe/cycle rules; returns what happened. */
+  addSuggestions: (batch: SuggestionBatch) => SuggestionReport;
   /** Reads the difficulty cache and proposes concepts; adds nothing until the reader says so. */
   candidatesFromDifficulties: (pdfSha256s: readonly string[]) => ConceptCandidate[];
 }
@@ -82,6 +92,48 @@ export function useKnowledgeApi(
       return { ok: true };
     },
     [dispatch, makeId, now, store],
+  );
+
+  const confirmRelation = useCallback(
+    (id: string): { ok: boolean; reason?: string } => {
+      const at = now();
+      const result = confirmRelationChecked(store.getSnapshot().state, id, at);
+      if (!result.ok) return { ok: false, reason: result.reason };
+      dispatch({ type: 'relation/confirm', id, at });
+      return { ok: true };
+    },
+    [dispatch, now, store],
+  );
+
+  const updateRelation = useCallback(
+    (id: string, kind: RelationKind): { ok: boolean; reason?: string } => {
+      const at = now();
+      const result = updateRelationKind(store.getSnapshot().state, id, kind, at);
+      if (!result.ok) return { ok: false, reason: result.reason };
+      dispatch({ type: 'relation/updateKind', id, kind, at });
+      return { ok: true };
+    },
+    [dispatch, now, store],
+  );
+
+  const addSuggestions = useCallback(
+    (batch: SuggestionBatch): SuggestionReport => {
+      const result = mergeSuggestions(store.getSnapshot().state, batch);
+      if (
+        result.report.addedConcepts > 0 ||
+        result.report.addedRelations > 0 ||
+        result.report.addedEvidence > 0
+      ) {
+        dispatch({
+          type: 'suggestions/add',
+          concepts: batch.concepts,
+          relations: batch.relations,
+          evidence: batch.evidence,
+        });
+      }
+      return result.report;
+    },
+    [dispatch, store],
   );
 
   const candidatesFromDifficulties = useCallback(
@@ -177,12 +229,12 @@ export function useKnowledgeApi(
         dispatch({ type: 'evidence/remove', id });
       },
       createRelation: createRelationChecked,
-      confirmRelation: (id) => {
-        dispatch({ type: 'relation/confirm', id, at: now() });
-      },
+      confirmRelation,
+      updateRelationKind: updateRelation,
       deleteRelation: (id) => {
         dispatch({ type: 'relation/delete', id });
       },
+      addSuggestions,
       candidatesFromDifficulties,
     }),
     [
@@ -193,6 +245,9 @@ export function useKnowledgeApi(
       makeId,
       now,
       createRelationChecked,
+      confirmRelation,
+      updateRelation,
+      addSuggestions,
       candidatesFromDifficulties,
     ],
   );

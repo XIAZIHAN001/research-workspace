@@ -9,7 +9,7 @@
 
 import {
   confirmConcept,
-  confirmRelation,
+  confirmRelationChecked,
   createConcept,
   createEvidence,
   createRelation,
@@ -18,8 +18,10 @@ import {
   detachProjectFromKnowledge,
   linkConceptToProject,
   mergeConcepts,
+  mergeSuggestions,
   unlinkConceptFromProject,
   updateConcept,
+  updateRelationKind,
   type Concept,
   type ConceptEvidence,
   type ConceptInput,
@@ -27,6 +29,7 @@ import {
   type EvidenceInput,
   type KnowledgeState,
   type RelationInput,
+  type RelationKind,
 } from './knowledge';
 
 export type KnowledgeAction =
@@ -46,6 +49,7 @@ export type KnowledgeAction =
   | { type: 'evidence/remove'; id: string }
   | { type: 'relation/create'; input: RelationInput; id: string; at: number }
   | { type: 'relation/confirm'; id: string; at: number }
+  | { type: 'relation/updateKind'; id: string; kind: RelationKind; at: number }
   | { type: 'relation/delete'; id: string }
   | { type: 'project/detach'; projectId: string; at: number }
   | {
@@ -95,7 +99,10 @@ export function knowledgeReducer(state: KnowledgeState, action: KnowledgeAction)
       return createRelation(state, action.input, () => action.id, action.at).state;
 
     case 'relation/confirm':
-      return confirmRelation(state, action.id, action.at);
+      return confirmRelationChecked(state, action.id, action.at).state;
+
+    case 'relation/updateKind':
+      return updateRelationKind(state, action.id, action.kind, action.at).state;
 
     case 'relation/delete':
       return deleteRelation(state, action.id);
@@ -103,35 +110,11 @@ export function knowledgeReducer(state: KnowledgeState, action: KnowledgeAction)
     case 'project/detach':
       return detachProjectFromKnowledge(state, action.projectId, action.at);
 
-    case 'suggestions/add': {
-      const knownConcepts = new Set(state.concepts.map((concept) => concept.id));
-      const knownRelations = new Set(state.relations.map((relation) => relation.id));
-      const knownEvidence = new Set(state.evidence.map((entry) => entry.id));
-
-      // Provenance is not negotiable: whatever the caller wrote, a suggestion stays a
-      // suggestion. That is what keeps an AI batch from overwriting the reader's own work.
-      const concepts = action.concepts
-        .filter((concept) => !knownConcepts.has(concept.id))
-        .map((concept) => ({ ...concept, status: 'suggested' as const, origin: 'ai' as const }));
-      const ids = new Set([...knownConcepts, ...concepts.map((concept) => concept.id)]);
-      const relations = action.relations
-        .filter(
-          (relation) =>
-            !knownRelations.has(relation.id) && ids.has(relation.from) && ids.has(relation.to),
-        )
-        .map((relation) => ({ ...relation, status: 'suggested' as const, origin: 'ai' as const }));
-      const evidence = action.evidence.filter(
-        (entry) => !knownEvidence.has(entry.id) && ids.has(entry.conceptId),
-      );
-
-      if (concepts.length === 0 && relations.length === 0 && evidence.length === 0) return state;
-      return {
-        ...state,
-        concepts: [...state.concepts, ...concepts],
-        relations: [...state.relations, ...relations],
-        evidence: [...state.evidence, ...evidence],
-      };
-    }
+    case 'suggestions/add':
+      // The domain function owns the rules: provenance is forced, duplicates become references,
+      // and a loop is refused. The reducer only applies its result, so a caller cannot bypass
+      // them by constructing a batch that looks authoritative.
+      return mergeSuggestions(state, action).state;
 
     default:
       return state;

@@ -16,6 +16,7 @@ import './styles/layout.css';
 import './styles/components.css';
 import './styles/reader.css';
 import './styles/knowledge.css';
+import './styles/knowledge-ai.css';
 import './styles/backup.css';
 
 const container = document.getElementById('root');

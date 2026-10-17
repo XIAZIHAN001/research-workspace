@@ -316,7 +316,7 @@ async function main() {
       ).includes('Bilinear pairing'),
     );
     // Exact: the remove button's aria-label also contains the name.
-    await detail.getByRole('button', { name: 'Bilinear pairing', exact: true }).click();
+    await detail.getByRole('button', { name: 'Bilinear pairing', exact: true }).first().click();
     check(
       'navigation: and the dependency knows what depends on it',
       (await detailOf(page, 'Bilinear pairing').innerText()).includes(firstConcept),

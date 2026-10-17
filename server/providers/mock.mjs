@@ -35,6 +35,18 @@ export const MOCK_TRIGGERS = {
   '[[mock:truncated]]': 'truncated',
   /** A display formula far wider than the panel, to check it scrolls instead of overflowing. */
   '[[mock:wide-formula]]': 'wide-formula',
+  /** Knowledge-analysis boundary cases. The trigger is read from the reader's focus text. */
+  '[[mock:knowledge-broken]]': 'knowledge-broken',
+  '[[mock:knowledge-truncated]]': 'knowledge-truncated',
+  '[[mock:knowledge-empty]]': 'knowledge-empty',
+  '[[mock:knowledge-bad-quote]]': 'knowledge-bad-quote',
+  '[[mock:knowledge-wrong-page]]': 'knowledge-wrong-page',
+  '[[mock:knowledge-wrong-direction]]': 'knowledge-wrong-direction',
+  '[[mock:knowledge-duplicate]]': 'knowledge-duplicate',
+  '[[mock:knowledge-cycle]]': 'knowledge-cycle',
+  '[[mock:knowledge-bypass]]': 'knowledge-bypass',
+  '[[mock:knowledge-formula]]': 'knowledge-formula',
+  '[[mock:knowledge-invalid-kind]]': 'knowledge-invalid-kind',
 };
 
 function pickTrigger(question) {
@@ -158,6 +170,155 @@ function difficultyReply(meta) {
   };
 }
 
+/**
+ * The offline answer to "what knowledge does this passage connect to".
+ *
+ * Like the difficulty mock, everything it proposes is derived from the passages it was given,
+ * quotes are copied verbatim so the service's check is genuinely exercised, and every label says
+ * it is simulated. The scenario triggers reach the boundary cases the interface has to handle;
+ * the default reply is deliberately clean — two concepts, two relations — because a mock that
+ * fails on every call would make the ordinary path impossible to see.
+ */
+function knowledgeReply(meta, scenario) {
+  const passages = Array.isArray(meta.passages) ? meta.passages : [];
+  const selection = passages.find((passage) => passage.selection) ??
+    passages[0] ?? { text: '', page: 1, id: 'selection' };
+  const text = String(selection.text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sentences = text
+    .split(/(?<=[.!?。；])\s*/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 30);
+  // The reader's own selection is the most meaningful quotation available: it is verbatim in the
+  // passage and it is the text the reader was actually looking at. Fall back to the first clean
+  // sentence when the panel was opened on a page without a selection.
+  const focus = String(meta.focus ?? '')
+    .replace(/\[\[mock:[a-z-]+\]\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const firstQuote = focus.length >= 8 ? focus : (sentences[0] ?? text);
+  const quoteOne = firstQuote.slice(0, 200);
+  const secondSentence = sentences.find(
+    (sentence) => sentence !== quoteOne && /^[A-Z0-9(]/.test(sentence),
+  );
+  const quoteTwo = (secondSentence ?? quoteOne).slice(0, 200);
+
+  const conceptA = {
+    name: '模拟概念 A',
+    aliases: ['Mock idea A'],
+    summary: '（本地模拟）这是一个用于验证知识建议数据流的占位概念，不是对论文内容的学术判断。',
+    support: 'direct',
+    evidence: [{ passageId: selection.id, quote: quoteOne }],
+  };
+  const conceptB = {
+    name: '模拟概念 B',
+    aliases: [],
+    summary: '（本地模拟）第二个占位概念；它没有逐字引文，因此会显示为待验证。',
+    support: 'inferred',
+    evidence: [],
+  };
+  const relationAB = {
+    from: conceptA.name,
+    to: conceptB.name,
+    kind: 'prerequisite',
+    direction: 'from-first',
+    support: 'direct',
+    explanation:
+      '（本地模拟）A 需要先理解 B。这条解释由 mock provider 生成，用来验证建议的展示与确认流程。',
+    evidence: [{ passageId: selection.id, quote: quoteOne }],
+  };
+  const relationRelated = {
+    from: conceptB.name,
+    to: conceptA.name,
+    kind: 'related',
+    direction: 'undirected',
+    support: 'external',
+    explanation: '（本地模拟）B 与 A 相关；这是外部知识的示例，不是原文的陈述。',
+    evidence: [{ passageId: selection.id, quote: quoteTwo }],
+  };
+
+  const payload = {
+    groundedInText: true,
+    concepts: [conceptA, conceptB],
+    relations: [relationAB, relationRelated],
+  };
+
+  if (scenario === 'knowledge-empty') {
+    payload.groundedInText = false;
+    payload.concepts = [];
+    payload.relations = [];
+  }
+  if (scenario === 'knowledge-bad-quote') {
+    conceptA.evidence = [
+      { passageId: selection.id, quote: '这段话并不存在于本次提供的任何段落里。' },
+    ];
+    relationAB.evidence = [{ passageId: selection.id, quote: '这段关系引文也不存在于原文里。' }];
+  }
+  if (scenario === 'knowledge-wrong-page') {
+    conceptA.evidence = [
+      { passageId: selection.id, page: Number(selection.page) + 7, quote: quoteOne },
+    ];
+    relationAB.evidence = [{ passageId: selection.id, page: 99, quote: quoteOne }];
+  }
+  if (scenario === 'knowledge-wrong-direction') {
+    relationAB.direction = 'to-first';
+  }
+  if (scenario === 'knowledge-duplicate') {
+    payload.concepts = [conceptA, { ...conceptA, summary: '（本地模拟）重复的概念。' }, conceptB];
+    payload.relations = [relationAB, { ...relationAB, explanation: '（本地模拟）重复的关系。' }];
+  }
+  if (scenario === 'knowledge-cycle') {
+    payload.relations = [
+      relationAB,
+      {
+        ...relationAB,
+        from: conceptB.name,
+        to: conceptA.name,
+        kind: 'prerequisite',
+        direction: 'from-first',
+      },
+    ];
+  }
+  if (scenario === 'knowledge-bypass') {
+    conceptA.status = 'confirmed';
+    conceptA.id = 'model-chosen-id';
+    payload.concepts = [conceptA, conceptB];
+    payload.relations = [{ ...relationAB, id: 'model-relation-id', status: 'confirmed' }];
+    payload.doi = '10.0000/not-a-real-doi';
+    payload.arxivId = 'arXiv:0000.00000';
+    payload.paperId = 'model-chosen-paper';
+  }
+  if (scenario === 'knowledge-invalid-kind') {
+    relationAB.kind = 'depends-on';
+  }
+  if (scenario === 'knowledge-formula') {
+    conceptA.summary =
+      '（本地模拟）原文的公式在文字层里是碎片；下面补写的 LaTeX 是模型解释，不是 PDF 原文。';
+    relationAB.explanation =
+      '（本地模拟）模型补写的公式 $$R(u) := \\log \\frac{P_1(u)}{P_0(u)}$$ 只是对碎片的重建，属于模型解释。';
+  }
+
+  const body = JSON.stringify(payload);
+  if (scenario === 'knowledge-broken') {
+    return {
+      text: '{"concepts":[{"name":"broken"',
+      usage: null,
+      truncated: false,
+      finishReason: 'stop',
+    };
+  }
+  if (scenario === 'knowledge-truncated') {
+    return {
+      text: body.slice(0, Math.max(0, body.length - 24)),
+      usage: null,
+      truncated: true,
+      finishReason: 'length',
+    };
+  }
+  return { text: body, usage: null, truncated: false, finishReason: 'stop' };
+}
+
 export function createMockProvider({ model = 'mock-1' } = {}) {
   return {
     name: 'mock',
@@ -166,6 +327,12 @@ export function createMockProvider({ model = 'mock-1' } = {}) {
     label: '本地模拟（未连接在线模型）',
 
     async complete({ system, messages, meta, signal }) {
+      if (meta.task === 'knowledge') {
+        void system;
+        void messages;
+        void signal;
+        return knowledgeReply(meta, pickTrigger(`${String(meta.focus ?? '')}`));
+      }
       if (meta.task === 'difficulty') {
         void system;
         void messages;
