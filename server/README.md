@@ -14,7 +14,16 @@ npm run ai:serve
 
 ## 连接真实模型
 
-需要同时设置两项，缺一不可：
+需要同时设置两项，缺一不可。
+
+**PowerShell**（Windows 默认终端就是它；`VAR=value command` 这种写法是 bash 的，PowerShell 不认，
+会报 `The term 'AI_PROVIDER=deepseek' is not recognized`）：
+
+```powershell
+$env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='sk-…'; npm run ai:serve
+```
+
+**bash / Git Bash / macOS / Linux**：
 
 ```bash
 AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve

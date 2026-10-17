@@ -208,11 +208,17 @@ Phase 0–4 的报告与截图**已从 Git 还原**，未被覆盖。Phase 4.1 �
 
 ## 九、恢复现场
 
-重新联调只需两步：
+重新联调只需两步。
 
-```bash
-AI_PROVIDER=deepseek DEEPSEEK_API_KEY=… npm run ai:serve
+第一步，在**你自己的终端**启动服务。Windows 默认终端是 PowerShell，`VAR=value command` 是 bash 写法，PowerShell 会把它当成命令名去找并报 `The term 'AI_PROVIDER=deepseek' is not recognized`：
+
+```powershell
+$env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='…'; npm run ai:serve
 ```
+
+（bash / Git Bash / macOS / Linux 才是 `AI_PROVIDER=deepseek DEEPSEEK_API_KEY=… npm run ai:serve`。）
+
+第二步：
 
 ```bash
 npm run verify:live -- --only=formula

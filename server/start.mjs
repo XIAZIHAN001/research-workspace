@@ -7,9 +7,13 @@
  * app should not be able to start spending money.
  *
  *   node server/start.mjs                        # mock, offline
- *   AI_PROVIDER=deepseek DEEPSEEK_API_KEY=… node server/start.mjs
  *
- * Optional: AI_PORT, DEEPSEEK_MODEL, DEEPSEEK_BASE_URL, AI_TIMEOUT_MS, AI_ALLOWED_ORIGINS.
+ * To reach a real model (PowerShell — `VAR=value command` is bash syntax and PowerShell
+ * rejects it):
+ *   $env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='…'; npm run ai:serve
+ *
+ * Optional: AI_PORT, DEEPSEEK_MODEL, DEEPSEEK_BASE_URL, AI_TIMEOUT_MS, AI_MAX_OUTPUT_TOKENS,
+ * DEEPSEEK_THINKING, DEEPSEEK_REASONING_EFFORT, AI_ALLOWED_ORIGINS.
  */
 
 import { LOOPBACK_HOST, configProblems, readConfig } from './config.mjs';

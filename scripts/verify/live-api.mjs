@@ -398,11 +398,15 @@ async function main() {
 
   const health = await serviceHealth();
   if (health === null) {
+    // Both syntaxes, because whoever reads this is in their own shell and half of them are in
+    // PowerShell — where `VAR=value command` is not a command prefix but a failed lookup.
     process.stdout.write(
       'REFUSED  no local AI service on ' +
         SERVICE_ORIGIN +
         '\n' +
-        'start it first:  AI_PROVIDER=deepseek DEEPSEEK_API_KEY=… npm run ai:serve\n',
+        'start it first, in the shell you actually use:\n' +
+        "  PowerShell   $env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='…'; npm run ai:serve\n" +
+        '  bash         AI_PROVIDER=deepseek DEEPSEEK_API_KEY=… npm run ai:serve\n',
     );
     process.exitCode = 2;
     return;
