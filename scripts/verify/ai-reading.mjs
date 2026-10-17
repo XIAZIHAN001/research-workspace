@@ -6,7 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { launchBrowser } from './browser.mjs';
 import { auditContrast } from './contrast.mjs';
-import { buildInjectionPdf } from './sample-pdf.mjs';
+import { buildFragmentedPdf, buildInjectionPdf } from './sample-pdf.mjs';
 import { boxDistance, clearSelection, selectSpans, unionBox } from './text-selection.mjs';
 
 /**
@@ -24,23 +24,79 @@ import { boxDistance, clearSelection, selectSpans, unionBox } from './text-selec
  * Screenshots go to docs/screenshots-phase4/.
  */
 
-const PORT = 4177;
-const AI_PORT = 8788;
+const PORT = Number(process.env.AI_VERIFY_PREVIEW_PORT ?? 4177);
+const AI_PORT = Number(process.env.AI_VERIFY_PORT ?? 8788);
 const ORIGIN = `http://127.0.0.1:${PORT}/`;
 const AI_ORIGIN = `http://127.0.0.1:${String(AI_PORT)}`;
 const ROOT = new URL('../../', import.meta.url);
-const SHOT_DIR = new URL('docs/screenshots-phase4/', ROOT);
-const REPORT_FILE = new URL('docs/phase4-ai-verification-report.json', ROOT);
+/**
+ * Evidence from this run goes in a directory of its own, named for the moment it started.
+ *
+ * Nothing here is ever overwritten and nothing is ever deleted. A screenshot taken during a real
+ * run cannot be taken again — the previous phase lost two of them to a `rm` with a wildcard, and
+ * the lesson is that the safe default for evidence is "write somewhere new".
+ */
+const RUN_STAMP = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+const SHOT_DIR = new URL(`docs/screenshots-phase4.2/${RUN_STAMP}/`, ROOT);
+const REPORT_FILE = new URL(`docs/screenshots-phase4.2/${RUN_STAMP}/report.json`, ROOT);
 const WORK_DIR = new URL('.cache/verify/', ROOT);
 const VITE_BIN = fileURLToPath(new URL('node_modules/vite/bin/vite.js', ROOT));
 const SERVER_ENTRY = fileURLToPath(new URL('server/start.mjs', ROOT));
 const REAL_PAPER = new URL('.cache/papers/2610.22294.pdf', ROOT);
 const STORAGE_KEY = 'rw.projects';
 
+/**
+ * Offline means offline.
+ *
+ * This suite must never be able to reach a paid service. It starts the service with `--offline`,
+ * which makes every environment variable irrelevant, and it refuses to run at all on a machine
+ * whose shell is configured for the real provider — because the failure mode that matters is not
+ * "the flag was forgotten", it is "a key was exported here months ago and nobody remembered".
+ */
+function refuseIfConfiguredForRealProvider() {
+  const provider = process.env.AI_PROVIDER ?? '';
+  const key = process.env.DEEPSEEK_API_KEY ?? '';
+  if (provider !== 'deepseek' && key === '') return;
+  process.stderr.write(
+    '这个验收套件只在离线模式下运行，但当前环境被配置成了真实提供方：\n' +
+      `  AI_PROVIDER=${provider === '' ? '(未设置)' : provider}\n` +
+      `  DEEPSEEK_API_KEY=${key === '' ? '(未设置)' : '(已设置)'}\n` +
+      '请在未导出这些变量的终端里重跑。这里不会替你把它们去掉再继续——\n' +
+      '上一次正是这种「看起来是干的、其实是湿的」环境发出了一次真实计费调用。\n',
+  );
+  process.exit(4);
+}
+
+/**
+ * Refuses to share a port with a service it did not start.
+ *
+ * The same incident: a service the user had started kept the port, this script's own service
+ * failed to bind, and every request went to the paid one. Checking before binding turns that
+ * into a message instead of a bill.
+ */
+async function refuseIfPortTaken() {
+  try {
+    const response = await fetch(`${AI_ORIGIN}/api/ai/health`);
+    if (response.ok) {
+      const health = await response.json();
+      process.stderr.write(
+        `端口 ${String(AI_PORT)} 上已经有一个 AI 服务在运行（provider=${String(health.provider)}）。\n` +
+          '本次验收不会使用它：它可能是另一个配置，也可能正在调用付费模型。\n' +
+          '请先停掉它，或设置 AI_VERIFY_PORT 换一个端口。\n',
+      );
+      process.exit(4);
+    }
+  } catch {
+    // Nothing there, which is what we want.
+  }
+}
+
 const results = [];
 const consoleIssues = [];
 /** Every request body the page sent to the service, in order. */
 const requests = [];
+/** Every question this script asked for, so "one request per question" can be asserted. */
+let asksSent = 0;
 
 function check(name, passed, detail = '') {
   results.push({ name, passed, detail });
@@ -63,11 +119,16 @@ function watch(page) {
   });
 }
 
-/** The local AI service, on the mock provider. Its output is kept so it can be audited. */
+/**
+ * The local AI service, forced onto the mock provider. Its output is kept so it can be audited.
+ *
+ * `--offline` rather than `AI_PROVIDER=mock`: the flag wins over the environment, so a shell
+ * with a key exported into it cannot turn this into a paid run.
+ */
 async function startService() {
-  const child = spawn(process.execPath, [SERVER_ENTRY], {
+  const child = spawn(process.execPath, [SERVER_ENTRY, '--offline'], {
     cwd: fileURLToPath(ROOT),
-    env: { ...process.env, AI_PORT: String(AI_PORT), AI_PROVIDER: 'mock' },
+    env: { ...process.env, AI_PORT: String(AI_PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -79,10 +140,21 @@ async function startService() {
   });
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      if ((await fetch(`${AI_ORIGIN}/api/ai/health`)).ok) {
-        return { child, outputOf: () => output };
+      const response = await fetch(`${AI_ORIGIN}/api/ai/health`);
+      if (response.ok) {
+        // Identity, not availability: "something answered" is exactly the assumption that failed
+        // before. Nothing proceeds until the service says it is the offline one.
+        const health = await response.json();
+        if (health.provider !== 'mock' || health.online !== false) {
+          child.kill();
+          throw new Error(
+            `the service on ${String(AI_PORT)} is ${String(health.provider)} (online=${String(health.online)}), not the offline mock`,
+          );
+        }
+        return { child, outputOf: () => output, health };
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('the service on')) throw error;
       // Not up yet.
     }
     await sleep(200);
@@ -135,6 +207,42 @@ async function importIntoProject(page, filePath) {
     .waitFor({ timeout: 30_000 });
 }
 
+/**
+ * Selects the run of single-character spans on a page and opens the toolbar.
+ *
+ * A formula in a PDF text layer is often one glyph per span. This finds those spans by
+ * measurement rather than by index, so the fixture can change without the check going stale.
+ */
+async function selectGlyphRun(page, pageNumber) {
+  const run = await page.evaluate((number) => {
+    const layer = document.querySelector(`.pdf-page[data-page="${String(number)}"] .textLayer`);
+    if (layer === null) return null;
+    const leaves = [...layer.querySelectorAll('span')].filter(
+      (span) => span.querySelector('span') === null,
+    );
+    const singles = leaves
+      .map((span, index) => ({ index, text: (span.textContent ?? '').trim() }))
+      .filter((entry) => entry.text.length === 1);
+    if (singles.length < 3) return null;
+    return { start: singles[0].index, end: singles.at(-1).index, count: singles.length };
+  }, pageNumber);
+  if (run === null) return null;
+
+  await selectSpans(
+    page,
+    pageNumber,
+    { span: run.start, offset: 0 },
+    { span: run.end, offset: 999 },
+  );
+  await page.mouse.move(5, 5);
+  await page
+    .locator(`.pdf-page[data-page="${String(pageNumber)}"]`)
+    .first()
+    .dispatchEvent('mouseup');
+  await toolbarOf(page).waitFor({ timeout: 5000 });
+  return run;
+}
+
 /** Back to wherever we were, then into the reader for this project's paper. */
 async function reopenReader(page, projectName) {
   const back = page.getByRole('button', { name: '返回' });
@@ -164,8 +272,10 @@ async function selectForToolbar(page, pageNumber, start, end) {
   return selection;
 }
 
-/** The boxes of whatever is currently spotlighted on a page, in viewport coordinates. */
-function spotlightBoxes(page, pageNumber) {
+/** The boxes of whatever is currently spotlighted on a page, in viewport coordinates. */ function spotlightBoxes(
+  page,
+  pageNumber,
+) {
   return page.evaluate((number) => {
     const elements = [
       ...document.querySelectorAll(
@@ -190,6 +300,8 @@ function pageTextOf(page, pageNumber) {
 }
 
 async function main() {
+  refuseIfConfiguredForRealProvider();
+  await refuseIfPortTaken();
   await mkdir(SHOT_DIR, { recursive: true });
   await mkdir(WORK_DIR, { recursive: true });
 
@@ -200,6 +312,8 @@ async function main() {
   if (!real) await writeFile(fixture, (await import('./sample-pdf.mjs')).buildTwoColumnPdf());
   const injectionFile = fileURLToPath(new URL('injection.pdf', WORK_DIR));
   await writeFile(injectionFile, buildInjectionPdf());
+  const fragmentedFile = fileURLToPath(new URL('fragmented.pdf', WORK_DIR));
+  await writeFile(fragmentedFile, buildFragmentedPdf());
 
   const service = await startService();
   const server = await startPreview();
@@ -247,6 +361,7 @@ async function main() {
       'entry: the selection toolbar offers the five ways to ask',
       (await menu.getByRole('button').count()) >= 4,
     );
+    asksSent += 1;
     await menu.getByRole('button', { name: '解释这段话' }).click();
     const panel = page.getByRole('complementary', { name: 'AI 精读助手' });
     await panel.waitFor({ timeout: 10_000 });
@@ -386,6 +501,7 @@ async function main() {
       { span: 6, offset: 999 },
     );
     await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    asksSent += 1;
     await page
       .getByRole('group', { name: '向 AI 提问' })
       .getByRole('button', { name: '翻译为中文' })
@@ -418,6 +534,7 @@ async function main() {
     const askWith = async (question) => {
       const box = page.getByRole('textbox', { name: '继续提问' });
       await box.fill(question);
+      asksSent += 1;
       await page.getByRole('button', { name: '提问' }).click();
     };
 
@@ -438,6 +555,7 @@ async function main() {
     );
     await page.screenshot({ path: fileURLToPath(new URL('04-failure.png', SHOT_DIR)) });
 
+    asksSent += 1;
     await page.getByRole('button', { name: '重试' }).click();
     await page.waitForTimeout(1200);
     check(
@@ -454,6 +572,125 @@ async function main() {
       'cancel: stopping a stalled request clears the busy state and leaves the panel usable',
       (await page.locator('.ai-busy').count()) === 0 &&
         (await page.getByRole('textbox', { name: '继续提问' }).count()) === 1,
+    );
+
+    // ---- 9b. The reply shapes a model actually produces -------------------
+    // Each of these is a reply the parser has a named status for. What is being checked is what
+    // the *reader* sees: never the protocol, always an honest sentence about what happened.
+
+    await askWith('把真实失败原样放一遍 [[mock:escaped-envelope]]');
+    const replay = page.locator('.ai-turn').last();
+    await replay.locator('.ai-answer-body').waitFor({ timeout: 20_000 });
+    const replayText = await replay.innerText();
+    check(
+      'replay: the saved live failure is shown as the answer it contains',
+      replayText.includes('先说明提取质量') && replayText.includes('一句话总结'),
+      `${String(replayText.length)} chars on screen`,
+    );
+    check(
+      'replay: no JSON, no protocol fields and no escape sequences reach the reader',
+      !replayText.includes('groundedInText') &&
+        !replayText.includes('passageId') &&
+        !replayText.includes('"citations"') &&
+        !replayText.includes('\\"'),
+    );
+    check(
+      'replay: the formula the model wrote inside it is typeset',
+      (await replay.locator('.katex').count()) > 0,
+      `${String(await replay.locator('.katex').count())} formulas`,
+    );
+    const details = replay.locator('.ai-diagnostics');
+    check(
+      'diagnostics: they are behind a disclosure, closed until the reader opens it',
+      (await details.count()) === 1 && (await details.getAttribute('open')) === null,
+    );
+    await details.locator('summary').click();
+    const detailText = await details.innerText();
+    check(
+      'diagnostics: opening it names the parse status and the stop reason, in numbers',
+      detailText.includes('已还原') &&
+        detailText.includes('结束原因') &&
+        detailText.includes('字符'),
+      detailText.replace(/\s+/g, ' ').slice(0, 60),
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('09-replay.png', SHOT_DIR)) });
+
+    await askWith('这次只给协议不给回答 [[mock:protocol-only]]');
+    const broken = page.locator('.ai-turn').last();
+    await broken.getByRole('alert').waitFor({ timeout: 20_000 });
+    const brokenText = await broken.innerText();
+    check(
+      'malformed: a reply with no answer is reported, not printed',
+      !brokenText.includes('"answer"') &&
+        !brokenText.includes('"citations"') &&
+        (await broken.locator('.ai-answer-body').count()) === 0,
+    );
+    check(
+      'malformed: it offers a manual retry, and saves nothing',
+      (await broken.getByRole('button', { name: '重试' }).count()) === 1 &&
+        (await broken.getByRole('button', { name: /保存为笔记/ }).count()) === 0,
+    );
+    const afterMalformed = await payloadOf(page);
+    check(
+      'malformed: an unreadable reply does not touch the reader’s own work',
+      afterMalformed.annotations.length === afterSave.annotations.length,
+      `${String(afterMalformed.annotations.length)} notes still stored`,
+    );
+
+    await askWith('这次被截断了 [[mock:truncated]]');
+    const cut = page.locator('.ai-turn').last();
+    await cut.locator('.ai-answer-body').waitFor({ timeout: 20_000 });
+    check(
+      'incomplete: a cut-off reply is labelled as incomplete, not shown as whole',
+      (await cut.innerText()).includes('没有写完'),
+    );
+
+    // ---- 9c. Mathematics ----------------------------------------------------
+    await selectForToolbar(page, 1, { span: 4, offset: 0 }, { span: 9, offset: 999 });
+    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    asksSent += 1;
+    await page
+      .getByRole('group', { name: '向 AI 提问' })
+      .getByRole('button', { name: '解释数学公式' })
+      .click();
+    const mathTurn = page.locator('.ai-turn').last();
+    await mathTurn.locator('.katex').first().waitFor({ timeout: 20_000 });
+    const mathBody = await mathTurn.innerText();
+    const mathBox = await mathTurn.locator('.ai-math').first().boundingBox();
+    check(
+      'math: a formula in the answer is typeset rather than shown as LaTeX source',
+      mathBox !== null && mathBox.height > 4 && !mathBody.includes('\\frac{P_1(u)}{P_0(u)}'),
+      `first formula ${String(Math.round(mathBox?.height ?? 0))}px tall`,
+    );
+    check(
+      'math: the LaTeX source stays available, and is not silently rewritten',
+      ((await mathTurn.locator('.ai-math').first().getAttribute('data-latex')) ?? '').includes(
+        '\\frac',
+      ),
+    );
+    check(
+      'math: the answer says the formula is the model’s typesetting, not extracted text',
+      mathBody.includes('不是从 PDF 里提取出来的原文'),
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('10-math.png', SHOT_DIR)) });
+
+    // ---- 9d. A formula wider than the panel --------------------------------
+    await askWith('来一个很宽的公式 [[mock:wide-formula]]');
+    const wideTurn = page.locator('.ai-turn').last();
+    await wideTurn.locator('.ai-math-block').waitFor({ timeout: 20_000 });
+    const overflow = await page.evaluate(() => {
+      const panel = document.querySelector('.ai-panel');
+      const blocks = document.querySelectorAll('.ai-math-block');
+      const block = blocks[blocks.length - 1] ?? null;
+      return {
+        panel: panel === null ? 0 : panel.scrollWidth - panel.clientWidth,
+        blockScrolls: block === null ? false : block.scrollWidth > block.clientWidth,
+      };
+    });
+    check(
+      'math: a formula wider than the panel scrolls inside its own box instead of widening the panel',
+      overflow.panel <= 1 && overflow.blockScrolls,
+      `panel overflow ${String(overflow.panel)}px, the formula scrolls: ${String(overflow.blockScrolls)}`,
     );
 
     // ---- 10. No key, no proxy, no execution -------------------------------
@@ -499,6 +736,7 @@ async function main() {
     await importIntoProject(page, injectionFile);
     await selectForToolbar(page, 1, { span: 2, offset: 0 }, { span: 5, offset: 999 });
     await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    asksSent += 1;
     await page
       .getByRole('group', { name: '向 AI 提问' })
       .getByRole('button', { name: '解释这段话' })
@@ -600,6 +838,41 @@ async function main() {
       (await payloadOf(page)).annotations.length === before + 1,
     );
 
+    // ---- 15. A selection that is broken into pieces ------------------------
+    await page.getByRole('button', { name: '返回' }).click();
+    await importIntoProject(page, fragmentedFile);
+    const run = await selectGlyphRun(page, 1);
+    check(
+      'fragmentation: this page really does store its formula one glyph per span',
+      run !== null && run.count >= 8,
+      `${String(run?.count ?? 0)} single-character spans`,
+    );
+    await toolbarOf(page).getByRole('button', { name: 'AI' }).click();
+    asksSent += 1;
+    await page
+      .getByRole('group', { name: '向 AI 提问' })
+      .getByRole('button', { name: '解释这段话' })
+      .click();
+    const fragmentPanel = page.getByRole('complementary', { name: 'AI 精读助手' });
+    await fragmentPanel.locator('.ai-answer-body').waitFor({ timeout: 20_000 });
+    const warnCount = await fragmentPanel.locator('.ai-source-warn').count();
+    const fragmentWarn =
+      warnCount === 0 ? '' : await fragmentPanel.locator('.ai-source-warn').first().innerText();
+    check(
+      'fragmentation: the panel says what the model is really being given, before it is sent',
+      warnCount === 1 && fragmentWarn.includes('碎片') && fragmentWarn.includes('只有一个字符'),
+      warnCount === 0 ? 'no warning rendered' : fragmentWarn.replace(/\s+/g, ' ').slice(0, 72),
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('11-fragmented.png', SHOT_DIR)) });
+
+    // The count is the whole point of this check: a service that retried, or a page that
+    // re-sent on re-render, would show up here as more requests than questions.
+    check(
+      'calls: exactly one request left the page for each question asked, with no retries',
+      requests.length === asksSent,
+      `${String(requests.length)} requests for ${String(asksSent)} questions`,
+    );
+
     // Three of the requests below are broken on purpose — the two provider errors and the
     // endpoint probe — so their browser-level noise is expected. Everything else is not.
     const provoked = consoleIssues.filter((issue) =>
@@ -621,6 +894,20 @@ async function main() {
           .join(' | ')}\n`,
       );
     }
+  } catch (error) {
+    // A timeout deep in the run is hard to read from a stack trace alone. Say what the panel
+    // was actually showing at the moment it gave up.
+    process.stdout.write(`\n--- the run stopped here ---\n${String(error)}\n`);
+    try {
+      const last = page.locator('.ai-turn').last();
+      process.stdout.write(`last turn:\n${(await last.innerHTML()).slice(0, 2000)}\n`);
+      process.stdout.write(
+        `console issues:\n${consoleIssues.map((issue) => issue.text).join('\n')}\n`,
+      );
+    } catch {
+      // The page may be gone; the error above is still the useful part.
+    }
+    throw error;
   } finally {
     await browser.close();
     server.kill();
@@ -634,7 +921,15 @@ async function main() {
     `${JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
+        run: RUN_STAMP,
         provider: 'mock (offline, through the real local service)',
+        providerIdentity: service.health,
+        // Recorded so the report says, by itself, that this run could not have spent anything.
+        environment: {
+          offlineFlag: true,
+          aiProviderEnv: process.env.AI_PROVIDER ?? null,
+          deepseekKeyPresent: (process.env.DEEPSEEK_API_KEY ?? '') !== '',
+        },
         fixture: real ? 'real CC-BY arXiv paper 2610.22294' : 'generated two-column sample',
         passed,
         failed,

@@ -1,4 +1,5 @@
-import { textSpans } from './selection';
+import { locateSpanRange } from './anchor';
+import { readPageText, textSpans } from './selection';
 
 /**
  * What the page's own geometry says about the text that was extracted from it.
@@ -172,5 +173,78 @@ export function inspectPageLayout(pageRoot: HTMLElement): PageLayoutReport {
     transitions,
     orderSuspect,
     notice,
+  };
+}
+
+/**
+ * How broken up the selected text is in the PDF's own text layer.
+ *
+ * A typeset formula is not a string in a PDF: it is a handful of positioned glyphs, and the text
+ * layer often stores each symbol as its own span, or splits a fraction into numerator, bar and
+ * denominator. The reader sees `R(u) := log P1(u)/P0(u)`; what gets selected and sent may be
+ * `R ( u ) := log P 1 ( u ) P 0 ( u )` or worse. This is measured here, before anything leaves
+ * the machine, so the panel can say what the model is really being given.
+ *
+ * The measurement is deliberately crude and stated as a count rather than a verdict: the share
+ * of the selection's spans that hold a single character. Prose almost never does that; a broken
+ * formula almost always does.
+ */
+export interface SelectionFragmentation {
+  /** Spans the selection touches. */
+  spans: number;
+  /** Of those, the ones holding exactly one non-space character. */
+  singleCharSpans: number;
+  /** Characters in the selected text. */
+  chars: number;
+  /** True when the selection is mostly one glyph per span. */
+  fragmented: boolean;
+  notice: string | null;
+}
+
+const NOT_FRAGMENTED: SelectionFragmentation = {
+  spans: 0,
+  singleCharSpans: 0,
+  chars: 0,
+  fragmented: false,
+  notice: null,
+};
+
+export function measureFragmentation(
+  pageRoot: HTMLElement,
+  selection: { start: number; end: number; quote: string },
+): SelectionFragmentation {
+  const layer = pageRoot.querySelector<HTMLElement>('.textLayer');
+  if (layer === null) return NOT_FRAGMENTED;
+  const layout = readPageText(layer);
+  const located = locateSpanRange(
+    layout.page,
+    selection.start,
+    selection.end,
+    layout.leaves.map((leaf) => leaf.textContent ?? ''),
+  );
+  if (located === null) return NOT_FRAGMENTED;
+
+  // Empty spans carry no text and say nothing about fragmentation; a text layer is full of
+  // them. Counting them would let one blank span per glyph halve the ratio into a false pass.
+  const touched = layout.leaves
+    .slice(located.startSpan, located.endSpan + 1)
+    .filter((span) => (span.textContent ?? '').trim() !== '');
+  const singleCharSpans = touched.filter((span) => {
+    const text = (span.textContent ?? '').trim();
+    return text.length === 1;
+  }).length;
+
+  // A threshold rather than a judgement: half the spans holding one glyph each, over at least
+  // six spans. Below that, the sentence is just long words.
+  const fragmented = touched.length >= 6 && singleCharSpans / touched.length >= 0.5;
+
+  return {
+    spans: touched.length,
+    singleCharSpans,
+    chars: selection.quote.length,
+    fragmented,
+    notice: fragmented
+      ? `选中的这段原文在 PDF 文字层里是碎的：${String(touched.length)} 个片段里有 ${String(singleCharSpans)} 个只有一个字符，公式或符号很可能被拆成了单字。模型拿到的就是这些碎片，不是排版好的公式。`
+      : null,
   };
 }

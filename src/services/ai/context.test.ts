@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAskContext,
+  buildHistory,
   CONTEXT_WINDOW,
   describeContext,
+  MAX_HISTORY_CHARS,
   MAX_PASSAGE_CHARS,
   PASSAGE_IDS,
   summarizeContext,
@@ -155,5 +157,62 @@ describe('describeContext', () => {
     expect(line).toContain(`同页上文 ${String(CONTEXT_WINDOW)} 字`);
     expect(line).toContain(`同页下文 ${String(CONTEXT_WINDOW)} 字`);
     expect(line).toContain('合计');
+  });
+});
+
+/**
+ * The history a follow-up carries back.
+ *
+ * A real acceptance run ended a conversation here: the recovered answer from the live failure is
+ * 2829 characters, the service refuses any single history message over 2000, and the next
+ * question came back 400. These are the rules that keep that from happening again.
+ */
+describe('buildHistory', () => {
+  const long = 'x'.repeat(2829);
+
+  it('carries a question and its answer as one exchange', () => {
+    expect(buildHistory([{ question: '为什么？', answer: '因为 [1]。' }])).toEqual([
+      { role: 'user', content: '为什么？' },
+      { role: 'assistant', content: '因为 [1]。' },
+    ]);
+  });
+
+  it('leaves out a turn that never got an answer', () => {
+    expect(buildHistory([{ question: '失败的提问', answer: null }])).toEqual([]);
+  });
+
+  it('leaves out a turn whose answer is empty', () => {
+    // The malformed reply produces exactly this: a turn with no text to send back.
+    expect(buildHistory([{ question: '空的', answer: '   ' }])).toEqual([]);
+  });
+
+  it('trims a long answer to what the service accepts', () => {
+    const history = buildHistory([{ question: '长回答', answer: long }]);
+    const assistant = history.find((turn) => turn.role === 'assistant');
+    expect(assistant?.content.length).toBe(MAX_HISTORY_CHARS);
+    expect(assistant?.content.endsWith('…')).toBe(true);
+  });
+
+  it('keeps only the most recent exchanges', () => {
+    const turns = Array.from({ length: 5 }, (_unused, index) => ({
+      question: `问 ${String(index)}`,
+      answer: `答 ${String(index)}`,
+    }));
+    const history = buildHistory(turns, { maxTurns: 4 });
+    expect(history).toHaveLength(4);
+    // Ten entries from five exchanges, cut to the last four: turns 3 and 4.
+    expect(history[0]).toEqual({ role: 'user', content: '问 3' });
+  });
+
+  it('never sends a message the service would reject', () => {
+    const history = buildHistory(
+      Array.from({ length: 10 }, (_unused, index) => ({
+        question: `问题 ${String(index)}`,
+        answer: index % 2 === 0 ? long : `短答 ${String(index)}`,
+      })),
+    );
+    for (const turn of history) {
+      expect(turn.content.length).toBeLessThanOrEqual(MAX_HISTORY_CHARS);
+    }
   });
 });

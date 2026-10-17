@@ -447,6 +447,10 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
     status,
     elapsedMs,
     answer: null,
+    /** How the reply was read: valid / recovered / malformed / incomplete. */
+    outputStatus: null,
+    /** Lengths, counts and the provider's stop reason. Never the prompt or the paper. */
+    diagnostics: null,
     citations: null,
     rejectedCitations: null,
     usage: null,
@@ -492,6 +496,8 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
   }
 
   record.answer = body.answer;
+  record.outputStatus = body.status ?? null;
+  record.diagnostics = body.diagnostics ?? null;
   record.citations = body.citations;
   record.usage = body.usage;
   record.warnings = body.warnings;

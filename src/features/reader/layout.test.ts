@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { inspectPageLayout } from './layout';
+import { inspectPageLayout, measureFragmentation } from './layout';
 
 /**
  * jsdom lays nothing out, so every element reports a zero-sized rectangle. The geometry this
@@ -156,5 +156,84 @@ describe('inspectPageLayout', () => {
       { left: 160, top: 120, width: 100, height: 10 },
     ];
     expect(inspectPageLayout(pageWith(PAGE, spans)).lines).toBe(2);
+  });
+});
+
+/**
+ * How broken up the selection is, measured before anything is sent.
+ *
+ * The measurement exists because a typeset formula is not a string in a PDF: the text layer
+ * often stores each glyph as its own span. The reader selects `R(u) := log P1(u)`; the model is
+ * handed the same characters one span at a time, and this is how the panel learns to say so.
+ */
+describe('measureFragmentation', () => {
+  const layerOf = (texts: string[]): HTMLElement =>
+    pageWith(
+      PAGE,
+      texts.map((text, index) => ({
+        left: 40 + index * 20,
+        top: 100,
+        width: 18,
+        height: 12,
+        text,
+      })),
+    );
+
+  const wholeOf = (texts: string[]): { start: number; end: number; quote: string } => {
+    const quote = texts.join('');
+    return { start: 0, end: quote.length, quote };
+  };
+
+  it('says nothing about an ordinary sentence', () => {
+    const texts = ['The ', 'attention ', 'weights ', 'are ', 'normalised.'];
+    expect(measureFragmentation(layerOf(texts), wholeOf(texts))).toMatchObject({
+      fragmented: false,
+      notice: null,
+    });
+  });
+
+  it('flags a formula the text layer split into single glyphs', () => {
+    const texts = ['R', '(', 'u', ')', ' := ', 'log', 'P', '1', '(', 'u', ')'];
+    const result = measureFragmentation(layerOf(texts), wholeOf(texts));
+    expect(result.fragmented).toBe(true);
+    expect(result.spans).toBe(11);
+    expect(result.singleCharSpans).toBe(9);
+    // The sentence has to be about what the model is given, not about what the reader sees.
+    expect(result.notice).toContain('碎片');
+    expect(result.notice).toContain('9');
+  });
+
+  it('is not fooled by the empty spans a text layer is full of', () => {
+    // pdf.js emits spans with no text between the visible ones. Counting those would let a
+    // blank span per glyph drag the ratio below the threshold and hide a broken formula.
+    const glyphs = ['R', '(', 'u', ')', ':=', 'log', 'P', '1', '(', 'u', ')'];
+    const texts = glyphs.flatMap((glyph) => [glyph, '']);
+    const result = measureFragmentation(layerOf(texts), wholeOf(glyphs));
+    expect(result.fragmented).toBe(true);
+    expect(result.spans).toBe(11);
+    expect(result.singleCharSpans).toBe(9);
+  });
+
+  it('counts only the spans the selection touches', () => {
+    // A long prose page with a short italic run of single characters in the middle: selecting
+    // the prose must not inherit the formula's shape.
+    const texts = ['Ordinary ', 'prose ', 'here ', 'and ', 'then ', 'x', 'y', 'z', ' again prose.'];
+    const quote = texts.slice(0, 5).join('');
+    const result = measureFragmentation(layerOf(texts), {
+      start: 0,
+      end: quote.length,
+      quote,
+    });
+    expect(result.spans).toBe(5);
+    expect(result.fragmented).toBe(false);
+  });
+
+  it('reports nothing when there is no text layer to measure', () => {
+    const root = document.createElement('div');
+    root.className = 'pdf-page';
+    expect(measureFragmentation(root, { start: 0, end: 3, quote: 'abc' })).toMatchObject({
+      spans: 0,
+      fragmented: false,
+    });
   });
 });

@@ -135,10 +135,26 @@ export function createAiServer({
         model: chosen.model,
         online: chosen.name !== 'mock',
         mode: ask.mode,
+        /**
+         * How the reply came back, in one word. The interface shows different things for a
+         * reply that followed the contract, one that had to be recovered, one that is cut off,
+         * and one that could not be read — and it never shows the protocol text itself.
+         */
+        status: verified.status,
         answer: verified.answer,
         groundedInText: verified.groundedInText,
         citations: verified.citations,
         warnings: verified.warnings,
+        /**
+         * Numbers and enums only: lengths, counts, the provider's own stop reason. Not the
+         * prompt, not the reply, not anything that came out of the paper. The panel shows these
+         * only when the reader asks to see them.
+         */
+        diagnostics: {
+          ...verified.diagnostics,
+          finishReason: typeof outcome.finishReason === 'string' ? outcome.finishReason : null,
+          truncated: outcome.truncated === true,
+        },
         usage: outcome.usage ?? null,
       };
       sendJson(response, 200, payload);
@@ -151,7 +167,10 @@ export function createAiServer({
         model: chosen.model,
         passages: ask.passages.length,
         chars,
+        outputStatus: verified.status,
         citations: verified.citations.length,
+        rejectedCitations: verified.diagnostics.citationsRejected,
+        finishReason: payload.diagnostics.finishReason,
       });
     } catch (error) {
       if (controller.signal.aborted && !response.writableEnded) {

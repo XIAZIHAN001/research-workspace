@@ -112,8 +112,10 @@ export function isLoopbackOrigin(origin) {
   return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
 }
 
-export function readConfig(env = process.env) {
-  const provider = env.AI_PROVIDER === 'deepseek' ? 'deepseek' : 'mock';
+export function readConfig(env = process.env, { forceOffline = false } = {}) {
+  // `--offline` is not a preference, it is a wall: a machine that happens to have a key in its
+  // environment must still be able to start a service that cannot spend anything.
+  const provider = forceOffline ? 'mock' : env.AI_PROVIDER === 'deepseek' ? 'deepseek' : 'mock';
   const extraOrigins = (env.AI_ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((value) => value.trim())
@@ -131,7 +133,8 @@ export function readConfig(env = process.env) {
     port: readInt(env.AI_PORT, DEFAULT_PORT, { min: 1, max: 65535 }),
     provider,
     /** Set only for the deepseek provider; the mock provider ignores it entirely. */
-    apiKey: typeof env.DEEPSEEK_API_KEY === 'string' ? env.DEEPSEEK_API_KEY.trim() : '',
+    apiKey:
+      forceOffline || typeof env.DEEPSEEK_API_KEY !== 'string' ? '' : env.DEEPSEEK_API_KEY.trim(),
     baseUrl: (env.DEEPSEEK_BASE_URL ?? DEFAULT_DEEPSEEK_BASE_URL).replace(/\/+$/, ''),
     model: isValidModelName(env.DEEPSEEK_MODEL) ? env.DEEPSEEK_MODEL : KNOWN_DEEPSEEK_MODELS[0],
     thinking,

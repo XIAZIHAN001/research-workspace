@@ -56,6 +56,32 @@ export interface AiCitation {
   selection: boolean;
 }
 
+/**
+ * How the model's output came back.
+ *
+ * The service decides this, not the interface, because only the service sees the raw reply.
+ * `provider-error` is never attached to an answer — it is the status of a call that produced no
+ * output at all — but it belongs to the same vocabulary so there is one list to reason about.
+ */
+export type AiOutputStatus = 'valid' | 'recovered' | 'malformed' | 'incomplete' | 'provider-error';
+
+/**
+ * Numbers and enums about one reply: lengths, counts, the provider's own stop reason.
+ *
+ * Nothing here is paper text, prompt text or a credential, which is what makes it safe to show
+ * behind a disclosure the reader has to open.
+ */
+export interface AiDiagnostics {
+  rawChars: number;
+  /** Which parsing rule produced the answer, or null when the contract was followed. */
+  recovery: string | null;
+  citationEntries: number;
+  citationsAccepted: number;
+  citationsRejected: number;
+  finishReason: string | null;
+  truncated: boolean;
+}
+
 export interface AiAnswer {
   provider: string;
   providerLabel: string;
@@ -63,11 +89,14 @@ export interface AiAnswer {
   /** True when the answer came from a paid service, so the interface can say so. */
   online: boolean;
   mode: AiMode;
+  /** How the reply was read; the panel's wording depends on it. */
+  status: AiOutputStatus;
   answer: string;
   /** The model's own claim about whether the text it was given sufficed. Null when unknown. */
   groundedInText: boolean | null;
   citations: AiCitation[];
   warnings: string[];
+  diagnostics: AiDiagnostics | null;
   usage: AiUsage | null;
 }
 

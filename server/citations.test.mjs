@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseModelOutput, verifyAnswer } from './citations.mjs';
 
@@ -38,10 +39,10 @@ describe('parseModelOutput', () => {
     expect(parsed.ok).toBe(true);
   });
 
-  it('falls back to text when there is no answer field', () => {
+  it('refuses a JSON object that carries no answer, rather than showing it as prose', () => {
     const parsed = parseModelOutput('{"other":1}');
     expect(parsed.ok).toBe(false);
-    expect(parsed.text).toContain('other');
+    expect(parsed.status).toBe('malformed');
   });
 });
 
@@ -149,12 +150,15 @@ describe('verifyAnswer', () => {
     expect(result.citations[0].passageId).toBe('selection');
   });
 
-  it('refuses to invent citations when the model ignored the JSON contract', () => {
+  it('shows a prose answer, and says it has no citable quotes', () => {
+    // Prose is the *degraded* shape, not an error: the reader still gets an answer. What they
+    // do not get is a citation, because none was offered in a form that could be checked.
     const result = verifyAnswer('这是一段没有任何引用标记的普通回答。', PASSAGES);
+    expect(result.status).toBe('recovered');
     expect(result.citations).toEqual([]);
     expect(result.groundedInText).toBeNull();
     expect(result.answer).toBe('这是一段没有任何引用标记的普通回答。');
-    expect(result.warnings.join(' ')).toContain('没有按约定返回 JSON');
+    expect(result.diagnostics.recovery).toBe('prose');
   });
 
   it('passes through a model that says the evidence is not enough', () => {
@@ -186,10 +190,10 @@ describe('verifyAnswer: answers that cannot be used', () => {
     expect(result.warnings.join(' ')).toContain('空的回答');
   });
 
-  it('says when the JSON had no answer field at all', () => {
+  it('calls a JSON object with no answer field malformed, not empty', () => {
     const result = verifyAnswer(jsonOf({ citations: [], note: 'oops' }), PASSAGES);
     expect(result.answer).toBe('');
-    expect(result.warnings.join(' ')).toContain('没有可用的 answer');
+    expect(result.status).toBe('malformed');
     expect(result.citations).toEqual([]);
   });
 
@@ -199,10 +203,12 @@ describe('verifyAnswer: answers that cannot be used', () => {
     ['an object', { answer: { text: 'x' } }],
     ['an array', { answer: ['x'] }],
   ])('refuses an answer field that is %s', (_label, shape) => {
+    // A non-string `answer` is not an answer this service can show, and the JSON it sits in is
+    // never displayed in its place. The type mismatch is the whole reason for the refusal.
     const result = verifyAnswer(jsonOf(shape), PASSAGES);
     expect(result.answer).toBe('');
+    expect(result.status).toBe('malformed');
     expect(result.citations).toEqual([]);
-    expect(result.warnings.join(' ')).toContain('没有可用的 answer');
   });
 
   it('treats a non-boolean groundedInText as no claim rather than as false', () => {
@@ -323,8 +329,218 @@ describe('verifyAnswer: what citation checking does not claim', () => {
     expect(Object.keys(result).sort()).toEqual([
       'answer',
       'citations',
+      'diagnostics',
       'groundedInText',
+      'status',
       'warnings',
     ]);
+  });
+});
+
+/**
+ * The contract this service asks for now, and the shapes it has to survive when a model does
+ * not follow it.
+ *
+ * The order of these cases is the order `parseModelOutput` tries them, and each names the status
+ * the interface keys off. What every case has in common is that a citation still has to be
+ * verbatim: recovery is of the shape, never of the evidence.
+ */
+const SENTINEL = '<<<CITATIONS>>>';
+
+function sentinelReply(answer, block) {
+  return `${answer}\n${SENTINEL}\n${block}`;
+}
+
+describe('parseModelOutput: the agreed contract', () => {
+  it('reads plain text followed by a citation block', () => {
+    const parsed = parseModelOutput(
+      sentinelReply('作者说 [1]。', '{"groundedInText": true, "citations": []}'),
+    );
+    expect(parsed.ok).toBe(true);
+    expect(parsed.status).toBe('valid');
+    expect(parsed.text).toBe('作者说 [1]。');
+    expect(parsed.value.groundedInText).toBe(true);
+  });
+
+  it('keeps the answer byte for byte, LaTeX and all', () => {
+    // The whole point of taking the answer out of JSON: nothing escapes it, so nothing is lost.
+    const answer =
+      '这里 $R(u) := \\log \\frac{P_1(u)}{P_0(u)}$ 是对数比，$\\beta \\ge 0$ 控制强度。';
+    const parsed = parseModelOutput(sentinelReply(answer, '{"citations": []}'));
+    expect(parsed.text).toBe(answer);
+  });
+
+  it('accepts a bare array as the citation block', () => {
+    const parsed = parseModelOutput(
+      sentinelReply('见 [1]。', '[{"n":1,"passageId":"selection","quote":"normalised"}]'),
+    );
+    expect(parsed.status).toBe('valid');
+    expect(parsed.value.citations).toHaveLength(1);
+  });
+
+  it('separates the answer from a broken block without losing the answer', () => {
+    const parsed = parseModelOutput(sentinelReply('作者说 [1]。', '{"citations": [{"n":1,'));
+    expect(parsed.ok).toBe(true);
+    expect(parsed.status).toBe('recovered');
+    expect(parsed.text).toBe('作者说 [1]。');
+    expect(parsed.value.citations).toEqual([]);
+    expect(parsed.recovery).toBe('sentinel-broken-block');
+  });
+
+  it('shows an answer that simply has no block', () => {
+    const parsed = parseModelOutput('只是普通的一段回答，没有引用。');
+    expect(parsed.status).toBe('recovered');
+    expect(parsed.recovery).toBe('prose');
+  });
+
+  it('refuses a reply that is only the sentinel and metadata', () => {
+    // There is no answer body. The block is protocol, and showing it would be showing JSON.
+    const parsed = parseModelOutput(sentinelReply('', '{"citations": []}'));
+    expect(parsed.ok).toBe(false);
+    expect(parsed.status).toBe('malformed');
+  });
+
+  it('takes the last sentinel, so a quotation of it cannot split the answer early', () => {
+    const answer = `模型在正文里提到了 ${SENTINEL} 这个词。`;
+    const parsed = parseModelOutput(`${answer}\n${SENTINEL}\n{"citations": []}`);
+    expect(parsed.text).toBe(answer.trim());
+  });
+});
+
+describe('parseModelOutput: the shapes that are not the contract', () => {
+  it('still reads the JSON envelope the old contract asked for', () => {
+    const parsed = parseModelOutput(jsonOf({ answer: '旧格式', citations: [] }));
+    expect(parsed.status).toBe('valid');
+    expect(parsed.recovery).toBe('legacy-json');
+  });
+
+  it('survives complex LaTeX inside a legacy JSON envelope', () => {
+    const latex = '$$Z_\\beta = \\sum_u P_1(u)\\, e^{\\beta R(u)}$$';
+    const parsed = parseModelOutput(jsonOf({ answer: latex, citations: [] }));
+    expect(parsed.text).toBe(latex);
+  });
+
+  it('never returns protocol text as an answer', () => {
+    // Every one of these is something a model plausibly returns when it tries to answer in
+    // JSON and gets it wrong. None of them may reach the reader as prose.
+    for (const text of [
+      '{"answer": 42, "citations": []}',
+      '{"answer": null, "citations": []}',
+      '{"answer": {"text": "x"}, "citations": []}',
+      '{"citations": [], "note": "oops"}',
+    ]) {
+      const parsed = parseModelOutput(text);
+      expect(parsed.ok).toBe(false);
+      expect(parsed.text).toBe('');
+    }
+  });
+
+  it('refuses output that is not a string at all', () => {
+    expect(parseModelOutput(undefined).ok).toBe(false);
+    expect(parseModelOutput('').ok).toBe(false);
+  });
+});
+
+describe('the real reply that broke the old contract', () => {
+  const saved = JSON.parse(
+    readFileSync('server/providers/fixtures/live-formula-escaped-envelope.json', 'utf8'),
+  );
+
+  it('is the saved response, not a retyped imitation', () => {
+    expect(saved.raw.length).toBe(saved.chars);
+    expect(saved.raw.length).toBeGreaterThan(3900);
+    expect(saved.raw).toContain('\\"groundedInText\\"');
+    // The failure, stated as a fact about the bytes: the model escaped its own protocol into
+    // the answer string, so the envelope never closes.
+    expect(saved.raw.startsWith('{"answer": "')).toBe(true);
+    expect(saved.finishReason).toBe(null);
+  });
+
+  it('is recovered deterministically, with no guessing', () => {
+    const parsed = parseModelOutput(saved.raw);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.status).toBe('recovered');
+    expect(parsed.recovery).toBe('escaped-envelope');
+    expect(parsed.text.startsWith('先说明提取质量')).toBe(true);
+    expect(parsed.text.length).toBe(2829);
+    expect(parsed.value.citations).toHaveLength(7);
+    expect(parsed.value.groundedInText).toBe(true);
+  });
+
+  it('shows no protocol, no escapes and no JSON in what the reader would see', () => {
+    const parsed = parseModelOutput(saved.raw);
+    for (const leak of ['"citations"', '"groundedInText"', '"passageId"', '\\"', '{"answer"']) {
+      expect(parsed.text).not.toContain(leak);
+    }
+  });
+
+  it('keeps the LaTeX, rather than eating the backslashes', () => {
+    const parsed = parseModelOutput(saved.raw);
+    // Un-escaping structural quotes must leave `\log` and `\frac` alone: they are `\\` in the
+    // JSON source and become a single backslash in the decoded string, which is the right one.
+    expect(parsed.text).toContain('\\log');
+    expect(parsed.text).toContain('\\frac');
+  });
+
+  it('still verifies every citation against the passages it was given', () => {
+    // The passages that went with this reply were not saved, so nothing can match — and that is
+    // exactly the point: recovery does not certify anything. All seven are refused.
+    const result = verifyAnswer(saved.raw, PASSAGES);
+    expect(result.status).toBe('recovered');
+    expect(result.diagnostics.citationEntries).toBe(7);
+    expect(result.diagnostics.citationsAccepted).toBe(0);
+    expect(result.diagnostics.citationsRejected).toBe(7);
+    expect(result.citations).toEqual([]);
+    expect(result.warnings.join(' ')).toContain('未通过校验');
+  });
+
+  it('accepts one of them when the passage it quotes is supplied', () => {
+    const quote = 'where β ≥ 0 controls guidance strength and Zβ is the normalizing constant';
+    const result = verifyAnswer(saved.raw, [
+      { id: 'selection', page: 7, selection: true, text: quote },
+    ]);
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0].n).toBe(5);
+    expect(result.citations[0].page).toBe(7);
+  });
+});
+
+describe('verifyAnswer: status says what happened', () => {
+  it('marks a truncated reply incomplete instead of complete', () => {
+    const result = verifyAnswer(sentinelReply('写了一半', '{"citations": []}'), PASSAGES, {
+      truncated: true,
+    });
+    expect(result.status).toBe('incomplete');
+    expect(result.answer).toBe('写了一半');
+    expect(result.warnings.join(' ')).toContain('截断');
+  });
+
+  it('marks a truncated reply that also failed to parse as incomplete, not malformed', () => {
+    // The cut is the explanation for the breakage; saying "malformed" alone would hide it.
+    const result = verifyAnswer('{"answer": "写了一半', PASSAGES, { truncated: true });
+    expect(result.status).toBe('incomplete');
+    expect(result.answer).toBe('');
+  });
+
+  it('marks unreadable output malformed', () => {
+    const result = verifyAnswer('{"answer": 42}', PASSAGES);
+    expect(result.status).toBe('malformed');
+    expect(result.answer).toBe('');
+  });
+
+  it('records what happened in diagnostics, and nothing about the text', () => {
+    const result = verifyAnswer(sentinelReply('见 [1]。', '{"citations": []}'), PASSAGES);
+    expect(Object.keys(result.diagnostics).sort()).toEqual([
+      'citationEntries',
+      'citationsAccepted',
+      'citationsRejected',
+      'rawChars',
+      'recovery',
+    ]);
+    expect(result.diagnostics.rawChars).toBeGreaterThan(0);
+    // Numbers and enums only: no prompt, no paper text, no key.
+    for (const value of Object.values(result.diagnostics)) {
+      expect(['number', 'string'].includes(typeof value) || value === null).toBe(true);
+    }
   });
 });

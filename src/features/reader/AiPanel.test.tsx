@@ -21,10 +21,20 @@ function answer(overrides: Partial<AiAnswer> = {}): AiAnswer {
     model: 'mock-1',
     online: false,
     mode: 'explain',
+    status: 'valid',
     answer: '作者在这里说的是 [1]。',
     groundedInText: true,
     citations: [CITATION],
     warnings: [],
+    diagnostics: {
+      rawChars: 120,
+      recovery: null,
+      citationEntries: 1,
+      citationsAccepted: 1,
+      citationsRejected: 0,
+      finishReason: 'stop',
+      truncated: false,
+    },
     usage: null,
     ...overrides,
   };
@@ -46,6 +56,7 @@ function session(overrides: Partial<AiTurn> = {}, mode: AiTurn['mode'] = 'explai
     },
     pageText: 'the rotated attention mechanism which lets us drop position embeddings',
     layoutNotice: null,
+    fragmentation: null,
   };
   const request = buildAskContext({
     paperId: source.paperId,
@@ -255,5 +266,126 @@ describe('AiPanel', () => {
     setup({ session: session({ answer: answer({ answer: injected, citations: [] }) }) });
     expect(screen.getByText(injected)).toBeInTheDocument();
     expect(document.querySelector('img')).toBeNull();
+  });
+
+  /**
+   * What the reader is shown when the reply did not come back in one piece.
+   *
+   * The governing rule is that the interface shows either the answer or a sentence about why
+   * there is none — never the protocol that carried it.
+   */
+  describe('when the reply could not be read', () => {
+    const malformed = () =>
+      answer({
+        status: 'malformed',
+        answer: '',
+        citations: [],
+        groundedInText: null,
+        diagnostics: {
+          rawChars: 41,
+          recovery: 'protocol-text',
+          citationEntries: 0,
+          citationsAccepted: 0,
+          citationsRejected: 0,
+          finishReason: 'stop',
+          truncated: false,
+        },
+      });
+
+    it('says so instead of printing the protocol', () => {
+      setup({ session: session({ answer: malformed() }) });
+      expect(screen.getByRole('alert')).toHaveTextContent(/没法还原成回答/);
+      expect(screen.queryByText(/"answer"/)).not.toBeInTheDocument();
+      expect(document.querySelector('.ai-answer-body')).toBeNull();
+    });
+
+    it('offers a manual retry, and does not offer to save an empty note', async () => {
+      const { onRetry } = setup({ session: session({ answer: malformed() }) });
+      await userEvent.click(screen.getByRole('button', { name: '重试' }));
+      expect(onRetry).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('button', { name: /保存为笔记/ })).not.toBeInTheDocument();
+    });
+
+    it('says a cut-off answer is cut off', () => {
+      setup({
+        session: session({
+          answer: answer({ status: 'incomplete', answer: '写到这里', citations: [] }),
+        }),
+      });
+      expect(screen.getByText(/没有写完/)).toBeInTheDocument();
+      expect(screen.getByText('写到这里')).toBeInTheDocument();
+    });
+
+    it('says there is no citation to check when the reply carried no block', () => {
+      setup({
+        session: session({
+          answer: answer({
+            status: 'recovered',
+            answer: '一段没有引用的回答。',
+            citations: [],
+            diagnostics: { rawChars: 30, recovery: 'prose' } as never,
+          }),
+        }),
+      });
+      expect(screen.getByText(/没有给出引用块/)).toBeInTheDocument();
+    });
+
+    it('keeps the diagnostics behind a disclosure that starts closed', () => {
+      const { view } = setup({ session: session({ answer: malformed() }) });
+      const details = view.container.querySelector('details.ai-diagnostics');
+      expect(details).not.toBeNull();
+      expect(details?.hasAttribute('open')).toBe(false);
+      expect(details?.querySelector('summary')).toHaveTextContent('技术细节');
+    });
+  });
+
+  describe('mathematics in an answer', () => {
+    it('typesets a formula and leaves its source available', () => {
+      const { view } = setup({
+        session: session({
+          answer: answer({
+            answer: '对数比 $R(u) := \\log \\frac{P_1(u)}{P_0(u)}$ 是核心。',
+            citations: [],
+          }),
+        }),
+      });
+      const maths = view.container.querySelectorAll('.ai-math');
+      expect(maths.length).toBe(1);
+      expect(maths[0]?.getAttribute('data-latex')).toBe('R(u) := \\log \\frac{P_1(u)}{P_0(u)}');
+      // KaTeX produced real markup, so the formula is typeset rather than shown as source. The
+      // `<annotation>` element inside it deliberately still carries the LaTeX: that is what makes
+      // the formula copyable and readable to a screen reader.
+      expect(maths[0]?.querySelector('.katex-html')).not.toBeNull();
+      expect(maths[0]?.querySelector('annotation')?.textContent).toBe(
+        'R(u) := \\log \\frac{P_1(u)}{P_0(u)}',
+      );
+    });
+
+    it('says the formula is the model’s typesetting, not text from the paper', () => {
+      setup({
+        session: session({
+          answer: answer({ answer: '见 $x^2$。', citations: [] }),
+        }),
+      });
+      expect(screen.getByText(/不是从 PDF 里提取出来的原文/)).toBeInTheDocument();
+    });
+
+    it('falls back to the visible LaTeX when KaTeX cannot read it', () => {
+      const { view } = setup({
+        session: session({
+          answer: answer({ answer: '坏公式 $\\frac{$ 在这里。', citations: [] }),
+        }),
+      });
+      expect(view.container.querySelector('.ai-math-fallback')).not.toBeNull();
+    });
+
+    it('never lets KaTeX reach outside the formula', () => {
+      const { view } = setup({
+        session: session({
+          answer: answer({ answer: '$\\href{javascript:alert(1)}{x}$', citations: [] }),
+        }),
+      });
+      expect(view.container.querySelector('a')).toBeNull();
+    });
   });
 });

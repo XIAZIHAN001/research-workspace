@@ -20,6 +20,16 @@ export const CONTEXT_WINDOW = 900;
 /** Matches the service's per-passage ceiling, so a long selection cannot be silently dropped. */
 export const MAX_PASSAGE_CHARS = 2000;
 
+/**
+ * Mirrors the service's `historyChars` limit.
+ *
+ * It is duplicated here on purpose: the browser has to build a request the service will accept,
+ * and a follow-up whose history contained one 2829-character answer was rejected with a 400 —
+ * measured, during the Phase 4.2 acceptance run, on the recovered real response. Trimming here
+ * keeps the conversation going instead of ending it.
+ */
+export const MAX_HISTORY_CHARS = 2000;
+
 export const PASSAGE_IDS = {
   selection: 'selection',
   before: 'before',
@@ -117,4 +127,37 @@ export function describeContext(request: AiAskRequest): string {
   }
   parts.push(`合计 ${String(summary.totalChars)} 字`);
   return parts.join('；');
+}
+
+/** One exchange, as far as history is concerned: a question and whatever came back. */
+export interface HistoryTurn {
+  question: string;
+  answer: string | null;
+}
+
+/**
+ * The recent part of a conversation, in the shape the service accepts.
+ *
+ * Two rules, both learned from a request the service refused:
+ *
+ * - a turn with no answer contributes nothing. An empty assistant message is noise the model
+ *   has to read past, and a failed turn is not part of what was said;
+ * - no single message exceeds the service's own limit. The recovered answer from the live run
+ *   is 2829 characters, and sending it back verbatim made the *next* question a 400. Trimming
+ *   keeps the conversation usable; the reader is not shown the trimmed copy, only this one.
+ */
+export function buildHistory(
+  turns: readonly HistoryTurn[],
+  { maxTurns = 6, maxChars = MAX_HISTORY_CHARS }: { maxTurns?: number; maxChars?: number } = {},
+): AiHistoryTurn[] {
+  const flatten = (text: string): string =>
+    text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 1))}…`;
+
+  const history: AiHistoryTurn[] = [];
+  for (const turn of turns) {
+    if (turn.answer === null || turn.answer.trim() === '') continue;
+    history.push({ role: 'user', content: flatten(turn.question) });
+    history.push({ role: 'assistant', content: flatten(turn.answer) });
+  }
+  return history.slice(-maxTurns);
 }

@@ -22,7 +22,7 @@ import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
-import { inspectPageLayout } from './layout';
+import { inspectPageLayout, measureFragmentation } from './layout';
 import { NotesPanel } from './NotesPanel';
 import { PdfPage } from './PdfPage';
 import {
@@ -401,6 +401,11 @@ export function ReaderView({
         pageText,
         layoutNotice:
           pageRoot === null || pageRoot === undefined ? null : inspectPageLayout(pageRoot).notice,
+        // Measured here, while the rendered page that the numbers describe is still on screen.
+        fragmentation:
+          pageRoot === null || pageRoot === undefined
+            ? null
+            : measureFragmentation(pageRoot, pendingSelection.anchor),
       },
       mode,
       question,

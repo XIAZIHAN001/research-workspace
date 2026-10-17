@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { citedInOrder, segmentAnswer, segmentParagraph } from './render';
+import { citedInOrder, mathIn, segmentAnswer, segmentParagraph } from './render';
 import type { AiCitation } from './types';
 
 const C1: AiCitation = { n: 1, passageId: 'selection', page: 3, quote: 'alpha', selection: true };
@@ -8,7 +8,11 @@ const C2: AiCitation = { n: 2, passageId: 'after', page: 3, quote: 'beta', selec
 /** The rendered text of a paragraph, with citations shown as their marker. */
 function flatten(pieces: ReturnType<typeof segmentParagraph>): string {
   return pieces
-    .map((piece) => (piece.kind === 'text' ? piece.text : `[${String(piece.citation.n)}]`))
+    .map((piece) => {
+      if (piece.kind === 'text') return piece.text;
+      if (piece.kind === 'math') return `$${piece.latex}$`;
+      return `[${String(piece.citation.n)}]`;
+    })
     .join('');
 }
 
@@ -81,5 +85,90 @@ describe('citedInOrder', () => {
 
   it('ignores markers that were never verified', () => {
     expect(citedInOrder('[9]', [C1])).toEqual([]);
+  });
+});
+
+describe('segmentParagraph: mathematics', () => {
+  it('pulls inline maths out of a Chinese sentence and keeps the words around it', () => {
+    const pieces = segmentParagraph('其中 $P_1(u)$ 是基础分布。', []);
+    expect(pieces).toEqual([
+      { kind: 'text', text: '其中 ' },
+      { kind: 'math', latex: 'P_1(u)', display: false },
+      { kind: 'text', text: ' 是基础分布。' },
+    ]);
+  });
+
+  it('marks a double-dollar formula as display maths', () => {
+    const pieces = segmentParagraph('$$Z_\\beta = \\sum_u P_1(u)$$', []);
+    expect(pieces).toEqual([{ kind: 'math', latex: 'Z_\\beta = \\sum_u P_1(u)', display: true }]);
+  });
+
+  it('accepts the backslash-bracket forms a model writes anyway', () => {
+    expect(segmentParagraph('a \\(x^2\\) b', [])).toEqual([
+      { kind: 'text', text: 'a ' },
+      { kind: 'math', latex: 'x^2', display: false },
+      { kind: 'text', text: ' b' },
+    ]);
+    expect(segmentParagraph('\\[x^2\\]', [])).toEqual([
+      { kind: 'math', latex: 'x^2', display: true },
+    ]);
+  });
+
+  it('keeps a citation clickable next to a formula', () => {
+    const pieces = segmentParagraph('$R(u)$ 的取值见 [1]。', [C1]);
+    expect(pieces.map((piece) => piece.kind)).toEqual(['math', 'text', 'citation', 'text']);
+    expect(pieces[2]).toMatchObject({ kind: 'citation', citation: { n: 1 } });
+  });
+
+  it('leaves an unclosed dollar as the text it is', () => {
+    // A price, or a formula the model never finished. Turning either into mathematics would
+    // swallow the rest of the paragraph.
+    expect(segmentParagraph('costs $5 or more', [])).toEqual([
+      { kind: 'text', text: 'costs $5 or more' },
+    ]);
+  });
+
+  it('does not treat an escaped dollar sign as a delimiter', () => {
+    expect(segmentParagraph('a \\$5 and \\$6', [])).toEqual([
+      { kind: 'text', text: 'a \\$5 and \\$6' },
+    ]);
+  });
+
+  it('refuses an inline pair with padding, which is how a lone $ pairs with the next one', () => {
+    expect(segmentParagraph('$ one $', [])).toEqual([{ kind: 'text', text: '$ one $' }]);
+  });
+
+  it('never rewrites the LaTeX it passes on', () => {
+    const latex = 'R(u) := \\log \\frac{P_1(u)}{P_0(u)}';
+    const pieces = segmentParagraph(`公式 $${latex}$ 是对数比。`, []);
+    expect(pieces[1]).toEqual({ kind: 'math', latex, display: false });
+  });
+});
+
+describe('segmentAnswer: formula blocks', () => {
+  it('keeps a display formula that spans lines in one piece', () => {
+    const answer =
+      '先看这个式子：\n$$\nZ_\\beta = \\sum_u P_1(u) e^{\\beta R(u)}\n$$\n然后归一化。';
+    const paragraphs = segmentAnswer(answer, []);
+    const maths = paragraphs.flatMap((paragraph) =>
+      paragraph.pieces.filter((piece) => piece.kind === 'math'),
+    );
+    expect(maths).toHaveLength(1);
+    expect(maths[0]).toMatchObject({ display: true });
+    expect(paragraphs).toHaveLength(1);
+  });
+
+  it('still splits on blank lines', () => {
+    expect(segmentAnswer('第一段\n\n第二段', [])).toHaveLength(2);
+  });
+});
+
+describe('mathIn', () => {
+  it('lists the LaTeX sources in the order they appear', () => {
+    expect(mathIn('先 $a$ 后 $$b$$')).toEqual(['a', 'b']);
+  });
+
+  it('is empty when there is no mathematics', () => {
+    expect(mathIn('没有公式的回答。')).toEqual([]);
   });
 });

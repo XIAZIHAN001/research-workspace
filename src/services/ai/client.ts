@@ -67,11 +67,26 @@ function isFailure(value: unknown): value is { error: string; message: string } 
   );
 }
 
+const STATUSES = new Set(['valid', 'recovered', 'malformed', 'incomplete', 'provider-error']);
+
+/**
+ * Reads an answer, tolerating a service that predates `status`.
+ *
+ * A stale service process is a real thing — it happened during the Phase 4.1 run, where an old
+ * build kept answering on the port. An answer without a status is therefore treated as
+ * `recovered` rather than `valid`: the interface stops claiming the contract was followed, which
+ * is the honest reading of "this reply did not say".
+ */
 function isAnswer(value: unknown): value is AiAnswer {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Partial<AiAnswer>;
   if (typeof candidate.answer !== 'string') return false;
   if (!Array.isArray(candidate.citations)) return false;
+  if (typeof candidate.status !== 'string' || !STATUSES.has(candidate.status)) {
+    candidate.status = 'recovered';
+  }
+  if (typeof candidate.diagnostics !== 'object') candidate.diagnostics = null;
+  if (!Array.isArray(candidate.warnings)) candidate.warnings = [];
   return true;
 }
 

@@ -59,8 +59,10 @@ describe('createDeepSeekProvider', () => {
     // same budget as the answer, so both settings are sent rather than inherited.
     expect(calls[0].body.thinking).toEqual({ type: 'enabled' });
     expect(calls[0].body.reasoning_effort).toBe('low');
-    // JSON mode is only useful if the prompt asks for JSON too, which the system message does.
-    expect(calls[0].body.response_format).toEqual({ type: 'json_object' });
+    // JSON mode is deliberately *not* requested. The answer is plain text now (see prompt.mjs);
+    // asking for json_object would put a LaTeX-heavy answer back inside a JSON string, which is
+    // the exact shape that lost a real reply when the model escaped its own protocol into it.
+    expect(calls[0].body.response_format).toBeUndefined();
     expect(calls[0].body.messages[0]).toEqual({ role: 'system', content: 'SYS' });
     expect(calls[0].body.messages[1]).toEqual({ role: 'user', content: 'USER' });
   });

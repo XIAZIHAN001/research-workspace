@@ -15,10 +15,20 @@ const ANSWER: AiAnswer = {
   model: 'mock-1',
   online: false,
   mode: 'explain',
+  status: 'valid',
   answer: '解释 [1]',
   groundedInText: true,
   citations: [{ n: 1, passageId: 'selection', page: 2, quote: 'some text', selection: true }],
   warnings: [],
+  diagnostics: {
+    rawChars: 40,
+    recovery: null,
+    citationEntries: 1,
+    citationsAccepted: 1,
+    citationsRejected: 0,
+    finishReason: 'stop',
+    truncated: false,
+  },
   usage: null,
 };
 
@@ -37,6 +47,20 @@ describe('askAi', () => {
   it('returns the answer on success', async () => {
     const outcome = await askAi(REQUEST, { fetchImpl: reply(200, ANSWER) });
     expect(outcome).toEqual({ ok: true, answer: ANSWER });
+  });
+
+  it('stops claiming the contract was followed when the service did not say so', async () => {
+    // A stale service process is a real thing: one kept answering on the port during the live
+    // run and served a build that predated the field. "Unknown" must not read as "valid".
+    const older: Record<string, unknown> = { ...ANSWER };
+    delete older.status;
+    delete older.diagnostics;
+    const outcome = await askAi(REQUEST, { fetchImpl: reply(200, older) });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.answer.status).toBe('recovered');
+    expect(outcome.answer.diagnostics).toBeNull();
+    expect(outcome.answer.warnings).toEqual([]);
   });
 
   it('sends no credential of any kind', async () => {

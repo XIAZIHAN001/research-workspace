@@ -6,11 +6,19 @@
 ## 启动
 
 ```bash
-npm run ai:serve
+npm run ai:serve           # 由 AI_PROVIDER 决定；没设置就是 mock
+npm run ai:serve:offline   # 强制 mock，环境里的 AI_PROVIDER 与密钥一律忽略
+npm run ai:serve:online    # 必须同时有 AI_PROVIDER=deepseek 与密钥，否则拒绝启动
 ```
 
 不配置任何环境变量时使用 **mock provider**：不联网、不计费，用于开发与验收。
 应用启动本身不会产生任何在线调用。
+
+两个不会退让的规矩，都是因为已经出过事：
+
+- **端口被占用就中止，绝不换端口、也绝不连接那个已存在的服务。**
+  它可能是另一套配置，也可能正在调用付费模型。上一次「离线干跑」就是这样打到了真实 API。
+- **`--offline` 是墙，不是默认值。** 机器上导出了密钥也照样能启动一个花不了钱的进程。
 
 ## 连接真实模型
 
@@ -49,8 +57,39 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 | `AI_LOG_REQUESTS`           | 开启                       | 设 `0` 关闭访问日志                             |
 
 模型名与请求格式核对自官方文档 `api-docs.deepseek.com`（`POST /chat/completions`、
-`Authorization: Bearer`、`choices[0].message.content`）。使用在线提供方时以 JSON 输出模式
-请求，因为引用校验需要可解析的结构。
+`Authorization: Bearer`、`choices[0].message.content`）。
+
+**不使用 `response_format: json_object`。** 回答正文是纯文本，只有末尾那一小块引用信息是
+JSON（见下节）。原因是一条实测到的失败：把整段带 LaTeX 的中文回答塞进 JSON 字符串里，
+只要有一个转义写错，整个回答就没了。
+
+### 输出协议
+
+模型被要求输出两部分：
+
+```text
+（正文：纯文本，可以有空行；引用编号写成 [1]；公式写在 $...$ 或 $$...$$ 里）
+
+<<<CITATIONS>>>
+{"groundedInText": true, "citations": [{"n": 1, "passageId": "selection", "quote": "…"}]}
+```
+
+服务端据此给出一个状态，界面按状态决定说什么：
+
+| 状态         | 含义                                                   |
+| ------------ | ------------------------------------------------------ |
+| `valid`      | 按约定返回，两部分都解析成功                           |
+| `recovered`  | 从没按约定返回的输出里**按确定规则**还原出了正文       |
+| `malformed`  | 拿不到可用的正文，且不能猜——界面只说这件事，不显示原文 |
+| `incomplete` | 提供方表示生成提前结束（通常是长度上限）               |
+
+`recovered` 的每一条还原规则都写成了函数并在 `citations.test.mjs` 里有对应用例，
+最典型的一条针对真实失败响应：模型把后续协议**转义进了 `answer` 字符串**，
+把结构性的 `\"` 去掉之后恰好得到唯一一个合法对象。还原规则只修复**形状**，
+每一条引用仍然要逐字通过校验。
+
+响应里的 `diagnostics` 只有数字与枚举（长度、条数、`finish_reason`），
+没有提示词、没有论文原文、没有密钥；界面把它收在「技术细节」里，展开才显示。
 
 ### 思考模式与生成预算
 
@@ -113,11 +152,18 @@ AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
 mock provider 会识别问题里的几个标记，用来在浏览器验收里走到每条失败路径
 （真实模型上它们只是普通文字）：
 
-| 标记                    | 行为                                   |
-| ----------------------- | -------------------------------------- |
-| `[[mock:error]]`        | 返回模型服务错误                       |
-| `[[mock:timeout]]`      | 一直不返回，直到调用方超时或取消       |
-| `[[mock:bad-citation]]` | 返回编造的引文与不存在的段落 id        |
-| `[[mock:plain-text]]`   | 不返回 JSON                            |
-| `[[mock:ungrounded]]`   | 明确表示依据不足                       |
-| `[[mock:html]]`         | 回答里带 `<img onerror>` 与 `<script>` |
+| 标记                        | 行为                                                |
+| --------------------------- | --------------------------------------------------- |
+| `[[mock:error]]`            | 返回模型服务错误                                    |
+| `[[mock:timeout]]`          | 一直不返回，直到调用方超时或取消                    |
+| `[[mock:bad-citation]]`     | 返回编造的引文与不存在的段落 id                     |
+| `[[mock:plain-text]]`       | 只有正文，没有引用块                                |
+| `[[mock:ungrounded]]`       | 明确表示依据不足                                    |
+| `[[mock:html]]`             | 回答里带 `<img onerror>` 与 `<script>`              |
+| `[[mock:broken-json]]`      | 旧格式 JSON，引用数组被截断                         |
+| `[[mock:escaped-envelope]]` | **原样重放**真实失败响应（3971 字符，见 fixtures/） |
+| `[[mock:protocol-only]]`    | 只有协议、没有正文（`answer` 不是字符串）           |
+| `[[mock:truncated]]`        | 正文完整但提供方报告 `finish_reason=length`         |
+
+`[[mock:escaped-envelope]]` 回放的是 `providers/fixtures/live-formula-escaped-envelope.json`，
+即 2026-10-17 那次真实 DeepSeek 调用的原始返回，不是手写的仿制品。

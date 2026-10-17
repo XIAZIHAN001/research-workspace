@@ -23,6 +23,18 @@ describe('readConfig', () => {
     );
   });
 
+  it('cannot be talked into the online provider when it was started offline', () => {
+    // `--offline` is a wall, not a default: a machine with a key exported into its shell must
+    // still be able to start a service that is incapable of spending anything.
+    const config = readConfig(
+      { AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'sk-secret' },
+      { forceOffline: true },
+    );
+    expect(config.provider).toBe('mock');
+    expect(config.apiKey).toBe('');
+    expect(configProblems(config)).toEqual([]);
+  });
+
   it('never takes a binding address from the environment', () => {
     // The listen address is not a setting at all: it is a constant in the module.
     expect(LOOPBACK_HOST).toBe('127.0.0.1');

@@ -336,3 +336,40 @@ export function buildInjectionPdf() {
     ].join('\n'),
   ]);
 }
+
+/**
+ * A formula written one glyph at a time, the way a typesetting programme actually stores it.
+ *
+ * Each character is placed with its own `Td` and a gap wide enough that pdf.js opens a new text
+ * span for it — which is exactly what a reader selecting an equation in a real paper gets. This
+ * fixture exists so the fragmentation warning can be exercised on text that is genuinely
+ * fragmented, instead of being asserted only in a unit test.
+ */
+function glyphRun(font, size, x, y, parts) {
+  const step = 22;
+  const steps = parts.map((part, index) =>
+    index === 0
+      ? `${String(x)} ${String(y)} Td (${literal(part)}) Tj`
+      : `${String(step)} 0 Td (${literal(part)}) Tj`,
+  );
+  return ['BT', `/${font} ${String(size)} Tf`, ...steps, 'ET'].join('\n');
+}
+
+export function buildFragmentedPdf() {
+  const parts = ['R', '(', 'u', ')', ':=', 'log', 'P', '1', '(', 'u', ')'];
+  return buildPages([
+    [
+      line(SANS, 16, 56, 790, 'A Page With a Formula in It'),
+      line(SANS, 11, 56, 754, 'The line below is a formula written one glyph at a time.'),
+      glyphRun(SANS, 12, 56, 724, parts),
+      line(SANS, 11, 56, 694, 'The prose after it is ordinary text again.'),
+      line(
+        SANS,
+        11,
+        56,
+        678,
+        'It exists so that selecting the formula above starts and ends here.',
+      ),
+    ].join('\n'),
+  ]);
+}

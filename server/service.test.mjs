@@ -59,7 +59,7 @@ describe('POST /api/ai/ask', () => {
     expect(body.warnings.join(' ')).toContain('未通过校验');
   });
 
-  it('degrades to plain text when the model ignores the JSON contract', async () => {
+  it('passes a prose answer through and records that no citation could be checked', async () => {
     const { base } = await service();
     const response = await postJson(
       base,
@@ -67,9 +67,85 @@ describe('POST /api/ai/ask', () => {
       validAsk({ mode: 'ask', question: '说明一下[[mock:plain-text]]' }),
     );
     const body = await response.json();
+    expect(body.status).toBe('recovered');
+    expect(body.answer).toContain('引用块');
     expect(body.citations).toEqual([]);
     expect(body.groundedInText).toBeNull();
-    expect(body.warnings.join(' ')).toContain('JSON');
+    expect(body.diagnostics.recovery).toBe('prose');
+  });
+
+  /**
+   * The output shapes, end to end through the real service.
+   *
+   * These are the cases the reader is protected from: a reply whose JSON never closed, a reply
+   * that is nothing but protocol, and one that was cut off. What matters is what comes back in
+   * the payload — the status, and whether there is an answer at all.
+   */
+  it('recovers the saved live failure instead of showing its JSON', async () => {
+    const { base } = await service();
+    const response = await postJson(
+      base,
+      '/api/ai/ask',
+      validAsk({ mode: 'ask', question: '把真实失败原样放一遍[[mock:escaped-envelope]]' }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('recovered');
+    expect(body.diagnostics.recovery).toBe('escaped-envelope');
+    expect(body.answer.startsWith('先说明提取质量')).toBe(true);
+    expect(body.answer.length).toBeGreaterThan(2500);
+    // Not one character of protocol, and not one escape sequence.
+    expect(body.answer).not.toContain('groundedInText');
+    expect(body.answer).not.toContain('"citations"');
+    expect(body.answer).not.toContain('\\"');
+    // Every citation was checked against the passages actually sent, and none of them matched.
+    expect(body.diagnostics.citationEntries).toBe(7);
+    expect(body.citations).toEqual([]);
+    expect(body.diagnostics.finishReason).toBe('stop');
+  });
+
+  it('returns no answer at all when the reply is only protocol', async () => {
+    const { base } = await service();
+    const response = await postJson(
+      base,
+      '/api/ai/ask',
+      validAsk({ mode: 'ask', question: '这次只给协议[[mock:protocol-only]]' }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.status).toBe('malformed');
+    expect(body.answer).toBe('');
+    expect(body.citations).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain('"answer": 42');
+  });
+
+  it('labels a cut-off reply as incomplete', async () => {
+    const { base } = await service();
+    const response = await postJson(
+      base,
+      '/api/ai/ask',
+      validAsk({ mode: 'ask', question: '这次被截断了[[mock:truncated]]' }),
+    );
+    const body = await response.json();
+    expect(body.status).toBe('incomplete');
+    expect(body.diagnostics.finishReason).toBe('length');
+    expect(body.diagnostics.truncated).toBe(true);
+    expect(body.answer).not.toBe('');
+  });
+
+  it('sends the reader nothing about the reply except numbers and enums', async () => {
+    const { base } = await service();
+    const response = await postJson(base, '/api/ai/ask', validAsk({ mode: 'explain' }));
+    const { diagnostics } = await response.json();
+    expect(Object.keys(diagnostics).sort()).toEqual([
+      'citationEntries',
+      'citationsAccepted',
+      'citationsRejected',
+      'finishReason',
+      'rawChars',
+      'recovery',
+      'truncated',
+    ]);
   });
 
   it('passes an ungrounded answer through with the flag set', async () => {

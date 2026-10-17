@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "vite",
     "ai:serve": "node server/start.mjs",
+    "ai:serve:offline": "node server/start.mjs --offline",
+    "ai:serve:online": "node server/start.mjs --online",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
@@ -28,6 +30,7 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },
   "dependencies": {
+    "katex": "0.19.0",
     "lucide-react": "1.57.0",
     "pdfjs-dist": "6.4.299",
     "react": "19.3.1",

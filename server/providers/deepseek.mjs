@@ -113,10 +113,13 @@ export function createDeepSeekProvider({
             max_tokens: maxTokens,
             temperature: 0.3,
             stream: false,
-            // The answer carries citations that have to be checked against the passages, so it
-            // is requested as JSON. The prompt instructs the model to produce JSON, which this
-            // mode requires — without it the model may emit whitespace until the token limit.
-            response_format: { type: 'json_object' },
+            // Deliberately *not* `response_format: json_object`.
+            //
+            // The answer is now plain text ending in a small JSON citation block (see
+            // `prompt.mjs`). JSON mode would put the whole LaTeX-heavy answer back inside a
+            // JSON string, which is the exact shape that failed on a real reply: the model
+            // escaped its own protocol into `answer` and the envelope never closed. The one
+            // part that must be JSON is small, and it is checked rather than trusted.
           }),
           signal: controller.signal,
         });
@@ -195,6 +198,8 @@ export function createDeepSeekProvider({
         // `length` is the documented way to learn the answer hit the token ceiling; the other
         // two mean the service stopped it for its own reasons, which also leaves it incomplete.
         truncated: finishReason !== null && INCOMPLETE_REASONS.has(finishReason),
+        /** Why generation stopped, verbatim from the provider. Safe to record: an enum, no text. */
+        finishReason,
         stopped: finishReason,
       };
     },

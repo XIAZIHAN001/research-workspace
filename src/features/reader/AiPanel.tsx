@@ -10,8 +10,14 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { describeContext, PASSAGE_IDS } from '../../services/ai/context';
-import { segmentAnswer } from '../../services/ai/render';
-import { AI_MODE_LABEL, type AiCitation, type AiHealth } from '../../services/ai/types';
+import { mathIn, segmentAnswer } from '../../services/ai/render';
+import {
+  AI_MODE_LABEL,
+  type AiAnswer,
+  type AiCitation,
+  type AiHealth,
+} from '../../services/ai/types';
+import { AiMath } from './AiMath';
 import type { AiSession, AiTurn } from './useAiReading';
 
 interface AiPanelProps {
@@ -30,7 +36,7 @@ interface AiPanelProps {
 
 const MAX_QUESTION = 1000;
 
-/** Renders an answer as text with the verified citations turned into buttons. */
+/** Renders an answer as text, mathematics and verified citations. */
 function AnswerBody({
   answer,
   citations,
@@ -47,10 +53,12 @@ function AnswerBody({
         // Paragraphs have no identity of their own; the index is the paragraph's position and
         // never changes for a given answer, which is the whole of what the key needs to be.
         <p key={index}>
-          {paragraph.pieces.map((piece, position) =>
-            piece.kind === 'text' ? (
-              <span key={position}>{piece.text}</span>
-            ) : (
+          {paragraph.pieces.map((piece, position) => {
+            if (piece.kind === 'math') {
+              return <AiMath key={position} latex={piece.latex} display={piece.display} />;
+            }
+            if (piece.kind === 'text') return <span key={position}>{piece.text}</span>;
+            return (
               <button
                 key={position}
                 type="button"
@@ -62,8 +70,8 @@ function AnswerBody({
               >
                 [{piece.citation.n}] 第 {piece.citation.page} 页
               </button>
-            ),
-          )}
+            );
+          })}
         </p>
       ))}
     </div>
@@ -90,6 +98,135 @@ function AnswerOrNothing({
     return <p className="ai-warn">这次没有得到可显示的回答正文。</p>;
   }
   return <AnswerBody answer={answer} citations={citations} onJump={onJump} />;
+}
+
+/**
+ * Whatever can be shown of one answer, or a plain statement that nothing can.
+ *
+ * A reply the service could not read is not shown at all — not as JSON, not as its protocol
+ * fields, not as escaped text. The reader gets a sentence saying so and a manual retry; the raw
+ * output stays on the service, where it is a diagnostic rather than an answer.
+ */
+function AnswerSurface({
+  answer,
+  onJump,
+  onRetry,
+}: {
+  answer: AiAnswer;
+  onJump: (citation: AiCitation) => void;
+  onRetry: () => void;
+}) {
+  if (answer.status === 'malformed') {
+    return (
+      <div className="ai-failure" role="alert">
+        <p>
+          模型这次返回的内容没法还原成回答：它不是一段可以直接读的文字，也没有可用的正文。原始输出没有显示出来。
+        </p>
+        <button type="button" className="btn" onClick={onRetry}>
+          重试
+        </button>
+      </div>
+    );
+  }
+  return <AnswerOrNothing answer={answer.answer} citations={answer.citations} onJump={onJump} />;
+}
+
+/**
+ * The things worth saying about an answer that are not its text.
+ *
+ * Kept in one place so the translation layout and the ordinary one say the same things: a reply
+ * that was cut off, a reply with no citable block, and — whenever there is mathematics in it —
+ * the reminder that the formula is the model's own typesetting and not something extracted from
+ * the PDF.
+ */
+function AnswerStatusNotes({ answer }: { answer: AiAnswer }) {
+  const hasMath = mathIn(answer.answer).length > 0;
+  return (
+    <>
+      {answer.status === 'incomplete' && (
+        <p className="ai-warn" role="status">
+          <TriangleAlert size={13} aria-hidden="true" />
+          模型没有写完就停了，下面是已经生成的部分。它不完整，不要把它当成完整的回答。
+        </p>
+      )}
+      {answer.status === 'recovered' && answer.diagnostics?.recovery === 'prose' && (
+        <p className="ai-warn">
+          <TriangleAlert size={13} aria-hidden="true" />
+          这次模型没有给出引用块，所以没有可校验的引用；回答正文照常显示。
+        </p>
+      )}
+      {hasMath && (
+        <p className="ai-caveat">
+          回答里的公式是模型自己排版的 LaTeX，不是从 PDF
+          里提取出来的原文；它和引用一样，只是模型的说法。
+        </p>
+      )}
+    </>
+  );
+}
+
+/** How each recovery rule is named to a reader who opened the details. */
+const RECOVERY_LABEL: Record<string, string> = {
+  'escaped-envelope': '按转义结构还原',
+  'field-salvage': '逐字段还原',
+  'legacy-json': '旧格式 JSON',
+  'sentinel-broken-block': '引用块无法解析',
+  'sentinel-no-block': '没有引用块',
+  prose: '没有引用块',
+};
+
+const STATUS_LABEL: Record<AiAnswer['status'], string> = {
+  valid: '按约定返回',
+  recovered: '已还原',
+  malformed: '无法还原',
+  incomplete: '被截断',
+  'provider-error': '请求失败',
+};
+
+function finishReasonLabel(reason: string | null): string {
+  if (reason === null) return '未提供';
+  if (reason === 'stop') return '正常结束';
+  if (reason === 'length') return '达到长度上限';
+  if (reason === 'insufficient_system_resource') return '模型服务资源不足';
+  if (reason === 'aborted') return '被中断';
+  if (reason === 'content_filter') return '被内容策略拦截';
+  return reason;
+}
+
+/**
+ * The reply's own statistics, behind a disclosure the reader has to open.
+ *
+ * Numbers and enums only — no prompt, no paper text, no model output — so opening this cannot
+ * leak anything the reader was not already looking at.
+ */
+function Diagnostics({ answer }: { answer: AiAnswer }) {
+  const diagnostics = answer.diagnostics;
+  // Tolerated rather than assumed: an older service process does not send this, and a stale
+  // process is exactly the situation the details are meant to help diagnose.
+  if (diagnostics === null || diagnostics === undefined) return null;
+  return (
+    <details className="ai-diagnostics">
+      <summary>技术细节</summary>
+      <dl>
+        <dt>解析状态</dt>
+        <dd>
+          {STATUS_LABEL[answer.status] ?? answer.status}
+          {diagnostics.recovery === null
+            ? ''
+            : `（${RECOVERY_LABEL[diagnostics.recovery] ?? diagnostics.recovery}）`}
+        </dd>
+        <dt>结束原因</dt>
+        <dd>{finishReasonLabel(diagnostics.finishReason)}</dd>
+        <dt>返回长度</dt>
+        <dd>{diagnostics.rawChars} 字符</dd>
+        <dt>引用</dt>
+        <dd>
+          {diagnostics.citationEntries} 条，通过 {diagnostics.citationsAccepted}，丢弃{' '}
+          {diagnostics.citationsRejected}
+        </dd>
+      </dl>
+    </details>
+  );
 }
 
 export function AiPanel({
@@ -174,6 +311,15 @@ export function AiPanel({
               第 {session.source.anchor.page} 页，选中 {session.source.anchor.quote.length} 字 ——
               查看会发送的范围
             </button>
+            {/* Said before anything is sent, not buried inside the disclosure: if the selection
+                is a formula broken into single glyphs, the reader should know that the model is
+                about to be handed the fragments. */}
+            {session.source.fragmentation?.notice != null && (
+              <p className="ai-warn ai-source-warn">
+                <TriangleAlert size={13} aria-hidden="true" />
+                {session.source.fragmentation.notice}
+              </p>
+            )}
             {showRange && (
               <div className="ai-range">
                 {session.turns[0] !== undefined && (
@@ -233,10 +379,10 @@ export function AiPanel({
                       </button>
                     </div>
                     {showTranslation && (
-                      <AnswerOrNothing
-                        answer={turn.answer.answer}
-                        citations={turn.answer.citations}
+                      <AnswerSurface
+                        answer={turn.answer}
                         onJump={onJumpToCitation}
+                        onRetry={onRetry}
                       />
                     )}
                   </div>
@@ -244,12 +390,10 @@ export function AiPanel({
               )}
 
               {turn.answer !== null && turn.mode !== 'translate' && (
-                <AnswerOrNothing
-                  answer={turn.answer.answer}
-                  citations={turn.answer.citations}
-                  onJump={onJumpToCitation}
-                />
+                <AnswerSurface answer={turn.answer} onJump={onJumpToCitation} onRetry={onRetry} />
               )}
+
+              {turn.answer !== null && <AnswerStatusNotes answer={turn.answer} />}
 
               {turn.answer !== null && (
                 <>
@@ -266,6 +410,7 @@ export function AiPanel({
                       {warning}
                     </p>
                   ))}
+                  <Diagnostics answer={turn.answer} />
                   <p className="ai-foot">
                     出处：第 {session.source.anchor.page} 页 · {turn.answer.providerLabel}
                     {turn.answer.usage?.completionTokens != null &&
@@ -273,33 +418,36 @@ export function AiPanel({
                     {turn.answer.usage?.reasoningTokens != null &&
                       `（其中推理 ${String(turn.answer.usage.reasoningTokens)}）`}
                   </p>
-                  <div className="ai-turn-actions">
-                    <button
-                      type="button"
-                      className="btn btn-quiet"
-                      onClick={() => {
-                        onSaveNote(turn);
-                        setSaved(index);
-                      }}
-                    >
-                      {saved === index ? (
-                        <Check size={14} aria-hidden="true" />
-                      ) : (
-                        <BookOpenCheck size={14} aria-hidden="true" />
-                      )}
-                      {saved === index ? '已保存为笔记' : '保存为笔记'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-quiet"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(turn.answer?.answer ?? '');
-                      }}
-                    >
-                      <Copy size={14} aria-hidden="true" />
-                      复制
-                    </button>
-                  </div>
+                  {/* Nothing to save or copy when there is no answer text to speak of. */}
+                  {turn.answer.status !== 'malformed' && (
+                    <div className="ai-turn-actions">
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        onClick={() => {
+                          onSaveNote(turn);
+                          setSaved(index);
+                        }}
+                      >
+                        {saved === index ? (
+                          <Check size={14} aria-hidden="true" />
+                        ) : (
+                          <BookOpenCheck size={14} aria-hidden="true" />
+                        )}
+                        {saved === index ? '已保存为笔记' : '保存为笔记'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(turn.answer?.answer ?? '');
+                        }}
+                      >
+                        <Copy size={14} aria-hidden="true" />
+                        复制
+                      </button>
+                    </div>
+                  )}
                   {turn.answer.citations.length > 0 && (
                     <>
                       <ul className="ai-citations">

@@ -53,14 +53,30 @@ export const MODES = {
 
 export const MODE_NAMES = Object.keys(MODES);
 
-/** JSON contract the answer must satisfy. Kept in one place so the parser and the prompt agree. */
+/**
+ * The line that separates the answer from its citation block.
+ *
+ * It exists because of a measured failure. The previous contract asked for one JSON object with
+ * the whole answer as a string field, and a live DeepSeek answer came back with its citations
+ * escaped *inside* the answer string — a 3971-character envelope that never parsed. The cause is
+ * structural: a long answer full of LaTeX has to survive JSON string escaping, and one slip is
+ * enough to lose the whole reply. So the answer is no longer inside JSON at all. It is plain
+ * text; only the small, citation-shaped part at the end is JSON.
+ */
+export const CITATION_SENTINEL = '<<<CITATIONS>>>';
+
+/** The output contract. Kept in one place so the parser and the prompt cannot drift apart. */
 export const ANSWER_CONTRACT = [
-  '只输出一个 JSON 对象，不要输出任何其它文字，格式为：',
-  '{"answer": "给读者的回答正文", "groundedInText": true, "citations": [{"n": 1, "passageId": "…", "quote": "…"}]}',
-  '- answer：回答正文，可以用换行分段。引用某段原文时在句中写 [1]、[2] 这样的编号。',
-  '- groundedInText：回答是否完全由提供的原文支持。如果原文不足以回答，写 false，并在 answer 里说明缺少什么依据。',
-  '- citations：answer 里每个 [n] 对应一条，passageId 必须是提供的段落 id，quote 必须逐字来自该段落。',
+  '回答分两部分：先是正文，然后单独一行写分隔符，再写引用信息。',
+  '',
+  `第一部分（正文）：纯文本，可以用空行分段。引用某段原文时在句中写 [1]、[2] 这样的编号。公式用 LaTeX 写在 $...$ 或 $$...$$ 里，反斜杠照原样写，不要为了转义而多写一个。`,
+  '',
+  `第二部分：单独一行 ${CITATION_SENTINEL}，紧接着是**且仅是一个** JSON 对象，格式为：`,
+  '{"groundedInText": true, "citations": [{"n": 1, "passageId": "…", "quote": "…"}]}',
+  '- groundedInText：回答是否完全由提供的原文支持。如果原文不足以回答，写 false，并在正文里说明缺少什么依据。',
+  '- citations：正文里每个 [n] 对应一条，passageId 必须是提供的段落 id，quote 必须逐字来自该段落。',
   '- 不要编造段落 id、页码或引文。没有依据就不要引用。',
+  `- 正文里不要出现 JSON，也不要出现 groundedInText、passageId、${CITATION_SENTINEL} 这些字样；它们只属于第二部分。`,
 ].join('\n');
 
 /** Rules the model is given about the material itself. Nothing here depends on the paper. */

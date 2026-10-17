@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { askAi, fetchAiHealth, type AiClientOptions } from '../../services/ai/client';
-import { buildAskContext } from '../../services/ai/context';
+import { buildAskContext, buildHistory } from '../../services/ai/context';
 import type {
   AiAnswer,
   AiAskRequest,
@@ -9,6 +9,7 @@ import type {
   AiMode,
 } from '../../services/ai/types';
 import type { SelectionAnchor } from './selection';
+import type { SelectionFragmentation } from './layout';
 
 /**
  * One reading session's conversation with the assistant.
@@ -31,6 +32,11 @@ export interface AiSource {
   pageText: string;
   /** The reader's own layout measurement, or null when there is nothing to report. */
   layoutNotice: string | null;
+  /**
+   * How broken up the selection was in the text layer. Measured once, at the moment of asking,
+   * because that is when the rendered page it describes is still on screen.
+   */
+  fragmentation: SelectionFragmentation | null;
 }
 
 export interface AiTurn {
@@ -58,13 +64,10 @@ const DEFAULT_CLIENT: AiClient = { ask: askAi, health: fetchAiHealth };
 const HISTORY_TURNS = 6;
 
 function historyOf(turns: readonly AiTurn[]): AiHistoryTurn[] {
-  const flattened: AiHistoryTurn[] = [];
-  for (const turn of turns) {
-    if (turn.answer === null) continue;
-    flattened.push({ role: 'user', content: turn.question });
-    flattened.push({ role: 'assistant', content: turn.answer.answer });
-  }
-  return flattened.slice(-HISTORY_TURNS);
+  return buildHistory(
+    turns.map((turn) => ({ question: turn.question, answer: turn.answer?.answer ?? null })),
+    { maxTurns: HISTORY_TURNS },
+  );
 }
 
 export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
