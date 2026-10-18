@@ -326,7 +326,7 @@ npm run build
 
 ## 十二、Git 状态与复现
 
-本轮提交在本地分支 `phase8.2-relation-semantics`，不推送远程。提交前工作区包含：
+本轮提交在本地分支 `phase8.2-relation-semantics`，不推送远程。实现与证据的提交为 `789e442`（Phase 8.2: separate academic relations from learning prerequisites）；本报告随后以单独的文档提交记录该哈希。提交内容：
 
 - 领域/服务/界面与测试修改（见第三节）；
 - 3 份脱敏夹具；
