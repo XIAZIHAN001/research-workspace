@@ -11,6 +11,7 @@ import {
   EMPTY_KNOWLEDGE,
   isConceptRecord,
   isEvidenceRecord,
+  isRejectedRelationRecord,
   isRelationRecord,
   type KnowledgeState,
 } from '../domain/knowledge';
@@ -19,9 +20,9 @@ import { defaultStore, readItem, writeItem, type KeyValueStore } from './storage
 
 export const KNOWLEDGE_STORAGE_KEY = 'rw.knowledge';
 export const KNOWLEDGE_BACKUP_KEY = 'rw.knowledge.corrupt';
-export const KNOWLEDGE_VERSION = 1;
+export const KNOWLEDGE_VERSION = 2;
 
-export type KnowledgeIssue = 'unreadable' | 'wrong-shape';
+export type KnowledgeIssue = 'unreadable' | 'wrong-shape' | 'newer-version';
 
 export interface KnowledgeLoad {
   state: KnowledgeState;
@@ -30,6 +31,11 @@ export interface KnowledgeLoad {
   dropped: number;
   /** True when the unreadable payload was copied aside before we continued empty. */
   backupSaved: boolean;
+  /**
+   * True when this build must not write at all: the payload is from a newer schema, and a
+   * reduced rewrite would destroy fields this build cannot even name.
+   */
+  writeBlocked: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,7 +52,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function loadKnowledge(store: KeyValueStore | null = defaultStore()): KnowledgeLoad {
   const raw = readItem(KNOWLEDGE_STORAGE_KEY, store);
   if (raw === null) {
-    return { state: EMPTY_KNOWLEDGE, issue: null, dropped: 0, backupSaved: false };
+    return {
+      state: EMPTY_KNOWLEDGE,
+      issue: null,
+      dropped: 0,
+      backupSaved: false,
+      writeBlocked: false,
+    };
   }
 
   let parsed: unknown;
@@ -58,6 +70,7 @@ export function loadKnowledge(store: KeyValueStore | null = defaultStore()): Kno
       issue: 'unreadable',
       dropped: 0,
       backupSaved: keepCopy(raw, store),
+      writeBlocked: false,
     };
   }
 
@@ -67,6 +80,29 @@ export function loadKnowledge(store: KeyValueStore | null = defaultStore()): Kno
       issue: 'wrong-shape',
       dropped: 0,
       backupSaved: keepCopy(raw, store),
+      writeBlocked: false,
+    };
+  }
+
+  const version = parsed.version;
+  if (typeof version === 'number' && version > KNOWLEDGE_VERSION) {
+    // A newer schema may contain fields this build cannot preserve. Keep the bytes aside and
+    // refuse every write: showing an empty graph is recoverable, rewriting it is not.
+    return {
+      state: EMPTY_KNOWLEDGE,
+      issue: 'newer-version',
+      dropped: 0,
+      backupSaved: keepCopy(raw, store),
+      writeBlocked: true,
+    };
+  }
+  if (version !== undefined && version !== 1 && version !== 2) {
+    return {
+      state: EMPTY_KNOWLEDGE,
+      issue: 'wrong-shape',
+      dropped: 0,
+      backupSaved: keepCopy(raw, store),
+      writeBlocked: false,
     };
   }
 
@@ -75,21 +111,35 @@ export function loadKnowledge(store: KeyValueStore | null = defaultStore()): Kno
   const relations = Array.isArray(parsed.relations)
     ? parsed.relations.filter(isRelationRecord)
     : [];
+  const conceptIds = new Set(concepts.map((concept) => concept.id));
+  const rejectedRaw = version === 2 && Array.isArray(parsed.rejections) ? parsed.rejections : [];
+  const rejections = rejectedRaw
+    .filter(isRejectedRelationRecord)
+    .filter(
+      (rejection) =>
+        conceptIds.has(rejection.from) &&
+        conceptIds.has(rejection.to) &&
+        rejection.from !== rejection.to,
+    );
   const dropped =
     parsed.concepts.length -
     concepts.length +
     (Array.isArray(parsed.evidence) ? parsed.evidence.length - evidence.length : 0) +
-    (Array.isArray(parsed.relations) ? parsed.relations.length - relations.length : 0);
+    (Array.isArray(parsed.relations) ? parsed.relations.length - relations.length : 0) +
+    (version === 2 && Array.isArray(parsed.rejections)
+      ? parsed.rejections.length - rejections.length
+      : 0);
 
   // Anything dropped means the stored payload is not fully understood by this build; keep a
   // copy of it before a later save writes the reduced version.
   const backupSaved = dropped > 0 ? keepCopy(raw, store) : false;
 
   return {
-    state: { version: KNOWLEDGE_VERSION, concepts, evidence, relations },
+    state: { version: KNOWLEDGE_VERSION, concepts, evidence, relations, rejections },
     issue: dropped > 0 ? 'wrong-shape' : null,
     dropped,
     backupSaved,
+    writeBlocked: false,
   };
 }
 
@@ -136,7 +186,7 @@ export function createKnowledgeStore(
   storage: KeyValueStore | null = defaultStore(),
 ): KnowledgeStore {
   const loaded = loadKnowledge(storage);
-  const writesBlocked = loaded.issue !== null && !loaded.backupSaved;
+  const writesBlocked = loaded.writeBlocked || (loaded.issue !== null && !loaded.backupSaved);
   let snapshot: KnowledgeSnapshot = {
     state: loaded.state,
     persisted: true,

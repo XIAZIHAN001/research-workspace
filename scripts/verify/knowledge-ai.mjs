@@ -811,7 +811,7 @@ async function main() {
     );
     check(
       'new backup: the format version stayed readable',
-      newContainer.header.formatVersion === 1 && newContainer.header.app.knowledgeVersion === 1,
+      newContainer.header.formatVersion === 1 && newContainer.header.app.knowledgeVersion === 2,
     );
     await contextB.close();
     contextB = undefined;

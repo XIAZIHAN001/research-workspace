@@ -1,0 +1,343 @@
+{
+  "generatedAt": "2026-10-18T10:21:32.133Z",
+  "runStamp": "2026-10-18T10-20-58",
+  "passed": 30,
+  "failed": 0,
+  "details": {
+    "annotationsAfterDlm": 4,
+    "afterManual": {
+      "concepts": 3,
+      "relations": 2,
+      "evidence": 4
+    },
+    "afterFirstRejection": 1,
+    "afterFirstRerunPanel": {
+      "head": "模型提出 2 个概念、2 条关系； 已作为建议加入 0 个概念、0 条关系。",
+      "rows": [
+        {
+          "kind": "related",
+          "status": "suggested",
+          "text": "相关外部知识有逐字引文模拟概念 B 与 模拟概念 A 相关（无方向）模型解释（本地模拟）B 与 A 相关；这是外部知识的示例，不是原文的陈述。第 4 页Phase 9 真实精读“Let z ∈ (V "
+        }
+      ],
+      "skipped": "有 5 条内容没有加入知识库（重复、循环或引用不成立）"
+    },
+    "afterRerun": {
+      "confirmed": 1,
+      "rejections": 1,
+      "relations": 3
+    },
+    "afterSecondRerunPanel": {
+      "head": "模型提出 2 个概念、1 条关系； 已作为建议加入 0 个概念、0 条关系。",
+      "rows": [],
+      "skipped": "有 3 条内容没有加入知识库（重复、循环或引用不成立）\nrelation\n7db19fc8-71d → ad94f10b-99d：这条关系建议已被你明确拒绝；撤销拒绝后，下一次分析才可能再次提出。\nevidence\nmasked output regions. The task is to fi：这条出处已经存在。\nevidence\nLet z ∈ (V ∪ {m})N denote this canvas, w：所属的关系建议没有被加入，出处也一并跳过。"
+    },
+    "restored": {
+      "concepts": 5,
+      "relations": 3,
+      "evidence": 6,
+      "rejections": 1,
+      "version": 2
+    },
+    "annotationsAfterRestore": 5,
+    "aiRequests": [
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-DDbNTSi5.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf-BnqFv13R.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min--Ao2iAXA.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/health"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/knowledge"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/knowledge"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/health"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/knowledge"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/knowledge"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/index-DDbNTSi5.js"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/index-DDbNTSi5.js"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/pdf-BnqFv13R.js"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min--Ao2iAXA.js"
+      },
+      {
+        "label": "B",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "setup: the core paper is a real multi-page PDF, not a placeholder",
+        "passed": true,
+        "detail": "33 pages, 1452162 bytes"
+      },
+      {
+        "name": "reading: a highlight, a question and an insight were saved on real paper text",
+        "passed": true,
+        "detail": "4 annotation(s)"
+      },
+      {
+        "name": "layout: the real paper stays readable in the dark paper mode without sideways overflow",
+        "passed": true,
+        "detail": "1146px wide, overflow 0px"
+      },
+      {
+        "name": "reading position: zoom and sidebar changes keep the same page",
+        "passed": true,
+        "detail": "4 / 4 / 4"
+      },
+      {
+        "name": "cross-paper: the second paper has its own real annotation",
+        "passed": true,
+        "detail": "5 annotation(s) across both papers"
+      },
+      {
+        "name": "knowledge: one concept carries occurrences from both real papers",
+        "passed": true,
+        "detail": "2 occurrence(s)"
+      },
+      {
+        "name": "knowledge: two manually verified dependencies were created from the reader’s notes",
+        "passed": true,
+        "detail": "2 relation(s), all user-origin"
+      },
+      {
+        "name": "knowledge: AI suggestions and reader-made relations are distinguishable",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "navigation: the evidence opens the real paper and marks the quotation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "navigation: returning keeps the selected concept",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "AI (mock): the suggestions are labelled as an offline simulation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "interaction: closing and reopening the AI panel keeps the current result",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "interaction: closing and reopening the AI panel keeps the reader on the selected page",
+        "passed": true,
+        "detail": "page 4"
+      },
+      {
+        "name": "rejection: the rejected relation leaves the suggestion list and is recorded",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "rejection: re-analysis does not restore the identical claim",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "rejection: the decision is visible with an undo control in the knowledge view",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "rejection: undo is possible and removes the record",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "rejection: after undo, a new analysis can propose the same claim again",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "confirmed knowledge: a confirmed AI relation is not overwritten by re-analysis",
+        "passed": true,
+        "detail": "id 443002ca-233d-4b26-8429-9cc09d278ff0, status confirmed"
+      },
+      {
+        "name": "rejection: the second rejected claim stays rejected after re-analysis",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "layout: real annotations and knowledge reflow in a narrow window",
+        "passed": true,
+        "detail": "526px wide, overflow 0px"
+      },
+      {
+        "name": "backup: a real backup file was written with the research project",
+        "passed": true,
+        "detail": "2265990 bytes"
+      },
+      {
+        "name": "restore: concepts, occurrences, manual relations and the rejection all survive",
+        "passed": true,
+        "detail": "{\"concepts\":5,\"relations\":3,\"evidence\":6,\"rejections\":1,\"version\":2}"
+      },
+      {
+        "name": "restore: the rejection is still identifiable as an explicit decision",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore: the cross-paper concept still lists both occurrences",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore: navigating to the second paper still opens the quoted text",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore: the reader can continue from the knowledge view",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "offline: every browser request went to the preview or the local mock service",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "console: no unexpected errors or warnings",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore: all five real annotations came back",
+        "passed": true,
+        "detail": "5 annotation(s)"
+      }
+    ]
+  }
+}

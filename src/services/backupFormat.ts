@@ -215,6 +215,7 @@ export function countData(data: unknown): Record<string, number> {
     concepts: list(knowledge.concepts).length,
     evidence: list(knowledge.evidence).length,
     relations: list(knowledge.relations).length,
+    rejections: list(knowledge.rejections).length,
     difficultyPages: Object.keys(difficulties).length,
   };
 }

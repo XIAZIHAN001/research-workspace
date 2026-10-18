@@ -488,6 +488,16 @@ function AnalysisSuggestions({
       (entry): entry is { suggestion: KnowledgeRelationSuggestion; stored: ConceptRelation } =>
         entry.stored !== null,
     );
+  const projectConceptIds = new Set(
+    state.concepts
+      .filter((concept) => projectId === null || concept.projectIds.includes(projectId))
+      .map((concept) => concept.id),
+  );
+  const rejectedHere = state.rejections
+    .filter(
+      (rejection) => projectConceptIds.has(rejection.from) && projectConceptIds.has(rejection.to),
+    )
+    .sort((one, other) => other.createdAt - one.createdAt);
 
   return (
     <section className="knowledge-results" aria-label="AI 知识建议">
@@ -731,16 +741,36 @@ function AnalysisSuggestions({
                       采纳
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="btn btn-quiet"
-                    onClick={() => {
-                      api.deleteRelation(stored.id);
-                      onNotice('已忽略这条关系建议。');
-                    }}
-                  >
-                    忽略
-                  </button>
+                  {stored.status === 'suggested' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        title="记录为明确拒绝；同一条主张不会在下次分析时自动恢复"
+                        onClick={() => {
+                          const result = api.rejectRelation(stored.id);
+                          onNotice(
+                            result.ok
+                              ? '已拒绝这条关系建议；撤销前，同一主张不会自动恢复。'
+                              : (result.reason ?? '无法拒绝这条关系建议。'),
+                          );
+                        }}
+                      >
+                        拒绝该关系
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        title="只移除本次建议；下次分析可能再次出现"
+                        onClick={() => {
+                          api.deleteRelation(stored.id);
+                          onNotice('已暂时忽略这条关系建议；下次分析可能再次出现。');
+                        }}
+                      >
+                        暂时忽略
+                      </button>
+                    </>
+                  )}
                   <label className="knowledge-kind-edit">
                     <span className="sr-only">改为哪种关系</span>
                     <select
@@ -767,6 +797,51 @@ function AnalysisSuggestions({
           </ul>
         )}
       </div>
+
+      {rejectedHere.length > 0 && (
+        <div className="knowledge-suggestion-block">
+          <h4>已拒绝的关系建议</h4>
+          <p className="concept-hint">
+            拒绝会记住这两个概念、关系类型、解释和引文；重新分析不会自动恢复同一主张。不同解释、不同证据或不同类型会被当作新建议。
+          </p>
+          <ul className="knowledge-suggestion-list">
+            {rejectedHere.map((rejection) => (
+              <li key={rejection.id} className="knowledge-suggestion-row" data-status="rejected">
+                <div className="knowledge-suggestion-head">
+                  <span className="kb-kind">{RELATION_KIND_LABEL[rejection.kind]}</span>
+                  <span className="kb-badge">已拒绝</span>
+                </div>
+                <p className="knowledge-suggestion-direction">
+                  {relationText(
+                    rejection.kind,
+                    storedName(rejection.from),
+                    storedName(rejection.to),
+                  )}
+                </p>
+                {rejection.rationale !== '' && (
+                  <p className="knowledge-suggestion-why">
+                    <span className="knowledge-label">当时的解释</span>
+                    {rejection.rationale}
+                  </p>
+                )}
+                <p className="concept-hint">拒绝时带有 {rejection.evidence.length} 条引文。</p>
+                <div className="knowledge-suggestion-actions">
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    onClick={() => {
+                      api.undoRejection(rejection.id);
+                      onNotice('已撤销拒绝；下一次分析可能再次提出这条关系。');
+                    }}
+                  >
+                    撤销拒绝
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {analysis.rejectedDetails.length > 0 && (
         <details className="knowledge-rejected">

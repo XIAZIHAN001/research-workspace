@@ -93,10 +93,11 @@ const EVIDENCE = {
 };
 
 const STATE: KnowledgeState = {
-  version: 1,
+  version: 2,
   concepts: [KZG, PAIRING],
   evidence: [EVIDENCE],
   relations: [SUGGESTED],
+  rejections: [],
 };
 
 const CONTEXT = {
@@ -189,6 +190,8 @@ function makeApi(): KnowledgeApi {
     createRelation: vi.fn(() => ({ ok: true })),
     confirmRelation: vi.fn(() => ({ ok: true })),
     updateRelationKind: vi.fn(() => ({ ok: true })),
+    rejectRelation: vi.fn(() => ({ ok: true })),
+    undoRejection: vi.fn(),
     deleteRelation: vi.fn(),
     addSuggestions: vi.fn(() => ({
       addedConcepts: 0,
@@ -363,10 +366,11 @@ describe('KnowledgePanel suggestion matching', () => {
 
     function Harness() {
       const [state, setState] = useState({
-        version: 1 as const,
+        version: 2 as const,
         concepts: [KZG, { ...PAIRING, status: 'suggested' as const }],
         evidence: [],
         relations: [confirmedPrerequisite, relatedSuggestion],
+        rejections: [],
       });
       const api: KnowledgeApi = {
         ...makeApi(),
@@ -399,7 +403,10 @@ describe('KnowledgePanel suggestion matching', () => {
     render(<Harness />);
     const row = screen.getByText('B relates to A').closest('.knowledge-suggestion-row');
     if (row === null) throw new Error('no suggestion row');
-    await userEvent.click(within(row as HTMLElement).getByRole('button', { name: '忽略' }));
+    expect(
+      within(row as HTMLElement).getByRole('button', { name: '拒绝该关系' }),
+    ).toBeInTheDocument();
+    await userEvent.click(within(row as HTMLElement).getByRole('button', { name: '暂时忽略' }));
     expect(screen.queryByText('B relates to A')).not.toBeInTheDocument();
     // The unrelated confirmed prerequisite is still in the graph.
     expect(screen.queryByText('A needs B')).not.toBeInTheDocument();

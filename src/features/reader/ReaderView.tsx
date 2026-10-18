@@ -377,6 +377,22 @@ export function ReaderView({
     [pageCount],
   );
 
+  // Opening the knowledge panel changes the reading column's width; in fit-width mode that
+  // reflows every page and can leave the page the reader selected out of view. Put the panel's
+  // own page back under the reader once the layout has settled — this is the one page the
+  // selection and the panel are talking about.
+  useEffect(() => {
+    if (panel !== 'knowledge') return;
+    const page = knowledgeAnalysis.context?.currentPage;
+    if (page === undefined) return;
+    const timer = window.setTimeout(() => {
+      scrollToPage(page, 'auto');
+    }, 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [panel, knowledgeAnalysis.context?.currentPage, scrollToPage]);
+
   // Restore the stored position once the column has its final measurements. In fit-width
   // mode that means waiting for the container to be measured: restoring against a guessed
   // scale would scroll to the right offset for the wrong layout.

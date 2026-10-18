@@ -354,6 +354,7 @@ export interface RestoreVerification {
   concepts: number;
   evidence: number;
   relations: number;
+  rejections: number;
 }
 
 export type RestoreResult =
@@ -648,7 +649,8 @@ export async function executeRestore(input: {
     knowledgeNow === null ||
     knowledgeNow.concepts.length !== merged.knowledge.concepts.length ||
     knowledgeNow.evidence.length !== merged.knowledge.evidence.length ||
-    knowledgeNow.relations.length !== merged.knowledge.relations.length
+    knowledgeNow.relations.length !== merged.knowledge.relations.length ||
+    knowledgeNow.rejections.length !== merged.knowledge.rejections.length
   ) {
     problems.push('恢复后的知识数据无法读回，或数量与计划不一致。');
   }
@@ -697,6 +699,7 @@ export async function executeRestore(input: {
       concepts: merged.knowledge.concepts.length,
       evidence: merged.knowledge.evidence.length,
       relations: merged.knowledge.relations.length,
+      rejections: merged.knowledge.rejections.length,
     },
   };
 }

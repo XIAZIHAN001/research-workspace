@@ -9,10 +9,11 @@ import type { PdfBlobStore } from '../../services/pdfStore';
 import { BackupDialog } from './BackupDialog';
 
 const EMPTY_KNOWLEDGE: KnowledgeState = {
-  version: 1,
+  version: 2,
   concepts: [],
   evidence: [],
   relations: [],
+  rejections: [],
 };
 
 const PAPER: Paper = { id: 'paper-1', title: '论文', authors: [], createdAt: 1, updatedAt: 1 };

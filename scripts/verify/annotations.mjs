@@ -25,8 +25,11 @@ import {
 const PORT = 4176;
 const ORIGIN = `http://127.0.0.1:${PORT}/`;
 const ROOT = new URL('../../', import.meta.url);
-const SHOT_DIR = new URL('docs/screenshots-phase3/', ROOT);
-const REPORT_FILE = new URL('docs/annotations-verification-report.json', ROOT);
+const SHOT_DIR = new URL(
+  `docs/screenshots-phase3/${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}-annotations/`,
+  ROOT,
+);
+const REPORT_FILE = new URL('report.json', SHOT_DIR);
 const WORK_DIR = new URL('.cache/verify/', ROOT);
 const VITE_BIN = fileURLToPath(new URL('node_modules/vite/bin/vite.js', ROOT));
 const STORAGE_KEY = 'rw.projects';

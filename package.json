@@ -29,6 +29,7 @@
     "verify:guard": "node scripts/verify/guard-probe.mjs",
     "verify:graph": "node scripts/verify/graph.mjs",
     "verify:backup": "node scripts/verify/backup.mjs",
+    "verify:research-workflow": "node scripts/verify/research-workflow.mjs",
     "verify:knowledge-real": "node scripts/verify/real-knowledge.mjs",
     "verify:knowledge-ai": "node scripts/verify/knowledge-ai.mjs",
     "verify:knowledge-replay": "node scripts/verify/knowledge-replay.mjs",

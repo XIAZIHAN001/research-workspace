@@ -207,6 +207,62 @@ describe('KnowledgeView: relations', () => {
     expect(within(other).getByRole('button', { name: 'KZG commitment' })).toBeInTheDocument();
   });
 
+  it('rejects a suggestion persistently and can undo the rejection', async () => {
+    const disk = memory();
+    const store = createKnowledgeStore(disk);
+    store.dispatch({
+      type: 'concept/create',
+      input: { name: 'DLM', projectIds: [PROJECT.id] },
+      id: 'dlm',
+      at: 1,
+    });
+    store.dispatch({
+      type: 'concept/create',
+      input: { name: 'Shared canvas', projectIds: [PROJECT.id] },
+      id: 'canvas',
+      at: 1,
+    });
+    store.dispatch({
+      type: 'suggestions/add',
+      concepts: [],
+      relations: [
+        {
+          id: 'r-def',
+          from: 'dlm',
+          to: 'canvas',
+          kind: 'definition',
+          status: 'confirmed',
+          origin: 'user',
+          note: '',
+          support: 'direct',
+          rationale: 'DLM is defined by denoising a shared canvas.',
+          provider: 'mock',
+          providerLabel: '本地模拟',
+          model: 'mock-1',
+          rulesVersion: 'k2',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      evidence: [],
+    });
+    render(<Harness store={store} />);
+
+    const detail = screen.getByRole('region', { name: '概念：DLM' });
+    expect(within(detail).getByText(/AI 建议的关系/)).toBeInTheDocument();
+    await userEvent.click(within(detail).getByRole('button', { name: '拒绝该关系' }));
+
+    expect(store.getSnapshot().state.rejections).toHaveLength(1);
+    expect(within(detail).getByText('已拒绝的关系建议')).toBeInTheDocument();
+    expect(within(detail).queryByText(/AI 建议的关系/)).not.toBeInTheDocument();
+
+    await userEvent.click(within(detail).getByRole('button', { name: '撤销拒绝' }));
+    expect(store.getSnapshot().state.rejections).toHaveLength(0);
+    expect(within(detail).queryByText('已拒绝的关系建议')).not.toBeInTheDocument();
+    // Undo removes the decision, not the fact that the suggestion was already dismissed.
+    expect(within(detail).queryByText(/AI 建议的关系/)).not.toBeInTheDocument();
+  });
+
   it('refuses a cycle and says why', async () => {
     setup();
     await withTwo();

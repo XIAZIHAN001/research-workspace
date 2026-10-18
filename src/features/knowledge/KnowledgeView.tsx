@@ -123,9 +123,11 @@ export function KnowledgeView({
   const storageWarning =
     api.persisted === false
       ? '这次改动没有保存到本地存储：内容还在当前页面里，关闭后会丢失。'
-      : api.issue === 'unreadable' || api.issue === 'wrong-shape'
-        ? '本地知识数据有一部分无法读取，已保留副本并从可读的部分继续。'
-        : null;
+      : api.issue === 'newer-version'
+        ? '本地知识数据来自更新版本；本版本保持只读，没有写入，以免覆盖它无法理解的内容。'
+        : api.issue === 'unreadable' || api.issue === 'wrong-shape'
+          ? '本地知识数据有一部分无法读取，已保留副本并从可读的部分继续。'
+          : null;
 
   return (
     <section className="knowledge" aria-labelledby="knowledge-heading">

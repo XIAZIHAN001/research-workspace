@@ -15,7 +15,13 @@ const nextId = (): string => {
 };
 
 function base(): KnowledgeState {
-  let state: KnowledgeState = { version: 1, concepts: [], evidence: [], relations: [] };
+  let state: KnowledgeState = {
+    version: 2,
+    concepts: [],
+    evidence: [],
+    relations: [],
+    rejections: [],
+  };
   const add = (name: string, summary = ''): string => {
     const concept = createConcept({ name, summary, projectIds: ['p1'] }, nextId, 1);
     if (concept === null) throw new Error('no concept');

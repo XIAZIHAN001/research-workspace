@@ -28,11 +28,13 @@ import {
 } from './difficulty';
 import {
   parseKnowledgeState,
+  relationSuggestionFingerprint,
   wouldCycle,
   type Concept,
   type ConceptEvidence,
   type ConceptRelation,
   type KnowledgeState,
+  type RejectedRelationSuggestion,
 } from './knowledge';
 import { migrateStoredPayload, SCHEMA_VERSION } from './migrate';
 import type { Paper } from './papers';
@@ -585,6 +587,9 @@ export interface MergeStats {
   relationsAdded: number;
   relationsSkipped: number;
   relationsUpdated: number;
+  rejectionsAdded: number;
+  rejectionsSkipped: number;
+  rejectionsUpdated: number;
   preferencesApplied: string[];
 }
 
@@ -623,6 +628,9 @@ const emptyStats = (): MergeStats => ({
   relationsAdded: 0,
   relationsSkipped: 0,
   relationsUpdated: 0,
+  rejectionsAdded: 0,
+  rejectionsSkipped: 0,
+  rejectionsUpdated: 0,
   preferencesApplied: [],
 });
 
@@ -794,10 +802,11 @@ export function mergeRestore(
 
   /* Relations: never accepted if they would make the dependency graph loop. */
   const knowledge: KnowledgeState = {
-    version: 1,
+    version: 2,
     concepts,
     evidence,
     relations: [...current.knowledge.relations],
+    rejections: [...current.knowledge.rejections],
   };
   for (const incoming of contents.knowledge.relations) {
     const index = knowledge.relations.findIndex((relation) => relation.id === incoming.id);
@@ -826,6 +835,49 @@ export function mergeRestore(
     }
     knowledge.relations = [...knowledge.relations, incoming];
     stats.relationsAdded += 1;
+  }
+
+  /* Rejections are decisions, not suggestions: merge them by stable fingerprint. */
+  for (const incoming of contents.knowledge.rejections) {
+    const mappedEvidence = incoming.evidence.map((entry) => ({
+      ...entry,
+      paperId: paperIdMap.get(entry.paperId) ?? entry.paperId,
+    }));
+    if (
+      !knownConceptIds.has(incoming.from) ||
+      !knownConceptIds.has(incoming.to) ||
+      incoming.from === incoming.to
+    ) {
+      stats.rejectionsSkipped += 1;
+      continue;
+    }
+    const mapped: RejectedRelationSuggestion = {
+      ...incoming,
+      evidence: mappedEvidence,
+      fingerprint: relationSuggestionFingerprint({
+        from: incoming.from,
+        to: incoming.to,
+        kind: incoming.kind,
+        rationale: incoming.rationale,
+        evidence: mappedEvidence,
+      }),
+    };
+    const index = knowledge.rejections.findIndex((entry) => entry.id === incoming.id);
+    if (index >= 0) {
+      if (preferBackup && !sameJson(knowledge.rejections[index], mapped)) {
+        knowledge.rejections[index] = mapped;
+        stats.rejectionsUpdated += 1;
+      } else {
+        stats.rejectionsSkipped += 1;
+      }
+      continue;
+    }
+    if (knowledge.rejections.some((entry) => entry.fingerprint === mapped.fingerprint)) {
+      stats.rejectionsSkipped += 1;
+      continue;
+    }
+    knowledge.rejections = [...knowledge.rejections, mapped];
+    stats.rejectionsAdded += 1;
   }
 
   // Phase 8 adds an optional link from an occurrence to the relation it grounds. A relation can

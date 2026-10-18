@@ -144,7 +144,7 @@ function sampleSource(): BackupSource {
     selectedId: 'project-1',
   };
   const knowledge: KnowledgeState = {
-    version: 1,
+    version: 2,
     concepts: [
       {
         id: 'concept-1',
@@ -176,6 +176,7 @@ function sampleSource(): BackupSource {
       },
     ],
     relations: [],
+    rejections: [],
   };
   const difficulties: DifficultyState = {
     pages: {
@@ -197,7 +198,7 @@ function sampleSource(): BackupSource {
 
 const EMPTY_SOURCE: RestoreSource = {
   projects: EMPTY_STATE,
-  knowledge: { version: 1, concepts: [], evidence: [], relations: [] },
+  knowledge: { version: 2, concepts: [], evidence: [], relations: [], rejections: [] },
   difficulties: { pages: {}, ignored: {} },
 };
 

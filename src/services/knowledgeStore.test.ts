@@ -37,6 +37,7 @@ describe('loadKnowledge', () => {
       issue: null,
       dropped: 0,
       backupSaved: false,
+      writeBlocked: false,
     });
   });
 
@@ -81,6 +82,50 @@ describe('loadKnowledge', () => {
     const loaded = loadKnowledge(disk);
     expect(loaded.backupSaved).toBe(false);
     expect(disk.items.get(KNOWLEDGE_BACKUP_KEY)).toBe('an older, more valuable payload');
+  });
+
+  it('migrates a version-1 payload to version 2 with an empty rejection list', () => {
+    const created = createConcept({ name: 'KZG', projectIds: ['p1'] }, () => 'c1', NOW);
+    const disk = store({
+      [KNOWLEDGE_STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        concepts: [created],
+        evidence: [],
+        relations: [],
+      }),
+    });
+    const loaded = loadKnowledge(disk);
+    expect(loaded.state.version).toBe(2);
+    expect(loaded.state.concepts).toHaveLength(1);
+    expect(loaded.state.rejections).toEqual([]);
+    expect(loaded.issue).toBeNull();
+  });
+
+  it('refuses to write a payload from a newer schema instead of reducing it', () => {
+    const future = JSON.stringify({
+      version: 3,
+      concepts: [],
+      evidence: [],
+      relations: [],
+      rejections: [],
+      graphLayout: { somethingNew: true },
+    });
+    const disk = store({ [KNOWLEDGE_STORAGE_KEY]: future });
+    const loaded = loadKnowledge(disk);
+    expect(loaded.issue).toBe('newer-version');
+    expect(loaded.writeBlocked).toBe(true);
+    expect(disk.items.get(KNOWLEDGE_BACKUP_KEY)).toBe(future);
+
+    const knowledge = createKnowledgeStore(disk);
+    expect(knowledge.getSnapshot().writesBlocked).toBe(true);
+    knowledge.dispatch({
+      type: 'concept/create',
+      input: { name: 'New', projectIds: ['p1'] },
+      id: 'c9',
+      at: NOW,
+    });
+    expect(knowledge.getSnapshot().persisted).toBe(false);
+    expect(disk.items.get(KNOWLEDGE_STORAGE_KEY)).toBe(future);
   });
 });
 

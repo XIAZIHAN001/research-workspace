@@ -96,7 +96,13 @@ function relation(
 }
 
 const EMPTY_STATE: ProjectsState = { projects: [], papers: {}, annotations: [], selectedId: null };
-const EMPTY_KNOWLEDGE: KnowledgeState = { version: 1, concepts: [], evidence: [], relations: [] };
+const EMPTY_KNOWLEDGE: KnowledgeState = {
+  version: 2,
+  concepts: [],
+  evidence: [],
+  relations: [],
+  rejections: [],
+};
 const EMPTY_DIFFICULTIES: DifficultyState = { pages: {}, ignored: {} };
 
 function source(
@@ -107,15 +113,25 @@ function source(
   return { projects, knowledge, difficulties };
 }
 
-function contents(overrides: Partial<BackupContents> = {}): BackupContents {
+function contents(
+  overrides: Partial<Omit<BackupContents, 'knowledge'>> & {
+    knowledge?: Partial<Omit<KnowledgeState, 'version'>> & { version?: 1 | 2 };
+  } = {},
+): BackupContents {
+  const { knowledge, ...rest } = overrides;
   return {
     projects: EMPTY_STATE,
-    knowledge: EMPTY_KNOWLEDGE,
+    knowledge: {
+      ...EMPTY_KNOWLEDGE,
+      ...knowledge,
+      version: 2,
+      rejections: knowledge?.rejections ?? [],
+    },
     difficulties: EMPTY_DIFFICULTIES,
     preferences: { ...EMPTY_PREFERENCES },
     recovery: {},
     missingFiles: [],
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -475,10 +491,11 @@ describe('merging a restore', () => {
 
   it('skips an imported prerequisite that would close a cycle', () => {
     const current: KnowledgeState = {
-      version: 1,
+      version: 2,
       concepts: [concept('a', 'A', []), concept('b', 'B', [])],
       evidence: [],
       relations: [relation('r1', 'b', 'a')],
+      rejections: [],
     };
     const incoming = contents({
       knowledge: {
@@ -723,9 +740,9 @@ describe('Phase 8: suggestion evidence in backups', () => {
       evidenceIds: ['e1'],
     };
     const merged = mergeRestore(
-      source(currentProjects, { version: 1, concepts: [c1, c2], evidence: [], relations: [] }),
+      source(currentProjects, { ...EMPTY_KNOWLEDGE, concepts: [c1, c2] }),
       contents({
-        knowledge: { version: 1, concepts: [], evidence: [occurrence], relations: [incoming] },
+        knowledge: { ...EMPTY_KNOWLEDGE, evidence: [occurrence], relations: [incoming] },
       }),
       DEFAULT_RESTORE_CHOICE,
       { ...EMPTY_PREFERENCES },
@@ -743,13 +760,14 @@ describe('Phase 8: suggestion evidence in backups', () => {
 
   it('keeps an occurrence as concept evidence when its relation was skipped', () => {
     const current: KnowledgeState = {
-      version: 1,
+      version: 2,
       concepts: [c1, c2],
       evidence: [],
       relations: [{ ...relation('r-existing', 'c2', 'c1'), status: 'confirmed' }],
+      rejections: [],
     };
     const incomingKnowledge: KnowledgeState = {
-      version: 1,
+      version: 2,
       concepts: [],
       evidence: [
         {
@@ -767,6 +785,7 @@ describe('Phase 8: suggestion evidence in backups', () => {
           evidenceIds: ['e1'],
         },
       ],
+      rejections: [],
     };
     const merged = mergeRestore(
       source(currentProjects, current),
@@ -794,9 +813,8 @@ describe('Phase 8: suggestion evidence in backups', () => {
     };
     const conflicts = collectConflicts(
       source(currentProjects, {
-        version: 1,
+        ...EMPTY_KNOWLEDGE,
         concepts: [c1, c2],
-        evidence: [],
         relations: [currentRelation],
       }),
       contents({
@@ -848,5 +866,86 @@ describe('Phase 8: suggestion evidence in backups', () => {
       },
     ];
     expect(parseBackupData(danglingEvidence).ok).toBe(false);
+  });
+});
+
+describe('Phase 9: rejections in backups', () => {
+  const rejection = {
+    id: 'rej-1',
+    from: 'c1',
+    to: 'c2',
+    kind: 'definition',
+    rationale: 'DLM is defined by a shared canvas.',
+    evidence: [
+      {
+        paperId: 'paper1',
+        pdfSha256: SHA_A,
+        page: 2,
+        quote: 'DLM is defined by a shared canvas',
+      },
+    ],
+    fingerprint: 'rel1-0000000000000000',
+    provider: 'mock',
+    providerLabel: '本地模拟',
+    model: 'mock-1',
+    rulesVersion: 'k2',
+    createdAt: 10,
+    updatedAt: 10,
+  };
+
+  function withRejectionData(overrides: Record<string, unknown> = {}) {
+    return rawData({
+      projects: {
+        version: 5,
+        projects: [project('p1', '项目', 'paper1')],
+        papers: {
+          paper1: paper('paper1', '论文', {
+            pdf: { sha256: SHA_A, name: 'a.pdf', bytes: 10, pageCount: 1, addedAt: 1 },
+          }),
+        },
+        annotations: [],
+        selectedId: 'p1',
+      },
+      knowledge: {
+        version: 2,
+        concepts: [concept('c1', 'DLM', ['p1']), concept('c2', 'shared canvas', ['p1'])],
+        evidence: [],
+        relations: [],
+        rejections: [rejection],
+        ...overrides,
+      },
+    });
+  }
+
+  it('reads a version-2 backup with an explicit rejection', () => {
+    const parsed = parseBackupData(withRejectionData());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.contents.knowledge.rejections).toHaveLength(1);
+    expect(parsed.contents.knowledge.rejections[0]?.from).toBe('c1');
+  });
+
+  it('refuses a rejection whose concept is not in the backup', () => {
+    const data = withRejectionData({
+      concepts: [concept('c1', 'DLM', ['p1'])],
+    });
+    expect(parseBackupData(data).ok).toBe(false);
+  });
+
+  it('carries rejections through a merge and recomputes their fingerprint', () => {
+    const base = parseBackupData(withRejectionData());
+    if (!base.ok) throw new Error('fixture is not valid');
+    const merged = mergeRestore(
+      source(),
+      base.contents,
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(merged.knowledge.rejections).toHaveLength(1);
+    expect(merged.stats.rejectionsAdded).toBe(1);
+    const stored = merged.knowledge.rejections[0];
+    expect(stored?.fingerprint).toMatch(/^rel1-[0-9a-f]{16}$/);
+    expect(stored?.fingerprint).not.toBe(rejection.fingerprint);
   });
 });

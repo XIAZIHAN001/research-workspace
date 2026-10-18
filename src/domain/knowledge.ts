@@ -237,18 +237,55 @@ export interface ConceptRelation {
   updatedAt: number;
 }
 
+export interface RejectionEvidence {
+  paperId: string;
+  pdfSha256: string;
+  page: number;
+  quote: string;
+}
+
+/**
+ * A relation suggestion the reader explicitly refused.
+ *
+ * This is not "these two concepts may never be related". It records one specific claim:
+ * these two concept identities, this relation kind, this explanation and these quotations.
+ * A different kind, explanation or evidence set is a different suggestion and may appear.
+ *
+ * `fingerprint` is computed from those stable fields — never from a per-run suggestion id or a
+ * model-generated identifier — so the same claim is recognised across analyses and restarts.
+ */
+export interface RejectedRelationSuggestion {
+  id: string;
+  /** Stable concept ids, not names. Renaming a concept does not detach its rejection. */
+  from: string;
+  to: string;
+  kind: RelationKind;
+  rationale: string;
+  evidence: RejectionEvidence[];
+  fingerprint: string;
+  provider?: string;
+  providerLabel?: string;
+  model?: string;
+  rulesVersion?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface KnowledgeState {
-  version: 1;
+  version: 2;
   concepts: Concept[];
   evidence: ConceptEvidence[];
   relations: ConceptRelation[];
+  /** Explicit refusals of relation suggestions; kept apart from confirmed knowledge. */
+  rejections: RejectedRelationSuggestion[];
 }
 
 export const EMPTY_KNOWLEDGE: KnowledgeState = {
-  version: 1,
+  version: 2,
   concepts: [],
   evidence: [],
   relations: [],
+  rejections: [],
 };
 
 export const MAX_CONCEPT_NAME = 80;
@@ -341,6 +378,45 @@ export function isRelationRecord(value: unknown): value is ConceptRelation {
   return true;
 }
 
+export function isRejectionEvidenceRecord(value: unknown): value is RejectionEvidence {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.paperId === 'string' &&
+    value.paperId !== '' &&
+    typeof value.pdfSha256 === 'string' &&
+    /^[0-9a-f]{64}$/.test(value.pdfSha256) &&
+    typeof value.page === 'number' &&
+    Number.isInteger(value.page) &&
+    value.page >= 1 &&
+    typeof value.quote === 'string'
+  );
+}
+
+export function isRejectedRelationRecord(value: unknown): value is RejectedRelationSuggestion {
+  if (!isRecord(value)) return false;
+  if (!(
+    typeof value.id === 'string' &&
+    value.id !== '' &&
+    typeof value.from === 'string' &&
+    value.from !== '' &&
+    typeof value.to === 'string' &&
+    value.to !== '' &&
+    typeof value.kind === 'string' &&
+    RELATION_KINDS.includes(value.kind as RelationKind) &&
+    typeof value.rationale === 'string' &&
+    typeof value.fingerprint === 'string' &&
+    value.fingerprint !== '' &&
+    Array.isArray(value.evidence) &&
+    value.evidence.every(isRejectionEvidenceRecord)
+  )) {
+    return false;
+  }
+  for (const key of ['provider', 'providerLabel', 'model', 'rulesVersion'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') return false;
+  }
+  return typeof value.createdAt === 'number' && typeof value.updatedAt === 'number';
+}
+
 /**
  * Strict reader for a whole knowledge payload, used where the caller must not accept a
  * partial graph — restoring a backup, above all. The lenient path in `knowledgeStore`
@@ -350,16 +426,28 @@ export function isRelationRecord(value: unknown): value is ConceptRelation {
 export function parseKnowledgeState(value: unknown): KnowledgeState | null {
   if (!isRecord(value)) return null;
   const version = value.version ?? 1;
-  if (version !== 1) return null;
+  // Version 1 is the Phase 7/8 shape; version 2 adds explicit relation rejections. A newer
+  // version is refused rather than guessed at, and the restore path writes nothing.
+  if (version !== 1 && version !== 2) return null;
   if (!Array.isArray(value.concepts) || !Array.isArray(value.evidence)) return null;
   if (!Array.isArray(value.relations)) return null;
   const concepts = value.concepts.filter(isConceptRecord);
   const evidence = value.evidence.filter(isEvidenceRecord);
   const relations = value.relations.filter(isRelationRecord);
+  const rejections =
+    version === 2
+      ? Array.isArray(value.rejections)
+        ? value.rejections.filter(isRejectedRelationRecord)
+        : null
+      : [];
+  if (rejections === null) return null;
   if (
     concepts.length !== value.concepts.length ||
     evidence.length !== value.evidence.length ||
-    relations.length !== value.relations.length
+    relations.length !== value.relations.length ||
+    (version === 2 &&
+      Array.isArray(value.rejections) &&
+      rejections.length !== value.rejections.length)
   ) {
     return null;
   }
@@ -378,6 +466,16 @@ export function parseKnowledgeState(value: unknown): KnowledgeState | null {
     if (relationIds.has(relation.id)) return null;
     relationIds.add(relation.id);
   }
+  const rejectionIds = new Set<string>();
+  const rejectionFingerprints = new Set<string>();
+  for (const rejection of rejections) {
+    if (!conceptIds.has(rejection.from) || !conceptIds.has(rejection.to)) return null;
+    if (rejection.from === rejection.to) return null;
+    if (rejectionIds.has(rejection.id)) return null;
+    if (rejectionFingerprints.has(rejection.fingerprint)) return null;
+    rejectionIds.add(rejection.id);
+    rejectionFingerprints.add(rejection.fingerprint);
+  }
   // Phase 8 adds two optional links between a suggestion and its quotations. They are checked
   // only when present, so a Phase 7 payload — which has neither — restores unchanged.
   for (const entry of evidence) {
@@ -394,7 +492,7 @@ export function parseKnowledgeState(value: unknown): KnowledgeState | null {
       if (entry.conceptId !== relation.from) return null;
     }
   }
-  return { version: 1, concepts, evidence, relations };
+  return { version: 2, concepts, evidence, relations, rejections };
 }
 
 export interface ConceptInput {
@@ -806,6 +904,11 @@ export function deleteConcept(state: KnowledgeState, id: string): KnowledgeState
         (entry.relationId === undefined || !removedRelationIds.has(entry.relationId)),
     ),
     relations: state.relations.filter((relation) => !removedRelationIds.has(relation.id)),
+    // A rejection is a decision about two concepts; once one of them is gone it has no subject
+    // left and would be impossible to restore (the strict reader requires both ids to resolve).
+    rejections: state.rejections.filter(
+      (rejection) => rejection.from !== id && rejection.to !== id,
+    ),
   };
 }
 
@@ -856,6 +959,30 @@ export function mergeConcepts(
   );
 
   const projectIds = [...new Set([...target.projectIds, ...source.projectIds])];
+  const rejections: RejectedRelationSuggestion[] = [];
+  const seenRejections = new Set<string>();
+  for (const rejection of state.rejections) {
+    const from = rejection.from === sourceId ? targetId : rejection.from;
+    const to = rejection.to === sourceId ? targetId : rejection.to;
+    if (from === to) continue;
+    const fingerprint =
+      from === rejection.from && to === rejection.to
+        ? rejection.fingerprint
+        : relationSuggestionFingerprint({
+            from,
+            to,
+            kind: rejection.kind,
+            rationale: rejection.rationale,
+            evidence: rejection.evidence,
+          });
+    if (seenRejections.has(fingerprint)) continue;
+    seenRejections.add(fingerprint);
+    rejections.push(
+      from === rejection.from && to === rejection.to
+        ? rejection
+        : { ...rejection, from, to, fingerprint, updatedAt: now },
+    );
+  }
   return {
     ...state,
     concepts: state.concepts
@@ -865,6 +992,7 @@ export function mergeConcepts(
       ),
     evidence,
     relations,
+    rejections,
   };
 }
 
@@ -1004,6 +1132,122 @@ export function evidenceForRelation(state: KnowledgeState, relationId: string): 
   return state.evidence
     .filter((entry) => entry.relationId === relationId)
     .sort((one, other) => one.page - other.page || one.createdAt - other.createdAt);
+}
+
+function fingerprintText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/** A deterministic 64-bit-ish string hash. No crypto API, so this stays synchronous and pure. */
+function hashForFingerprint(value: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/**
+ * The stable identity of one relation *claim*, used by explicit rejections.
+ *
+ * It deliberately includes only what the reader rejected: the two stable concept ids, the kind,
+ * the explanation, and the evidence (paper, file, page, quotation). A transient suggestion id,
+ * a new analysis run or a different provider must not change it. Conversely, changing the kind,
+ * the explanation or the evidence makes a different claim that is allowed to appear again.
+ */
+export function relationSuggestionFingerprint(input: {
+  from: string;
+  to: string;
+  kind: RelationKind;
+  rationale: string;
+  evidence: readonly RejectionEvidence[];
+}): string {
+  const evidence = input.evidence
+    .map(
+      (entry) =>
+        `${entry.paperId}\u0003${entry.pdfSha256}\u0003${String(entry.page)}\u0003${fingerprintText(entry.quote)}`,
+    )
+    .sort()
+    .join('\u0001');
+  const canonical = [
+    'relation-rejection-v1',
+    input.from,
+    input.to,
+    input.kind,
+    fingerprintText(input.rationale),
+    evidence,
+  ].join('\u0002');
+  return `rel1-${hashForFingerprint(canonical)}`;
+}
+
+/**
+ * Turns a suggestion into an explicit rejection and removes the suggestion.
+ *
+ * The rejection keeps a snapshot of the explanation and evidence, because the relation record
+ * itself is deleted. Confirmed relations are not suggestions and are refused here: the reader
+ * may delete or change one deliberately, but an AI batch must never overwrite it.
+ */
+export function rejectRelationSuggestion(
+  state: KnowledgeState,
+  relationId: string,
+  rejectionId: string,
+  now: number,
+): { state: KnowledgeState; rejection: RejectedRelationSuggestion | null; reason?: string } {
+  const relation = state.relations.find((candidate) => candidate.id === relationId);
+  if (relation === undefined) {
+    return { state, rejection: null, reason: '这条关系建议已经不存在。' };
+  }
+  if (relation.status === 'confirmed') {
+    return { state, rejection: null, reason: '已确认的关系不能被当作建议拒绝。' };
+  }
+  const evidence = evidenceForRelation(state, relationId).map((entry) => ({
+    paperId: entry.paperId,
+    pdfSha256: entry.pdfSha256,
+    page: entry.page,
+    quote: entry.quote,
+  }));
+  const rationale = relation.rationale ?? '';
+  const rejection: RejectedRelationSuggestion = {
+    id: rejectionId,
+    from: relation.from,
+    to: relation.to,
+    kind: relation.kind,
+    rationale,
+    evidence,
+    fingerprint: relationSuggestionFingerprint({
+      from: relation.from,
+      to: relation.to,
+      kind: relation.kind,
+      rationale,
+      evidence,
+    }),
+    ...(relation.provider === undefined ? {} : { provider: relation.provider }),
+    ...(relation.providerLabel === undefined ? {} : { providerLabel: relation.providerLabel }),
+    ...(relation.model === undefined ? {} : { model: relation.model }),
+    ...(relation.rulesVersion === undefined ? {} : { rulesVersion: relation.rulesVersion }),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const without = deleteRelation(state, relationId);
+  return {
+    state: {
+      ...without,
+      rejections: [
+        ...without.rejections.filter((entry) => entry.fingerprint !== rejection.fingerprint),
+        rejection,
+      ],
+    },
+    rejection,
+  };
+}
+
+export function undoRejection(state: KnowledgeState, id: string): KnowledgeState {
+  return { ...state, rejections: state.rejections.filter((entry) => entry.id !== id) };
 }
 
 /**
@@ -1216,6 +1460,32 @@ export function mergeSuggestions(
     const working: KnowledgeState = { ...state, concepts, relations };
     if (relationExistsExcept(working, from, to, proposed.kind, proposed.id)) {
       report.skipped.push({ kind: 'relation', label, reason: '这条关系已经存在。' });
+      continue;
+    }
+    const rejectionEvidence = batch.evidence
+      .filter(
+        (entry) =>
+          entry.relationId === proposed.id || (proposed.evidenceIds ?? []).includes(entry.id),
+      )
+      .map((entry) => ({
+        paperId: entry.paperId,
+        pdfSha256: entry.pdfSha256,
+        page: entry.page,
+        quote: entry.quote,
+      }));
+    const fingerprint = relationSuggestionFingerprint({
+      from,
+      to,
+      kind: proposed.kind,
+      rationale: proposed.rationale ?? '',
+      evidence: rejectionEvidence,
+    });
+    if (state.rejections.some((rejection) => rejection.fingerprint === fingerprint)) {
+      report.skipped.push({
+        kind: 'relation',
+        label,
+        reason: '这条关系建议已被你明确拒绝；撤销拒绝后，下一次分析才可能再次提出。',
+      });
       continue;
     }
     if (wouldCycle(working, from, to, proposed.kind)) {

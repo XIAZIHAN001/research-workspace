@@ -4,6 +4,7 @@ import {
   createRelation,
   mergeSuggestions,
   normalizeConceptName,
+  rejectRelationSuggestion,
   updateRelationKind,
   type Concept,
   type ConceptEvidence,
@@ -53,6 +54,10 @@ export interface KnowledgeApi {
   /** Confirms only if the relation still makes a coherent graph; a refusal carries its reason. */
   confirmRelation: (id: string) => { ok: boolean; reason?: string };
   updateRelationKind: (id: string, kind: RelationKind) => { ok: boolean; reason?: string };
+  /** Removes the suggestion and records a persistent refusal of this exact claim. */
+  rejectRelation: (id: string) => { ok: boolean; reason?: string };
+  undoRejection: (id: string) => void;
+  /** Removes the suggestion only; a later analysis may propose the same thing again. */
   deleteRelation: (id: string) => void;
   /** Adds an analysis batch, enforcing provenance/dedupe/cycle rules; returns what happened. */
   addSuggestions: (batch: SuggestionBatch) => SuggestionReport;
@@ -114,6 +119,18 @@ export function useKnowledgeApi(
       return { ok: true };
     },
     [dispatch, now, store],
+  );
+
+  const rejectRelation = useCallback(
+    (id: string): { ok: boolean; reason?: string } => {
+      const at = now();
+      const rejectionId = makeId();
+      const result = rejectRelationSuggestion(store.getSnapshot().state, id, rejectionId, at);
+      if (result.rejection === null) return { ok: false, reason: result.reason };
+      dispatch({ type: 'relation/reject', id, rejectionId, at });
+      return { ok: true };
+    },
+    [dispatch, makeId, now, store],
   );
 
   const addSuggestions = useCallback(
@@ -231,6 +248,10 @@ export function useKnowledgeApi(
       createRelation: createRelationChecked,
       confirmRelation,
       updateRelationKind: updateRelation,
+      rejectRelation,
+      undoRejection: (id) => {
+        dispatch({ type: 'rejection/undo', id });
+      },
       deleteRelation: (id) => {
         dispatch({ type: 'relation/delete', id });
       },
@@ -247,6 +268,7 @@ export function useKnowledgeApi(
       createRelationChecked,
       confirmRelation,
       updateRelation,
+      rejectRelation,
       addSuggestions,
       candidatesFromDifficulties,
     ],

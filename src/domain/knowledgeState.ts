@@ -19,7 +19,9 @@ import {
   linkConceptToProject,
   mergeConcepts,
   mergeSuggestions,
+  rejectRelationSuggestion,
   unlinkConceptFromProject,
+  undoRejection,
   updateConcept,
   updateRelationKind,
   type Concept,
@@ -50,6 +52,8 @@ export type KnowledgeAction =
   | { type: 'relation/create'; input: RelationInput; id: string; at: number }
   | { type: 'relation/confirm'; id: string; at: number }
   | { type: 'relation/updateKind'; id: string; kind: RelationKind; at: number }
+  | { type: 'relation/reject'; id: string; rejectionId: string; at: number }
+  | { type: 'rejection/undo'; id: string }
   | { type: 'relation/delete'; id: string }
   | { type: 'project/detach'; projectId: string; at: number }
   | {
@@ -103,6 +107,12 @@ export function knowledgeReducer(state: KnowledgeState, action: KnowledgeAction)
 
     case 'relation/updateKind':
       return updateRelationKind(state, action.id, action.kind, action.at).state;
+
+    case 'relation/reject':
+      return rejectRelationSuggestion(state, action.id, action.rejectionId, action.at).state;
+
+    case 'rejection/undo':
+      return undoRejection(state, action.id);
 
     case 'relation/delete':
       return deleteRelation(state, action.id);

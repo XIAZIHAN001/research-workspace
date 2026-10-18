@@ -122,6 +122,9 @@ export function ConceptDetail({
       ACADEMIC_RELATION_KINDS.includes(relation.kind) &&
       (relation.from === concept.id || relation.to === concept.id),
   );
+  const rejectedHere = state.rejections
+    .filter((rejection) => rejection.from === concept.id || rejection.to === concept.id)
+    .sort((one, other) => other.createdAt - one.createdAt);
 
   /** Annotations of this project's papers that are not already attached to this concept. */
   const attachable = annotations.filter((annotation) => {
@@ -726,6 +729,21 @@ export function ConceptDetail({
                     >
                       采纳
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-quiet"
+                      title="记录为明确拒绝；同一条主张不会在下次分析时自动恢复"
+                      onClick={() => {
+                        const result = api.rejectRelation(relation.id);
+                        onNotice(
+                          result.ok
+                            ? '已拒绝这条关系建议；撤销前，同一主张不会自动恢复。'
+                            : (result.reason ?? '无法拒绝这条关系建议。'),
+                        );
+                      }}
+                    >
+                      拒绝该关系
+                    </button>
                     <label className="knowledge-kind-edit">
                       <span className="sr-only">改为哪种关系</span>
                       <select
@@ -751,15 +769,61 @@ export function ConceptDetail({
                     <button
                       type="button"
                       className="link-remove"
-                      aria-label="忽略这条建议"
+                      title="只移除本次建议；下次分析可能再次出现"
+                      aria-label="暂时忽略这条建议"
                       onClick={() => {
                         api.deleteRelation(relation.id);
-                        onNotice('已忽略这条关系建议。');
+                        onNotice('已暂时忽略这条关系建议；下次分析可能再次出现。');
                       }}
                     >
                       ×
                     </button>
                   </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {rejectedHere.length > 0 && (
+        <section className="concept-block" aria-labelledby={`rejected-${concept.id}`}>
+          <h4 id={`rejected-${concept.id}`}>已拒绝的关系建议</h4>
+          <p className="concept-hint">
+            这些是明确的拒绝，不会在重新分析时自动恢复；只有你在这里撤销后，同一主张才可能再次出现。
+          </p>
+          <ul className="concept-links">
+            {rejectedHere.map((rejection) => {
+              const other = rejection.from === concept.id ? rejection.to : rejection.from;
+              return (
+                <li key={rejection.id} className="confirmed-relation">
+                  <div className="suggested-relation-head">
+                    <span className="kb-kind">{RELATION_KIND_LABEL[rejection.kind]}</span>
+                    <span>{nameOf(other)}</span>
+                    <span className="kb-badge">已拒绝</span>
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => {
+                        api.undoRejection(rejection.id);
+                        onNotice('已撤销拒绝；下一次分析可能再次提出这条关系。');
+                      }}
+                    >
+                      撤销拒绝
+                    </button>
+                  </div>
+                  {rejection.rationale !== '' && (
+                    <p className="suggested-relation-why">
+                      <span className="knowledge-label">当时的解释</span>
+                      {rejection.rationale}
+                    </p>
+                  )}
+                  {rejection.evidence.length > 0 && (
+                    <p className="concept-hint">
+                      拒绝时带着 {rejection.evidence.length}{' '}
+                      条引文；重新分析若给出不同解释或证据，会作为新建议出现。
+                    </p>
+                  )}
                 </li>
               );
             })}
