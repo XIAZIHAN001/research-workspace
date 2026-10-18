@@ -57,7 +57,28 @@ describe('readConfig', () => {
     expect(readConfig({ AI_PORT: '9999' }).port).toBe(9999);
     expect(readConfig({ AI_PORT: '-1' }).port).toBe(DEFAULT_PORT);
     expect(readConfig({ AI_PORT: 'abc' }).port).toBe(DEFAULT_PORT);
+    // Port 0 (an ephemeral port) is only available to the desktop launcher, which needs it to
+    // avoid ever depending on a fixed port someone else may already be using.
+    expect(readConfig({ AI_PORT: '0' }).port).toBe(DEFAULT_PORT);
+    expect(readConfig({ AI_PORT: '0' }, { allowEphemeralPort: true }).port).toBe(0);
     expect(readConfig({ AI_TIMEOUT_MS: '10' }).timeoutMs).toBe(120_000);
+  });
+
+  it('reads the desktop session credential and instance id', () => {
+    const token = 'a'.repeat(64);
+    const config = readConfig({
+      AI_SESSION_TOKEN: ` ${token} `,
+      AI_DESKTOP_INSTANCE: 'instance-1',
+    });
+    expect(config.sessionToken).toBe(token);
+    expect(config.desktopInstance).toBe('instance-1');
+    expect(configProblems(config)).toEqual([]);
+  });
+
+  it('refuses a desktop credential that is too short to be one', () => {
+    const problems = configProblems(readConfig({ AI_SESSION_TOKEN: 'short' }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('AI_SESSION_TOKEN');
   });
 
   it('bounds the generation ceiling, which thinking mode spends from too', () => {

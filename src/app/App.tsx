@@ -21,6 +21,7 @@ import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
 import { BackupDialog } from '../features/backup/BackupDialog';
+import { AiServiceBadge } from '../features/desktop/AiServiceBadge';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createAnnotation } from '../domain/annotation';
@@ -674,6 +675,8 @@ export function App({
           }}
         />
       )}
+
+      <AiServiceBadge />
     </div>
   );
 }

@@ -35,6 +35,7 @@ import {
   checkMethod,
   checkOrigin,
   checkPath,
+  checkSessionToken,
   readJsonBody,
   sendJson,
 } from './guards.mjs';
@@ -46,7 +47,7 @@ import { createLogger } from './log.mjs';
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
@@ -81,6 +82,8 @@ export function createAiServer({
     provider: chosen.name,
     label: chosen.label,
     model: chosen.model,
+    /** Echoed only in the desktop build, so the shell can pin the process it started. */
+    ...(config.desktopInstance ? { desktopInstance: config.desktopInstance } : {}),
     /** What the call will spend, in the provider's own terms; null for the offline provider. */
     reasoning: chosen.reasoning ?? null,
     /** True when a call reaches a paid service. The interface says so before anything is sent. */
@@ -508,6 +511,14 @@ export function createAiServer({
     if (request.method === 'OPTIONS') {
       response.writeHead(204, typeof origin === 'string' ? corsHeaders(origin) : {});
       response.end();
+      return;
+    }
+
+    // The desktop credential covers every real request, health included. Preflight above is
+    // deliberately exempt: a browser does not attach Authorization to it.
+    const session = checkSessionToken(request.headers.authorization, config.sessionToken);
+    if (!session.ok) {
+      sendJson(response, session.status, { error: 'unauthorized', message: session.message });
       return;
     }
 

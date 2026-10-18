@@ -18,6 +18,7 @@ import './styles/reader.css';
 import './styles/knowledge.css';
 import './styles/knowledge-ai.css';
 import './styles/backup.css';
+import './styles/desktop.css';
 
 const container = document.getElementById('root');
 if (container === null) throw new Error('Missing #root element');

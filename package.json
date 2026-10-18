@@ -1,6 +1,6 @@
 {
   "name": "research-workspace",
-  "version": "0.0.1",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "Local-first research paper reading workspace (Phase 0 prototype)",
@@ -36,9 +36,14 @@
     "verify:knowledge-replay-all": "node scripts/verify/replay-all.mjs",
     "verify:real": "node scripts/verify/real-paper.mjs",
     "verify:live": "node scripts/verify/live-api.mjs",
+    "verify:desktop": "node scripts/verify/desktop.mjs",
+    "desktop:prepare": "node scripts/desktop/prepare-sidecar.mjs",
+    "desktop:dev": "npm run desktop:prepare && tauri dev",
+    "desktop:build": "npm run desktop:prepare && tauri build",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.12.4",
     "katex": "0.19.0",
     "lucide-react": "1.57.0",
     "pdfjs-dist": "6.4.299",

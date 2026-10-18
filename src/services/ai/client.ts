@@ -11,6 +11,7 @@
  */
 
 import type { ProposedDifficulty } from '../../domain/difficulty';
+import { getDesktopAiStatus, isDesktopApp } from '../desktop/aiService';
 import type { KnowledgeAnalysis, KnowledgeRequest } from './knowledgeTypes';
 import type {
   AiAnswer,
@@ -51,7 +52,54 @@ const MESSAGES: Record<AiFailureKind, string> = {
 };
 
 function describeFailure(kind: AiFailureKind, override?: string): AiFailure {
+  if (kind === 'offline' && override === undefined) {
+    return { kind, message: offlineMessage() };
+  }
   return { kind, message: override ?? MESSAGES[kind] };
+}
+
+function offlineMessage(): string {
+  return isDesktopApp()
+    ? '连接不上桌面应用内的 AI 服务。可以在右下角的状态区重新启动它。'
+    : MESSAGES.offline;
+}
+
+/**
+ * Resolves the transport for one call.
+ *
+ * Browser: unchanged — relative URLs through the Vite proxy. Desktop: ask Rust for the
+ * sidecar's ephemeral base URL and launch token, then attach the token to every request. The
+ * token is deliberately fetched per call rather than cached: a restart rotates it, and a
+ * stale token would turn a working service into a confusing 401.
+ *
+ * An explicit `baseUrl` or `fetchImpl` means the caller (tests, verification scripts) owns the
+ * transport, so the desktop path is never taken under them.
+ */
+async function resolveTransport(options: AiClientOptions): Promise<AiClientOptions> {
+  if (!isDesktopApp() || options.baseUrl !== undefined || options.fetchImpl !== undefined) {
+    return options;
+  }
+
+  const status = await getDesktopAiStatus();
+  if (
+    status === null ||
+    status.state !== 'ready' ||
+    status.baseUrl === null ||
+    status.token === null
+  ) {
+    // The call will fail as "offline" without reaching the network. A fetch that rejects is
+    // the same shape every caller already handles.
+    const unavailable: typeof fetch = () => Promise.reject(new TypeError('AI service unavailable'));
+    return { ...options, fetchImpl: unavailable };
+  }
+
+  const token = status.token;
+  const withToken: typeof fetch = (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(input, { ...init, headers });
+  };
+  return { ...options, baseUrl: status.baseUrl, fetchImpl: withToken };
 }
 
 function kindFor(status: number, code: unknown): AiFailureKind {
@@ -108,7 +156,7 @@ export async function askAi(
     timeoutMs = DEFAULT_TIMEOUT_MS,
     fetchImpl = globalThis.fetch,
     baseUrl = '',
-  } = options;
+  } = await resolveTransport(options);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -156,7 +204,7 @@ export async function askAi(
 
 /** Asks the service what it is. Returns null when it is not running, which is not an error. */
 export async function fetchAiHealth(options: AiClientOptions = {}): Promise<AiHealth | null> {
-  const { fetchImpl = globalThis.fetch, baseUrl = '' } = options;
+  const { fetchImpl = globalThis.fetch, baseUrl = '' } = await resolveTransport(options);
   try {
     const response = await fetchImpl(`${baseUrl}/api/ai/health`);
     if (!response.ok) return null;
@@ -213,7 +261,7 @@ export async function analyzeDifficulties(
     timeoutMs = DEFAULT_TIMEOUT_MS,
     fetchImpl = globalThis.fetch,
     baseUrl = '',
-  } = options;
+  } = await resolveTransport(options);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -296,7 +344,7 @@ export async function analyzeKnowledge(
     timeoutMs = DEFAULT_TIMEOUT_MS,
     fetchImpl = globalThis.fetch,
     baseUrl = '',
-  } = options;
+  } = await resolveTransport(options);
 
   const controller = new AbortController();
   let timedOut = false;

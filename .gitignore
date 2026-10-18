@@ -5,6 +5,8 @@ dist/
 # Rust / Tauri build output
 src-tauri/target/
 src-tauri/gen/
+# Generated desktop sidecar runtime (Node + service sources copied by npm run desktop:prepare)
+src-tauri/sidecar/
 
 # Local caches, logs and machine-specific paths
 .cache/

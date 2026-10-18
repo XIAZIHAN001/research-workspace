@@ -1,0 +1,65 @@
+/*
+ * Desktop-only service status. It floats above the interface because the sidecar belongs to
+ * the shell, not to any one view; the reader can be in the home, library or graph and still
+ * needs to know whether questions can reach a service.
+ */
+.ai-service-badge {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border: 1px solid var(--rim-mid);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: var(--elev-float);
+}
+
+.ai-service-badge[data-state='ready'] {
+  color: var(--ok);
+}
+
+.ai-service-badge[data-state='failed'] {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.ai-service-badge[data-state='starting'] {
+  color: var(--warn);
+}
+
+.ai-service-badge__label {
+  flex: none;
+  font-weight: 600;
+}
+
+.ai-service-badge__detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-service-badge__restart {
+  flex: none;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 759px) {
+  .ai-service-badge {
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .ai-service-badge__detail {
+    display: none;
+  }
+}

@@ -7,6 +7,8 @@
  * a URL, a host, a model or a credential from the request.
  */
 
+import { timingSafeEqual } from 'node:crypto';
+
 /**
  * DNS-rebinding guard.
  *
@@ -52,6 +54,35 @@ export function checkOrigin(originHeader, allowedOrigins) {
 
 function isLoopback(origin) {
   return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
+}
+
+/**
+ * The desktop shell's per-launch credential.
+ *
+ * The Origin and Host checks alone cannot separate the desktop window from any other local
+ * page: both are loopback callers. The shell therefore starts the service with a random bearer
+ * token and hands it to the webview over Tauri IPC — a page the reader happens to have open
+ * has no way to read that token, so discovering the ephemeral port is not enough.
+ *
+ * An empty expected token means the browser/proxy deployment, where no credential exists and
+ * the Origin check is the boundary. The comparison is constant-time so a wrong token cannot be
+ * recovered a character at a time.
+ */
+export function checkSessionToken(authorizationHeader, expectedToken) {
+  if (typeof expectedToken !== 'string' || expectedToken === '') return { ok: true };
+  if (typeof authorizationHeader !== 'string' || authorizationHeader === '') {
+    return { ok: false, status: 401, message: '请求缺少桌面会话凭据。' };
+  }
+  const match = /^Bearer ([^\s]+)$/.exec(authorizationHeader);
+  if (match === null) {
+    return { ok: false, status: 401, message: '桌面会话凭据格式不正确。' };
+  }
+  const provided = Buffer.from(match[1], 'utf8');
+  const expected = Buffer.from(expectedToken, 'utf8');
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
+    return { ok: false, status: 401, message: '桌面会话凭据不正确。' };
+  }
+  return { ok: true };
 }
 
 /** Only the known endpoints exist; there is no passthrough of any kind. */

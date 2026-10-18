@@ -6,6 +6,7 @@ import {
   checkMethod,
   checkOrigin,
   checkPath,
+  checkSessionToken,
 } from './guards.mjs';
 
 describe('checkHost', () => {
@@ -61,6 +62,33 @@ describe('checkPath and checkMethod', () => {
     expect(checkMethod('POST', '/api/ai/health').ok).toBe(false);
     expect(checkMethod('POST', '/api/ai/ask').ok).toBe(true);
     expect(checkMethod('GET', '/api/ai/ask').ok).toBe(false);
+  });
+});
+
+describe('checkSessionToken', () => {
+  const token = 'a'.repeat(64);
+
+  it('is not applied when the service has no desktop credential', () => {
+    // The browser deployment through the Vite proxy has no token; its boundary is Origin.
+    expect(checkSessionToken(undefined, '')).toEqual({ ok: true });
+    expect(checkSessionToken('Bearer anything', '')).toEqual({ ok: true });
+  });
+
+  it('accepts exactly the token the desktop shell generated', () => {
+    expect(checkSessionToken(`Bearer ${token}`, token)).toEqual({ ok: true });
+  });
+
+  it('refuses a missing, malformed or wrong token', () => {
+    for (const header of [undefined, '', token, `Basic ${token}`, `Bearer ${'b'.repeat(64)}`]) {
+      const result = checkSessionToken(header, token);
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(401);
+    }
+  });
+
+  it('refuses a token of a different length without throwing', () => {
+    // timingSafeEqual throws on unequal lengths; the guard checks the length first.
+    expect(checkSessionToken('Bearer short', token).ok).toBe(false);
   });
 });
 

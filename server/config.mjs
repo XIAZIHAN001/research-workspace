@@ -122,7 +122,10 @@ export function isLoopbackOrigin(origin) {
   return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
 }
 
-export function readConfig(env = process.env, { forceOffline = false } = {}) {
+export function readConfig(
+  env = process.env,
+  { forceOffline = false, allowEphemeralPort = false } = {},
+) {
   // `--offline` is not a preference, it is a wall: a machine that happens to have a key in its
   // environment must still be able to start a service that cannot spend anything.
   const provider = forceOffline ? 'mock' : env.AI_PROVIDER === 'deepseek' ? 'deepseek' : 'mock';
@@ -140,7 +143,23 @@ export function readConfig(env = process.env, { forceOffline = false } = {}) {
   const reasoningEffort = thinking === 'disabled' ? 'none' : requestedEffort;
 
   return {
-    port: readInt(env.AI_PORT, DEFAULT_PORT, { min: 1, max: 65535 }),
+    port: readInt(env.AI_PORT, DEFAULT_PORT, { min: allowEphemeralPort ? 0 : 1, max: 65535 }),
+    /**
+     * The desktop shell's per-launch credential.
+     *
+     * Empty outside the desktop: the browser build talks to the service through the Vite proxy
+     * and has no credential to present. When set, every non-preflight request must carry it,
+     * which is what stops an unrelated local page from using the service even if it discovers
+     * the ephemeral port.
+     */
+    sessionToken: typeof env.AI_SESSION_TOKEN === 'string' ? env.AI_SESSION_TOKEN.trim() : '',
+    /**
+     * Identifies the desktop shell instance that spawned this process. Echoed in `health` so
+     * the shell can verify it is talking to the child it started, not to another process that
+     * happens to answer on the same port.
+     */
+    desktopInstance:
+      typeof env.AI_DESKTOP_INSTANCE === 'string' ? env.AI_DESKTOP_INSTANCE.trim() : '',
     provider,
     /** Set only for the deepseek provider; the mock provider ignores it entirely. */
     apiKey:
@@ -174,6 +193,11 @@ export function configProblems(config) {
   }
   if (config.provider === 'deepseek' && !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(config.baseUrl)) {
     problems.push(`DEEPSEEK_BASE_URL 必须是 https 地址，当前是 ${config.baseUrl}`);
+  }
+  // A short desktop credential is not a credential. The shell generates 32 random bytes; this
+  // bound refuses a hand-written placeholder rather than accepting it as protection.
+  if (config.sessionToken !== '' && config.sessionToken.length < 32) {
+    problems.push('AI_SESSION_TOKEN 至少需要 32 个字符；桌面会话凭据由桌面壳随机生成。');
   }
   for (const origin of config.allowedOrigins) {
     if (!/^https?:\/\/[^\s/]+$/.test(origin))
