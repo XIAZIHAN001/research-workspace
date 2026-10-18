@@ -263,12 +263,23 @@ button.row-main:active {
 /* The base plate: a slightly denser tier under the list, so the sidebar reads as layers. */
 .sidebar-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px 10px;
   border-top: 1px solid var(--ring);
   background: var(--foot-tint);
+}
+
+/*
+ * The footer holds two labelled buttons and a three-way theme switch. At the narrow sidebar
+ * width they do not fit on one line; without wrapping the switch was clipped by the sidebar
+ * edge. Wrapping puts it on its own line, and margin-left keeps it on the right edge as the
+ * segmented control it is.
+ */
+.sidebar-foot .segmented {
+  margin-left: auto;
 }
 
 .segmented {

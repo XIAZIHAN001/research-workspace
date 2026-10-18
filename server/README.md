@@ -11,6 +11,18 @@ npm run ai:serve:offline   # 强制 mock，环境里的 AI_PROVIDER 与密钥一
 npm run ai:serve:online    # 必须同时有 AI_PROVIDER=deepseek 与密钥，否则拒绝启动
 ```
 
+### 桌面应用内
+
+桌面版不运行上面的命令。Tauri 壳会在启动时拉起 `server/desktop.mjs`：
+
+- 绑定 `127.0.0.1` 的**临时端口**（`AI_PORT=0`），绝不使用 8787，也不连接已在 8787 上的进程；
+- 每次启动生成随机 Bearer 凭据（`AI_SESSION_TOKEN`），前端通过 Tauri IPC 取得，普通网页拿不到；
+- 强制 `--offline` 语义，父进程环境里的 `AI_PROVIDER` / `DEEPSEEK_API_KEY` 不会被继承；
+- 通过 stdin EOF 与父进程 PID 看门狗退出，应用关闭或崩溃后不遗留孤儿进程。
+
+`AI_SESSION_TOKEN`、`AI_DESKTOP_INSTANCE`、`AI_PARENT_PID` 是桌面壳与 sidecar 之间的内部协议，
+不是供用户配置的选项。浏览器开发仍使用上面的 `npm run ai:serve` + Vite 代理。
+
 不配置任何环境变量时使用 **mock provider**：不联网、不计费，用于开发与验收。
 应用启动本身不会产生任何在线调用。
 

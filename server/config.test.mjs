@@ -120,6 +120,16 @@ describe('configProblems', () => {
     );
     expect(problems.some((problem) => problem.includes('https'))).toBe(true);
   });
+
+  it('accepts the custom Tauri scheme used by Linux and macOS webviews', () => {
+    const problems = configProblems(readConfig({ AI_ALLOWED_ORIGINS: 'tauri://localhost' }));
+    expect(problems).toEqual([]);
+    expect(
+      configProblems(
+        readConfig({ AI_ALLOWED_ORIGINS: 'tauri://localhost,http://tauri.localhost' }),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('thinking mode', () => {

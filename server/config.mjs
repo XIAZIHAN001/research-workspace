@@ -200,7 +200,9 @@ export function configProblems(config) {
     problems.push('AI_SESSION_TOKEN 至少需要 32 个字符；桌面会话凭据由桌面壳随机生成。');
   }
   for (const origin of config.allowedOrigins) {
-    if (!/^https?:\/\/[^\s/]+$/.test(origin))
+    // Desktop webviews are not all http(s): Linux/macOS Tauri serves the page from the
+    // custom `tauri://localhost` scheme. The rule is a scheme plus a host, not http only.
+    if (!/^[a-z][a-z0-9+.-]*:\/\/[^\s/]+$/i.test(origin))
       problems.push(`AI_ALLOWED_ORIGINS 里的 ${origin} 不是来源`);
   }
   return problems;

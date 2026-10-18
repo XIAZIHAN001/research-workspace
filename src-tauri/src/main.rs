@@ -160,6 +160,23 @@ fn sidecar_dir(app: &AppHandle) -> Result<PathBuf, String> {
     }
 }
 
+/**
+ * Tauri resolves resources to a verbatim path (`\\?\D:\...`). That is useful for Rust's own
+ * filesystem calls, but Node treats the prefix as part of the script name and fails before the
+ * service starts. The executable and its arguments are the one place the plain path is needed.
+ */
+fn native_path(path: &std::path::Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(text) = path.to_str() {
+            if let Some(rest) = text.strip_prefix(r"\\?\") {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+    path.to_path_buf()
+}
+
 fn stderr_tail(runtime: &AiRuntime) -> String {
     let lines = runtime.stderr.lock().expect("stderr lock poisoned");
     let text = lines
@@ -224,8 +241,8 @@ fn spawn_child(
     // The same filename on every platform keeps the bundle resource list identical. On Linux
     // this is a Linux binary that happens to carry a .exe suffix; the shell never relies on
     // the extension, only on the path.
-    let node = directory.join("rw-node.exe");
-    let launcher = directory.join("server").join("desktop.mjs");
+    let node = native_path(&directory.join("rw-node.exe"));
+    let launcher = native_path(&directory.join("server").join("desktop.mjs"));
 
     if !node.is_file() {
         return Err(format!(
@@ -254,12 +271,12 @@ fn spawn_child(
         .env("AI_PARENT_PID", std::process::id().to_string())
         .env("AI_PORT", "0")
         .env("AI_LOG_REQUESTS", "0")
-        // The production webview origin on Windows. Tauri serves the built front end from
-        // http://tauri.localhost; both schemes are listed so a future useHttpsScheme change
-        // does not silently break the service.
+        // Windows serves the built front end from http://tauri.localhost; Linux and macOS use
+        // the custom tauri://localhost scheme. All three are listed so the same sidecar
+        // configuration works on every desktop target.
         .env(
             "AI_ALLOWED_ORIGINS",
-            "http://tauri.localhost,https://tauri.localhost",
+            "http://tauri.localhost,https://tauri.localhost,tauri://localhost",
         );
 
     for key in [
@@ -267,6 +284,8 @@ fn spawn_child(
         "WINDIR",
         "TEMP",
         "TMP",
+        "TMPDIR",
+        "HOME",
         "PATH",
         "USERPROFILE",
         "LOCALAPPDATA",

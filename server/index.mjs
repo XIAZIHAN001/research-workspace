@@ -501,6 +501,14 @@ export function createAiServer({
       return;
     }
 
+    // Emit the CORS headers as soon as the origin is accepted, so the desktop webview can read
+    // an authentication failure (401) instead of seeing an opaque network error. A foreign
+    // origin never reaches this point, so this does not widen what a page may read.
+    if (typeof origin === 'string' && origin !== '') {
+      for (const [name, value] of Object.entries(corsHeaders(origin)))
+        response.setHeader(name, value);
+    }
+
     const pathCheck = checkPath(url.pathname);
     if (!pathCheck.ok) {
       sendJson(response, pathCheck.status, { error: 'not-found', message: pathCheck.message });
@@ -529,11 +537,6 @@ export function createAiServer({
         message: methodCheck.message,
       });
       return;
-    }
-
-    if (typeof origin === 'string' && origin !== '') {
-      for (const [name, value] of Object.entries(corsHeaders(origin)))
-        response.setHeader(name, value);
     }
 
     if (url.pathname === '/api/ai/health') {

@@ -37,8 +37,9 @@
     "verify:real": "node scripts/verify/real-paper.mjs",
     "verify:live": "node scripts/verify/live-api.mjs",
     "verify:desktop": "node scripts/verify/desktop.mjs",
+    "verify:desktop-dev": "node scripts/verify/desktop-dev.mjs",
     "desktop:prepare": "node scripts/desktop/prepare-sidecar.mjs",
-    "desktop:dev": "npm run desktop:prepare && tauri dev",
+    "desktop:dev": "npm run desktop:prepare && tauri dev --config src-tauri/tauri.dev.conf.json",
     "desktop:build": "npm run desktop:prepare && tauri build",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },

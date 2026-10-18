@@ -13,7 +13,7 @@
 
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, cp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,6 +41,8 @@ async function main() {
   await mkdir(sidecarDir, { recursive: true });
 
   await copyFile(process.execPath, runtimeTarget);
+  // Linux bundle resources need the executable bit; copyFile does not guarantee it.
+  if (process.platform !== 'win32') await chmod(runtimeTarget, 0o755);
   await cp(serverSource, join(sidecarDir, 'server'), {
     recursive: true,
     filter: shouldCopy,

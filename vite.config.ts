@@ -63,7 +63,10 @@ export default defineConfig({
   // Without it, lucide-react is discovered late and one page load can mix two React copies.
   optimizeDeps: { include: ['react', 'react-dom/client', 'lucide-react'] },
   server: {
-    port: 1420,
+    // 1420 sits inside the Windows Hyper-V/WSL excluded TCP range (1334–1433) on this machine,
+    // where binding is refused with EACCES. 1440 is outside every excluded range.
+    host: '127.0.0.1',
+    port: 1440,
     strictPort: true,
     watch: { ignored: ['**/src-tauri/**', '**/.cache/**'] },
     // The browser talks to the local AI service through this proxy, so the page stays

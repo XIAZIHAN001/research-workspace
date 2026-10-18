@@ -5,13 +5,16 @@
  */
 .ai-service-badge {
   position: fixed;
-  right: 16px;
+  right: auto;
   bottom: 16px;
+  /* Beside the sidebar, not over the right-side reader panels: the assistant's submit button
+     lives at the bottom-right and a status pill there made it un-clickable. */
+  left: calc(var(--sidebar-w) + 16px);
   z-index: 60;
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: min(420px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - var(--sidebar-w) - 32px));
   padding: 8px 12px;
   border: 1px solid var(--rim-mid);
   border-radius: var(--r-sm);
@@ -19,6 +22,13 @@
   font-size: 12px;
   line-height: 1.4;
   box-shadow: var(--elev-float);
+  /* The pill is information; only the restart control inside it takes clicks. */
+  pointer-events: none;
+}
+
+.app[data-sidebar='closed'] .ai-service-badge {
+  left: 16px;
+  max-width: min(420px, calc(100vw - 32px));
 }
 
 .ai-service-badge[data-state='ready'] {
@@ -51,12 +61,16 @@
   flex: none;
   padding: 3px 8px;
   font-size: 12px;
+  pointer-events: auto;
 }
 
 @media (max-width: 759px) {
-  .ai-service-badge {
-    right: 12px;
+  .ai-service-badge,
+  .app[data-sidebar='closed'] .ai-service-badge {
+    right: auto;
     bottom: 12px;
+    left: 12px;
+    max-width: calc(100vw - 24px);
   }
 
   .ai-service-badge__detail {
