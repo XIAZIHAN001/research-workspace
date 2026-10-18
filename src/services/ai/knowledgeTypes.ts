@@ -90,11 +90,18 @@ export interface KnowledgeRejection {
 
 export interface KnowledgeDiagnostics {
   rawChars: number;
+  contextChars: number;
+  smallContext: boolean;
+  smallContextLimited: number;
   conceptsKept: number;
   relationsKept: number;
   evidenceKept: number;
   rejected: number;
   matchedExisting: number;
+  nameNotVerbatim: number;
+  ambiguousExistingNames: number;
+  ambiguousConceptsSkipped: number;
+  ambiguousRelationsSkipped: number;
   directionDefaulted: number;
   supportDefaulted: number;
   ignoredIdentityFields: number;

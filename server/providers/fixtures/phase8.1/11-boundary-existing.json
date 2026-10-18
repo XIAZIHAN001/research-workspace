@@ -1,0 +1,324 @@
+{
+  "scenario": "boundary-existing",
+  "derivedFrom": ".cache/verify/phase8.1-live/live/responses/11-boundary-existing.json",
+  "derivation": "Model-shaped reply reconstructed from the stored verified response: passages echo the original request, evidence keeps only passageId and quote. The stored rejection code is reproduced by an empty quote where noted.",
+  "attribution": {
+    "paper": "Twice Upon a Time: Complementary Representations for Time-Series Reasoning",
+    "authors": ["Hedi Zisling", "Liran Nochumsohn", "Ilan Naiman", "Mihir Parmar", "Omri Azencot"],
+    "arxiv": "2610.22327",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "note": "Short passages are kept only so the stored model output can be replayed against the same text."
+  },
+  "request": {
+    "paper": {
+      "id": "ts-2610.22327",
+      "title": "Twice Upon a Time: Complementary Representations for Time-Series Reasoning",
+      "page": 1
+    },
+    "focus": "Time Series Language Models (TSLMs) enable language-based understanding and reasoning over temporal data",
+    "scope": "selection",
+    "passages": [
+      {
+        "id": "selection",
+        "page": 1,
+        "text": "Preprint T WICE U PON A T IME : C OMPLEMENTARY R EPRESEN - TATIONS FOR T IME -S ERIES R EASONING Hedi Zisling ∗ Ben-Gurion University Liran Nochumsohn ∗ Ben-Gurion University Ilan Naiman Google Mihir Parmar Google Omri Azencot Ben-Gurion University A BSTRACT Time Series Language Models (TSLMs) enable language-based understanding and reasoning over temporal data, yet a fundamental question remains: what in- formation should their time-series representations preserve, and what variation should they factor out? Existing TSLMs typically expose the language model to a single representation, imposing a fixed inductive bias across downstream tasks. We instead introduce complementary representations as a design",
+        "selection": true,
+        "role": "selection",
+        "label": "读者选中的原文"
+      },
+      {
+        "id": "ctx-1",
+        "page": 2,
+        "text": "datasets, respectively. Bold marks the best result in each panel, excluding GPT-5 (T+V), shown in gray, which is a large proprietary model included as a reference rather than a size-matched comparison. representation—not only model scale or training strategy—is a key determinant of time-series rea- soning ability. This motivates a more fundamental question: Can complementary representations improve general-purpose time-series reasoning? We hypothesize that general-purpose time-series reasoning benefits from exposing the model to com- plementary views of the same signal, each preserving different information and inducing different invariances. Rather than requiring a single representation to simultaneously retain all information relevant to downstream reasoning while suppressing nuisance variation, this formulation allows dis- tinct views to provide different inductive biases. We instantiate this principle with two visual repre- sentations: a standard line plot and a",
+        "selection": false,
+        "role": "neighbor",
+        "label": "相关段落：第 2 页"
+      },
+      {
+        "id": "ctx-2",
+        "page": 3,
+        "text": "Preprint • Complementary representations for time-series reasoning. We establish complemen- tary representation as a design principle for TSLMs, motivated by the observation that quantitative readout requires the original measurement frame, whereas reasoning about temporal dynamics benefits from factoring it out. • A dual-view time-series language model. We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model. Dedicated visual encoders, compact visual tokens, and multi-level feature fusion integrate temporal structure with the original measurement frame. • State-of-the-art TSLM performance. With an 8B backbone, our model outperforms all evaluated dedicated TSLMs on",
+        "selection": false,
+        "role": "context",
+        "label": "相关段落：第 3 页"
+      }
+    ],
+    "existingConcepts": [
+      {
+        "name": "Time Series Language Model",
+        "aliases": ["TSLM", "TSLMs"],
+        "summary": "把时间序列作为输入并用语言模型进行理解与推理的模型。"
+      },
+      {
+        "name": "Language Model",
+        "aliases": ["LM"],
+        "summary": "在 token 序列上建模并生成输出的模型。"
+      }
+    ],
+    "existingRelations": [
+      {
+        "from": "Time Series Language Model",
+        "to": "Language Model",
+        "kind": "prerequisite",
+        "status": "confirmed"
+      }
+    ]
+  },
+  "reply": {
+    "groundedInText": true,
+    "concepts": [
+      {
+        "name": "Complementary Representations",
+        "aliases": ["complementary views", "complementary representation"],
+        "summary": "一种设计原则：不要求单一时间序列表示同时保留所有下游相关信息并抑制无关变化，而是让语言模型同时接触同一信号的多个互补视图，每个视图保留不同信息、引入不同归纳偏置。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "We instead introduce complementary representations as a design"
+          },
+          {
+            "passageId": "ctx-1",
+            "quote": "We hypothesize that general-purpose time-series reasoning benefits from exposing the model to com- plementary views of the same signal, each preserving different information and inducing different invariances."
+          }
+        ]
+      },
+      {
+        "name": "Inductive Bias",
+        "aliases": ["inductive biases"],
+        "summary": "表示形式对模型施加的固定先验约束；现有 TSLM 因只暴露单一表示而在所有下游任务上强加固定归纳偏置，互补表示则让不同视图提供不同归纳偏置。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "Existing TSLMs typically expose the language model to a single representation, imposing a fixed inductive bias across downstream tasks."
+          },
+          {
+            "passageId": "ctx-1",
+            "quote": "this formulation allows dis- tinct views to provide different inductive biases"
+          }
+        ]
+      },
+      {
+        "name": "Line Plot",
+        "aliases": ["standard line plot"],
+        "summary": "一种视觉表示，作为双视图实例化中的标准视图之一，保留原始测量框架。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "We instantiate this principle with two visual repre- sentations: a standard line plot and a"
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          }
+        ]
+      },
+      {
+        "name": "Normalized Delay Embedding",
+        "aliases": ["delay embeddings"],
+        "summary": "第二种视觉表示，与线图互补；通过归一化把原始测量框架因子化出去，从而便于对时间动态进行推理。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "quantitative readout requires the original measurement frame, whereas reasoning about temporal dynamics benefits from factoring it out."
+          }
+        ]
+      },
+      {
+        "name": "Dual-Tower Architecture",
+        "aliases": ["dual-view time-series language model"],
+        "summary": "把线图与归一化延迟嵌入两种视图通过各自的视觉编码器、紧凑视觉 token 和多级特征融合整合进同一个共享语言模型的架构。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "Dedicated visual encoders, compact visual tokens, and multi-level feature fusion integrate temporal structure with the original measurement frame."
+          }
+        ]
+      },
+      {
+        "name": "Measurement Frame",
+        "aliases": ["original measurement frame"],
+        "summary": "信号的原始量纲/测量参照系；定量读出需要保留它，而对时间动态的推理则受益于将其因子化出去，这一区分是互补表示原则的动机。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "quantitative readout requires the original measurement frame, whereas reasoning about temporal dynamics benefits from factoring it out."
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "Complementary Representations",
+        "to": "Time Series Language Model",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "互补表示被提出为 TSLM 的设计原则，理解该原则需先知道 TSLM 通常只暴露单一表示这一背景。",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "Existing TSLMs typically expose the language model to a single representation, imposing a fixed inductive bias across downstream tasks. We instead introduce complementary representations as a design"
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "Complementary representations for time-series reasoning. We establish complemen- tary representation as a design principle for TSLMs"
+          }
+        ]
+      },
+      {
+        "from": "Complementary Representations",
+        "to": "Inductive Bias",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "互补表示的动机正是打破单一表示带来的固定归纳偏置，因此需先理解归纳偏置这一概念。",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "imposing a fixed inductive bias across downstream tasks"
+          },
+          {
+            "passageId": "ctx-1",
+            "quote": "this formulation allows dis- tinct views to provide different inductive biases"
+          }
+        ]
+      },
+      {
+        "from": "Complementary Representations",
+        "to": "Measurement Frame",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "互补表示原则由“定量读出需保留测量框架、动态推理需将其因子化”这一观察所驱动。",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "motivated by the observation that quantitative readout requires the original measurement frame, whereas reasoning about temporal dynamics benefits from factoring it out."
+          }
+        ]
+      },
+      {
+        "from": "Line Plot",
+        "to": "Complementary Representations",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "线图是互补表示原则的两个具体实例化视图之一，理解该实例需先理解互补表示原则。",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "We instantiate this principle with two visual repre- sentations: a standard line plot and a"
+          }
+        ]
+      },
+      {
+        "from": "Normalized Delay Embedding",
+        "to": "Complementary Representations",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "归一化延迟嵌入是互补表示原则的第二个实例化视图。",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "We instantiate this principle with two visual repre- sentations: a standard line plot and a"
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          }
+        ]
+      },
+      {
+        "from": "Line Plot",
+        "to": "Normalized Delay Embedding",
+        "kind": "related",
+        "direction": "undirected",
+        "support": "direct",
+        "explanation": "两者是同一信号的两个互补视图，分别保留不同信息，构成并列互补关系。",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "com- plementary views of the same signal, each preserving different information and inducing different invariances"
+          }
+        ]
+      },
+      {
+        "from": "Dual-Tower Architecture",
+        "to": "Line Plot",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "双塔架构以线图作为其输入视图之一，理解该架构需先理解线图视图。",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          }
+        ]
+      },
+      {
+        "from": "Dual-Tower Architecture",
+        "to": "Normalized Delay Embedding",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "双塔架构的另一输入视图是归一化延迟嵌入。",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          }
+        ]
+      },
+      {
+        "from": "Dual-Tower Architecture",
+        "to": "Time Series Language Model",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "双塔架构是所提出的 TSLM 实例，理解它需先理解 TSLM 这一模型类别。",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "A dual-view time-series language model. We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          }
+        ]
+      },
+      {
+        "from": "Dual-Tower Architecture",
+        "to": "Complementary Representations",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "双塔架构是互补表示原则的具体实现，理解该架构需先理解其设计原则。",
+        "evidence": [
+          {
+            "passageId": "ctx-2",
+            "quote": "We establish complemen- tary representation as a design principle for TSLMs"
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "We propose a dual-tower architecture that combines line plots and normalized delay embeddings within a shared language model."
+          }
+        ]
+      }
+    ]
+  },
+  "reproducedRejection": null
+}

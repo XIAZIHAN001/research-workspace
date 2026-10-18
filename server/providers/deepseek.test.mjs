@@ -65,6 +65,17 @@ describe('createDeepSeekProvider', () => {
     expect(calls[0].body.response_format).toBeUndefined();
     expect(calls[0].body.messages[0]).toEqual({ role: 'system', content: 'SYS' });
     expect(calls[0].body.messages[1]).toEqual({ role: 'user', content: 'USER' });
+    // The answer path samples a little; the knowledge path asks for 0 explicitly (next test).
+    expect(calls[0].body.temperature).toBe(0.3);
+  });
+
+  it('sends the per-call temperature, and ignores an out-of-range one', async () => {
+    const { fetchImpl, calls } = stubFetch(() => okBody('{"answer":"ok","citations":[]}'));
+    const provider = createDeepSeekProvider({ ...CONFIG, fetchImpl });
+    await provider.complete({ system: 'S', messages: [], meta: {}, temperature: 0 });
+    expect(calls[0].body.temperature).toBe(0);
+    await provider.complete({ system: 'S', messages: [], meta: {}, temperature: 9 });
+    expect(calls[1].body.temperature).toBe(0.3);
   });
 
   it('reports the model and the token usage it was given', async () => {

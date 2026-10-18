@@ -59,6 +59,9 @@ export function createAiServer({
   log = createLogger({ enabled: config.logRequests }),
 }) {
   const chosen = provider ?? createProvider(config);
+  // A provider may state that it cannot reach a network even when it is not the mock (the
+  // Phase 8.2 replay provider does exactly that). An absent field keeps the old rule.
+  const online = chosen.online ?? chosen.name !== 'mock';
   const limiter = new RateLimiter(LIMITS.requestsPerMinute);
   const gate = new ConcurrencyGate(LIMITS.concurrentRequests);
 
@@ -81,7 +84,7 @@ export function createAiServer({
     /** What the call will spend, in the provider's own terms; null for the offline provider. */
     reasoning: chosen.reasoning ?? null,
     /** True when a call reaches a paid service. The interface says so before anything is sent. */
-    online: chosen.name !== 'mock',
+    online,
     limits: {
       passages: LIMITS.passages,
       passageChars: LIMITS.passageChars,
@@ -159,7 +162,7 @@ export function createAiServer({
         provider: chosen.name,
         providerLabel: chosen.label,
         model: chosen.model,
-        online: chosen.name !== 'mock',
+        online,
         mode: ask.mode,
         /**
          * How the reply came back, in one word. The interface shows different things for a
@@ -296,7 +299,7 @@ export function createAiServer({
         provider: chosen.name,
         providerLabel: chosen.label,
         model: chosen.model,
-        online: chosen.name !== 'mock',
+        online,
         page: page.paper.page,
         rulesVersion: DIFFICULTY_RULES_VERSION,
         status: verified.status,
@@ -402,6 +405,8 @@ export function createAiServer({
         messages,
         maxTokens: config.answerTokens ?? LIMITS.answerTokens,
         signal: controller.signal,
+        // Classification, not prose: no deliberate sampling variety. Still checked line by line.
+        temperature: 0,
         meta: {
           task: 'knowledge',
           paper: knowledgeRequest.paper,
@@ -419,7 +424,7 @@ export function createAiServer({
         provider: chosen.name,
         providerLabel: chosen.label,
         model: chosen.model,
-        online: chosen.name !== 'mock',
+        online,
         rulesVersion: verified.rulesVersion,
         status: verified.status,
         groundedInText: verified.groundedInText,

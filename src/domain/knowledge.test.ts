@@ -18,6 +18,7 @@ import {
   relationExists,
   suggestionsFor,
   wouldCycle,
+  type ConceptRelation,
   type KnowledgeState,
 } from './knowledge';
 import { knowledgeReducer } from './knowledgeState';
@@ -41,7 +42,7 @@ function relation(
   state: KnowledgeState,
   from: string,
   to: string,
-  kind: 'prerequisite' | 'related' | 'extends' = 'prerequisite',
+  kind: ConceptRelation['kind'] = 'prerequisite',
   status: 'confirmed' | 'suggested' = 'confirmed',
 ): KnowledgeState {
   const result = createRelation(state, { from, to, kind, status }, nextId, 2);
@@ -193,6 +194,32 @@ describe('relations', () => {
     const edge = extended.relations[0];
     expect(edge?.from).toBe(a?.id);
     expect(edge?.to).toBe(b?.id);
+  });
+
+  it('keeps definition, approximates and replaces out of the learning path', () => {
+    let state = concept(EMPTY_KNOWLEDGE, 'DLM');
+    state = concept(state, 'shared canvas');
+    state = concept(state, 'single primary representation');
+    const [dlm, canvas, single] = state.concepts;
+    state = relation(state, dlm?.id ?? '', canvas?.id ?? '', 'definition');
+    state = relation(state, canvas?.id ?? '', dlm?.id ?? '', 'approximates');
+    state = relation(state, dlm?.id ?? '', single?.id ?? '', 'replaces');
+
+    expect(state.relations.map((entry) => entry.kind)).toEqual([
+      'definition',
+      'approximates',
+      'replaces',
+    ]);
+    // None of these is a learning prerequisite, and none can close a prerequisite loop.
+    expect(prerequisitesOf(state, dlm?.id ?? '')).toEqual([]);
+    expect(dependentsOf(state, canvas?.id ?? '')).toEqual([]);
+    expect(wouldCycle(state, dlm?.id ?? '', canvas?.id ?? '', 'prerequisite')).toBe(false);
+
+    state = relation(state, dlm?.id ?? '', single?.id ?? '', 'prerequisite');
+    expect(prerequisitesOf(state, dlm?.id ?? '').map((entry) => entry.name)).toEqual([
+      'single primary representation',
+    ]);
+    expect(wouldCycle(state, single?.id ?? '', dlm?.id ?? '', 'prerequisite')).toBe(true);
   });
 
   it('refuses a duplicate, a self-reference and a cycle', () => {

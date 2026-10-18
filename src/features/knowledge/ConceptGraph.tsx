@@ -1,6 +1,12 @@
 import { Minus, Plus, Scan } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import type { Concept, ConceptRelation } from '../../domain/knowledge';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import {
+  DIRECTED_RELATION_KINDS,
+  RELATION_KINDS,
+  RELATION_KIND_LABEL,
+  type Concept,
+  type ConceptRelation,
+} from '../../domain/knowledge';
 
 interface ConceptGraphProps {
   concepts: readonly Concept[];
@@ -41,6 +47,10 @@ export function ConceptGraph({ concepts, relations, selectedId, onSelect }: Conc
 
   const ids = new Set(concepts.map((concept) => concept.id));
   const edges = relations.filter((relation) => ids.has(relation.from) && ids.has(relation.to));
+  const nameOf = (id: string): string => concepts.find((concept) => concept.id === id)?.name ?? '';
+  const legendKinds = RELATION_KINDS.filter((kind) =>
+    edges.some((relation) => relation.kind === kind),
+  );
 
   const confirmedPrerequisites = edges.filter(
     (relation) => relation.kind === 'prerequisite' && relation.status === 'confirmed',
@@ -130,9 +140,14 @@ export function ConceptGraph({ concepts, relations, selectedId, onSelect }: Conc
         >
           <Scan size={15} aria-hidden="true" />
         </button>
-        <span className="concept-graph-legend" aria-hidden="true">
-          <span data-kind="prerequisite" /> 确认的前置
-          <span data-kind="suggested" /> 建议
+        <span className="concept-graph-legend" aria-label="图例">
+          {legendKinds.map((kind) => (
+            <Fragment key={kind}>
+              <span data-kind={kind} aria-hidden="true" />
+              {RELATION_KIND_LABEL[kind]}
+            </Fragment>
+          ))}
+          <span data-kind="suggested" aria-hidden="true" /> 建议
         </span>
       </div>
       <div className="concept-graph-scroll" ref={scrollRef}>
@@ -161,8 +176,8 @@ export function ConceptGraph({ concepts, relations, selectedId, onSelect }: Conc
             const from = position.get(relation.from);
             const to = position.get(relation.to);
             if (from === undefined || to === undefined) return null;
-            // Relations run right-to-left on purpose: "A needs B" points from A to B, and B is
-            // the earlier column.
+            // Relations run right-to-left on purpose: "A needs / defines / replaces B" points
+            // from A to B, and B is the earlier column. Only `related` is undirected.
             const x1 = from.x;
             const x2 = to.x + NODE_WIDTH;
             const y1 = from.y;
@@ -175,8 +190,14 @@ export function ConceptGraph({ concepts, relations, selectedId, onSelect }: Conc
                 data-kind={relation.kind}
                 data-status={relation.status}
                 d={`M ${String(x1)} ${String(y1)} C ${String(mid)} ${String(y1)}, ${String(mid)} ${String(y2)}, ${String(x2)} ${String(y2)}`}
-                markerEnd={relation.kind === 'prerequisite' ? 'url(#arrow)' : undefined}
-              />
+                markerEnd={
+                  DIRECTED_RELATION_KINDS.includes(relation.kind) ? 'url(#arrow)' : undefined
+                }
+              >
+                <title>
+                  {`${nameOf(relation.from)} → ${nameOf(relation.to)} · ${RELATION_KIND_LABEL[relation.kind]} · ${relation.status === 'confirmed' ? '已确认' : '建议'}`}
+                </title>
+              </path>
             );
           })}
 

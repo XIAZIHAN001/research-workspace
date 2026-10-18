@@ -20,13 +20,13 @@ import type {
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import {
-  RELATION_DIRECTION,
   RELATION_KIND_LABEL,
   RELATION_SUPPORT_LABEL,
   conceptIdForName,
   evidenceForRelation,
   isStaleEvidence,
   learningPath,
+  relationDirectionText,
   type Concept,
   type ConceptEvidence,
   type ConceptRelation,
@@ -35,6 +35,7 @@ import {
 } from '../../domain/knowledge';
 import type { KnowledgeApi } from '../knowledge/useKnowledgeApi';
 import type { LocalConceptMatch } from '../knowledge/localKnowledge';
+import { RelationHint } from '../knowledge/RelationHint';
 import type { KnowledgeAnalysisState } from './useKnowledgeAnalysis';
 import { describePlan } from './paperRetrieval';
 import type { RetrievalPlan } from './paperRetrieval';
@@ -70,7 +71,7 @@ const MATCH_LABEL = {
 } as const;
 
 function relationText(kind: RelationKind, from: string, to: string): string {
-  return RELATION_DIRECTION[kind].replace('A', from).replace('B', to);
+  return relationDirectionText(kind, from, to);
 }
 
 function EvidenceList({
@@ -174,6 +175,7 @@ function PendingRelationRow({
         </p>
       )}
       <EvidenceList entries={evidence} paper={paper} onJump={onJump} limit={2} />
+      <RelationHint relation={relation} api={api} onNotice={onNotice} />
       <div className="knowledge-suggestion-actions">
         <button
           type="button"
@@ -438,6 +440,15 @@ function AnalysisSuggestions({
   const relationFor = (suggestion: KnowledgeRelationSuggestion): ConceptRelation | null => {
     const from = conceptIdForName(state, suggestion.from);
     const to = conceptIdForName(state, suggestion.to);
+    // The explanation is the one field that survives every other remapping: the reader may
+    // change the kind, and a reused concept keeps its reader-chosen name (a Chinese analysis can
+    // refer to an English concept the reader already has). Matching on it first keeps the row
+    // visible even when the model's endpoint wording no longer resolves to the stored name.
+    const sameExplanation = state.relations.find(
+      (relation) =>
+        relation.origin === 'ai' && (relation.rationale ?? '') === suggestion.explanation,
+    );
+    if (sameExplanation !== undefined) return sameExplanation;
     if (from === null || to === null) return null;
     // Match by direction, not by the analysis's original kind: the reader may have changed the
     // kind while the suggestion was pending, and the row must stay visible so it can be adopted
@@ -452,22 +463,15 @@ function AnalysisSuggestions({
           )
         : [];
     const candidates = [...exact, ...reversed];
-    // The model's explanation is a stable fingerprint of this suggestion: it survives a kind
-    // change, and it does not match a different relation between the same two concepts. Falling
-    // back to "the first edge between these names" was wrong — after the suggestion was ignored,
-    // the row attached itself to an unrelated confirmed relation.
-    const sameExplanation = candidates.find(
-      (relation) => (relation.rationale ?? '') === suggestion.explanation,
-    );
     return (
-      sameExplanation ??
       candidates.find(
         (relation) =>
           relation.kind === suggestion.kind && relation.from === from && relation.to === to,
-      ) ??
-      null
+      ) ?? null
     );
   };
+  const storedName = (id: string): string =>
+    state.concepts.find((concept) => concept.id === id)?.name ?? id;
 
   const newConcepts = analysis.concepts
     .map((suggestion) => ({ suggestion, stored: conceptFor(suggestion.name) }))
@@ -705,17 +709,14 @@ function AnalysisSuggestions({
                   {stored.status === 'confirmed' && <span className="kb-badge">已采纳</span>}
                 </div>
                 <p className="knowledge-suggestion-direction">
-                  {relationText(
-                    stored.kind,
-                    conceptFor(suggestion.from)?.name ?? suggestion.from,
-                    conceptFor(suggestion.to)?.name ?? suggestion.to,
-                  )}
+                  {relationText(stored.kind, storedName(stored.from), storedName(stored.to))}
                 </p>
                 <p className="knowledge-suggestion-why">
                   <span className="knowledge-label">模型解释</span>
                   {suggestion.explanation}
                 </p>
                 <EvidenceList entries={suggestion.evidence} paper={paper} onJump={onJump} />
+                <RelationHint relation={stored} api={api} onNotice={onNotice} />
                 <div className="knowledge-suggestion-actions">
                   {stored.status === 'suggested' && (
                     <button

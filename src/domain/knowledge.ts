@@ -15,9 +15,18 @@
  * The third record is a **relation** between two concepts. Its direction is defined once, here,
  * and never inferred at the point of use:
  *
- *   prerequisite: `from` needs `to` first      (KZG —prerequisite→ bilinear pairing)
- *   extends:      `from` builds on `to`        (KZG —extends→ Pedersen commitment)
+ *   prerequisite: `from` needs `to` first          (KZG —prerequisite→ bilinear pairing)
+ *   definition:   `from` is defined/characterized by `to` (DLM —definition→ shared canvas)
+ *   approximates: `from` is an approximation of `to`    (resampling —approximates→ Q_β)
+ *   replaces:     `from` replaces/contrasts with `to`   (complementary views —replaces→ single view)
+ *   extends:      `from` builds on `to`                 (KZG —extends→ Pedersen commitment)
  *   related:      undirected association
+ *
+ * Only `prerequisite` is a *learning* relation: it is the only kind used by the learning path.
+ * The others are claims about how the ideas relate academically; a definition is not a lesson
+ * order, an approximation is not an extension, and a replacement is not an extension either.
+ * Keeping those distinctions in the type system is what keeps the graph from slowly turning
+ * every co-occurrence into a prerequisite.
  *
  * Every relation also records who put it there. A relation the reader made is never rewritten
  * by a later suggestion — suggestions are new records with their own status until confirmed.
@@ -28,7 +37,8 @@ import type { NormalizedRect } from './annotation';
 export type ConceptStatus = 'confirmed' | 'suggested';
 export type ConceptOrigin = 'user' | 'ai';
 
-export type RelationKind = 'prerequisite' | 'related' | 'extends';
+export type RelationKind =
+  'prerequisite' | 'definition' | 'approximates' | 'replaces' | 'extends' | 'related';
 
 /**
  * How a relation is grounded.
@@ -71,13 +81,42 @@ export const EVIDENCE_VERIFICATION_LABEL: Record<EvidenceVerification, string> =
   unverified: '位置未核实',
 };
 
-export const RELATION_KINDS: readonly RelationKind[] = ['prerequisite', 'related', 'extends'];
+export const RELATION_KINDS: readonly RelationKind[] = [
+  'prerequisite',
+  'definition',
+  'approximates',
+  'replaces',
+  'extends',
+  'related',
+];
 
 export const RELATION_KIND_LABEL: Record<RelationKind, string> = {
   prerequisite: '前置知识',
-  related: '相关',
+  definition: '定义依赖',
+  approximates: '近似实现',
+  replaces: '替代/对照',
   extends: '扩展',
+  related: '相关',
 };
+
+/** The kinds whose meaning has a direction. `related` is the only undirected one. */
+export const DIRECTED_RELATION_KINDS: readonly RelationKind[] = [
+  'prerequisite',
+  'definition',
+  'approximates',
+  'replaces',
+  'extends',
+];
+
+/** Relations that describe academic structure but never learning order. */
+export const ACADEMIC_RELATION_KINDS: readonly RelationKind[] = [
+  'definition',
+  'approximates',
+  'replaces',
+];
+
+/** Only this kind participates in learning paths and cycle checks. */
+export const LEARNING_RELATION_KIND: RelationKind = 'prerequisite';
 
 /**
  * How to read a relation, in the interface's own words.
@@ -87,9 +126,25 @@ export const RELATION_KIND_LABEL: Record<RelationKind, string> = {
  */
 export const RELATION_DIRECTION: Record<RelationKind, string> = {
   prerequisite: '要理解 A，需要先理解 B',
-  related: 'A 与 B 相关（无方向）',
+  definition: 'A 的定义依赖 B',
+  approximates: 'A 近似实现 B',
+  replaces: 'A 替代/对照 B',
   extends: 'A 扩展了 B',
+  related: 'A 与 B 相关（无方向）',
 };
+
+/**
+ * Fills the A/B placeholders with real names.
+ *
+ * This is not `replace('A', …)`: a name such as `Bilinear pairing` contains a B, and a naive
+ * replacement would rewrite the name itself instead of the placeholder that follows it.
+ */
+export function relationDirectionText(kind: RelationKind, from: string, to: string): string {
+  return RELATION_DIRECTION[kind]
+    .split(/\b([AB])\b/)
+    .map((part) => (part === 'A' ? from : part === 'B' ? to : part))
+    .join('');
+}
 
 /**
  * Where an occurrence came from. A note the reader wrote outranks a suggestion, and the
@@ -577,12 +632,12 @@ function wouldCycleExcept(
   kind: RelationKind,
   exceptId: string | null,
 ): boolean {
-  if (kind !== 'prerequisite') return from === to;
+  if (kind !== LEARNING_RELATION_KIND) return from === to;
   if (from === to) return true;
   const forward = new Map<string, string[]>();
   for (const relation of state.relations) {
     if (relation.id === exceptId) continue;
-    if (relation.kind !== 'prerequisite') continue;
+    if (relation.kind !== LEARNING_RELATION_KIND) continue;
     const list = forward.get(relation.from) ?? [];
     list.push(relation.to);
     forward.set(relation.from, list);
@@ -844,22 +899,104 @@ export function detachProjectFromKnowledge(
  * ------------------------------------------------------------------ */
 
 /**
- * Finds an existing concept by a name the model used.
+ * Every existing concept whose name or alias matches `name` after normalisation.
  *
- * Names are compared exactly as `normalizeConceptName` defines, against both names and aliases.
- * Matching is only for *recognising* the concept the model meant; it never merges two concepts
- * or overwrites one. A match reuses the existing stable id, so a second analysis of the same
- * paper adds no duplicate concept.
+ * Returned as a list, not a single id, because a name is not an identity. Two concepts may
+ * legitimately share a name (the same word means different things in different papers), and
+ * picking the first one would silently attach new evidence to the wrong idea. Callers that
+ * need an automatic match must require exactly one result.
  */
-export function conceptIdForName(state: KnowledgeState, name: string): string | null {
+export function conceptMatchesForName(state: KnowledgeState, name: string): Concept[] {
   const key = normalizeConceptName(name);
-  if (key === '') return null;
-  const found = state.concepts.find(
+  if (key === '') return [];
+  return state.concepts.filter(
     (concept) =>
       normalizeConceptName(concept.name) === key ||
       concept.aliases.some((alias) => normalizeConceptName(alias) === key),
   );
-  return found?.id ?? null;
+}
+
+/**
+ * The one existing concept a name refers to, or null when there is none or more than one.
+ *
+ * Ambiguity is deliberately reported as "no automatic match". The reader can still merge two
+ * concepts by hand; the app will not choose one for them.
+ */
+export function conceptIdForName(state: KnowledgeState, name: string): string | null {
+  const matches = conceptMatchesForName(state, name);
+  return matches.length === 1 ? (matches[0]?.id ?? null) : null;
+}
+
+export interface RelationSemanticHint {
+  /** A kind the explanation looks more like, or null when the hint is only "review this". */
+  suggestedKind: RelationKind | null;
+  message: string;
+}
+
+const DEFINITION_CUES =
+  /定义(?:为|于|是|依赖)|被定义为|defined\s+as|is\s+defined|are\s+defined|characteri[sz]ed\s+by|refers?\s+to|denotes?/i;
+const CO_OCCURRENCE_CUES =
+  /同一?段|同段|共同出现|一起出现|并列出现|co-?occur|same\s+(?:sentence|paragraph)|appears?\s+in\s+the\s+same/i;
+const REPLACEMENT_CUES =
+  /替代|取代|对照|对比|instead|rather\s+than|replaces?|replacement|contrast|alternative/i;
+const APPROXIMATION_CUES =
+  /近似|近似实现|近似于|approximat|resampling|importance\s+sampling|intractable|implement(?:s|ed|ation)?/i;
+const LEARNING_CUES =
+  /先理解|需要先|必须先|前置|prerequisite|before\s+understanding|requires?\s+understanding/i;
+
+/**
+ * An advisory semantic check for one relation.
+ *
+ * This never changes a record. It reads the explanation the reader or the model wrote and says
+ * when that explanation looks like a different kind of claim — a definition written as a
+ * learning prerequisite, or a replacement/approximation written as an extension. Existing
+ * confirmed relations are exactly the case this is for: they are not reclassified
+ * automatically, but the reader can apply the suggestion with one explicit click.
+ *
+ * The cues are deliberately crude and phrase-based. A hint is a reason to look, not a verdict;
+ * a relation with no matching cue returns null rather than pretending to be checked.
+ */
+export function relationSemanticHint(
+  relation: Pick<ConceptRelation, 'kind' | 'rationale' | 'note'>,
+): RelationSemanticHint | null {
+  const text = `${relation.rationale ?? ''} ${relation.note}`.trim();
+  if (text === '') return null;
+
+  if (relation.kind === LEARNING_RELATION_KIND) {
+    if (DEFINITION_CUES.test(text) && !LEARNING_CUES.test(text)) {
+      return {
+        suggestedKind: 'definition',
+        message:
+          '说明更像「定义依赖」而不是学习前置；定义关系不应进入学习路径。建议人工复核后改为「定义依赖」。',
+      };
+    }
+    if (CO_OCCURRENCE_CUES.test(text) && !LEARNING_CUES.test(text)) {
+      return {
+        suggestedKind: 'related',
+        message:
+          '说明只提到同段/共同出现；同一段出现不足以构成前置关系。建议改为「相关」或先补充学习顺序上的理由。',
+      };
+    }
+  }
+
+  if (relation.kind === 'extends') {
+    if (REPLACEMENT_CUES.test(text)) {
+      return {
+        suggestedKind: 'replaces',
+        message:
+          '说明更像「替代/对照」而不是「扩展」；替代或对照不应写成扩展。建议人工复核后改为「替代/对照」。',
+      };
+    }
+    if (APPROXIMATION_CUES.test(text)) {
+      return {
+        suggestedKind: 'approximates',
+        message:
+          '说明更像「近似实现」而不是「扩展」；近似或实现关系不应写成扩展。建议人工复核后改为「近似实现」。',
+      };
+    }
+  }
+
+  return null;
 }
 
 /** The occurrences that ground one relation. */
@@ -892,7 +1029,7 @@ export function learningPath(
     const current = queue.shift();
     if (current === undefined || current.depth >= maxDepth) continue;
     for (const relation of state.relations) {
-      if (relation.kind !== 'prerequisite' || relation.status !== 'confirmed') continue;
+      if (relation.kind !== LEARNING_RELATION_KIND || relation.status !== 'confirmed') continue;
       if (relation.from !== current.id) continue;
       const prerequisite = state.concepts.find((concept) => concept.id === relation.to);
       if (prerequisite === undefined) continue;
@@ -944,11 +1081,12 @@ export interface SuggestionReport {
 /**
  * Adds one analysis's suggestions to the graph without ever changing what is already there.
  *
- * The checks here are the last line of defence, not a repetition of the server's: a duplicate
- * name becomes a reference to the existing concept, a duplicate relation is skipped, and a
- * prerequisite that would close a loop is refused. Everything added is forced to
- * `status: suggested` and `origin: ai`, whatever the incoming record claimed — so no batch can
- * write a confirmed fact or overwrite a relation the reader made.
+ * The checks here are the last line of defence, not a repetition of the server's: a name that
+ * matches exactly one existing concept becomes a reference to it, a name that matches several
+ * is refused rather than guessed, a duplicate relation is skipped, and a prerequisite that
+ * would close a loop is refused. Everything added is forced to `status: suggested` and
+ * `origin: ai`, whatever the incoming record claimed — so no batch can write a confirmed fact
+ * or overwrite a relation the reader made.
  *
  * The returned report is what the interface shows when it says "3 suggestions were not added,
  * and why". Nothing is skipped silently.
@@ -965,17 +1103,24 @@ export function mergeSuggestions(
     skipped: [],
   };
 
-  const byName = new Map<string, string>();
+  // A key can point at more than one concept. That is not a detail to collapse: the same name
+  // can legitimately mean different things in different papers, and choosing the first match
+  // would attach new evidence to the wrong idea.
+  const idsByName = new Map<string, Set<string>>();
   const remember = (concept: Concept): void => {
     for (const value of [concept.name, ...concept.aliases]) {
       const key = normalizeConceptName(value);
-      if (key !== '' && !byName.has(key)) byName.set(key, concept.id);
+      if (key === '') continue;
+      const ids = idsByName.get(key) ?? new Set<string>();
+      ids.add(concept.id);
+      idsByName.set(key, ids);
     }
   };
   for (const concept of state.concepts) remember(concept);
 
   const concepts = [...state.concepts];
   const idMap = new Map<string, string>();
+  const skippedConceptReasons = new Map<string, string>();
 
   for (const proposed of batch.concepts) {
     const name = proposed.name.replace(/\s+/g, ' ').trim();
@@ -991,7 +1136,18 @@ export function mergeSuggestions(
     const keys = [name, ...proposed.aliases]
       .map((value) => normalizeConceptName(value))
       .filter((key) => key !== '');
-    const existingId = keys.map((key) => byName.get(key)).find((id) => id !== undefined);
+    const existingIds = new Set<string>();
+    for (const key of keys) {
+      for (const id of idsByName.get(key) ?? []) existingIds.add(id);
+    }
+    if (existingIds.size > 1) {
+      const reason =
+        '名称或别名同时对应多个已有概念；为避免仅凭同名合并，未自动选择，也未加入这条建议。';
+      skippedConceptReasons.set(proposed.id, reason);
+      report.skipped.push({ kind: 'concept', label: name, reason });
+      continue;
+    }
+    const existingId = [...existingIds][0];
     if (existingId !== undefined) {
       idMap.set(proposed.id, existingId);
       report.reusedConcepts += 1;
@@ -1035,6 +1191,12 @@ export function mergeSuggestions(
     const from = idMap.get(proposed.from) ?? proposed.from;
     const to = idMap.get(proposed.to) ?? proposed.to;
     const label = `${from.slice(0, 12)} → ${to.slice(0, 12)}`;
+    const ambiguousReason =
+      skippedConceptReasons.get(proposed.from) ?? skippedConceptReasons.get(proposed.to);
+    if (ambiguousReason !== undefined) {
+      report.skipped.push({ kind: 'relation', label, reason: ambiguousReason });
+      continue;
+    }
     if (!knownConceptIds.has(from) || !knownConceptIds.has(to)) {
       report.skipped.push({ kind: 'relation', label, reason: '关系两端的概念不存在。' });
       continue;
@@ -1095,6 +1257,15 @@ export function mergeSuggestions(
         kind: 'evidence',
         label: proposed.quote.slice(0, 40),
         reason: '所属的关系建议没有被加入，出处也一并跳过。',
+      });
+      continue;
+    }
+    const ambiguousReason = skippedConceptReasons.get(proposed.conceptId);
+    if (ambiguousReason !== undefined) {
+      report.skipped.push({
+        kind: 'evidence',
+        label: proposed.quote.slice(0, 40),
+        reason: ambiguousReason,
       });
       continue;
     }
@@ -1216,7 +1387,7 @@ export function prerequisitesOf(state: KnowledgeState, conceptId: string): Conce
   const ids = state.relations
     .filter(
       (relation) =>
-        relation.kind === 'prerequisite' &&
+        relation.kind === LEARNING_RELATION_KIND &&
         relation.from === conceptId &&
         relation.status === 'confirmed',
     )
@@ -1229,7 +1400,7 @@ export function dependentsOf(state: KnowledgeState, conceptId: string): Concept[
   const ids = state.relations
     .filter(
       (relation) =>
-        relation.kind === 'prerequisite' &&
+        relation.kind === LEARNING_RELATION_KIND &&
         relation.to === conceptId &&
         relation.status === 'confirmed',
     )

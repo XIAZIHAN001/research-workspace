@@ -210,6 +210,19 @@ describe('verifyKnowledgeSuggestions', () => {
   if (!normalized.ok) throw new Error('fixture is not valid');
   const value = normalized.value;
 
+  // The short fixture is deliberately below MIN_CONTEXT_CHARS; tests that exercise the ordinary
+  // limits pad it until the small-context cap does not apply.
+  const padded = normalizeKnowledgeRequest(
+    request({
+      passages: request().passages.map((entry) => ({
+        ...entry,
+        text: `${entry.text} ${'Background text that adds no concept. '.repeat(40)}`,
+      })),
+    }),
+  );
+  if (!padded.ok) throw new Error('padded fixture is not valid');
+  const longValue = padded.value;
+
   it('keeps concepts and relations whose quotations are verbatim', () => {
     const result = verifyKnowledgeSuggestions(JSON.stringify(suggestion()), value);
     expect(result.status).toBe('valid');
@@ -405,6 +418,205 @@ describe('verifyKnowledgeSuggestions', () => {
       'A KZG commitment relies on a bilinear pairing over an elliptic curve group.',
     );
   });
+
+  it('accepts the academic relation kinds and checks each one’s direction', () => {
+    const payload = suggestion();
+    payload.relations = [
+      {
+        from: 'KZG commitment',
+        to: 'Bilinear pairing',
+        kind: 'definition',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: 'The commitment’s definition is stated through the pairing.',
+        evidence: [],
+      },
+      {
+        from: 'Bilinear pairing',
+        to: 'KZG commitment',
+        kind: 'approximates',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: 'The pairing is the implementation the commitment uses.',
+        evidence: [],
+      },
+      {
+        from: 'KZG commitment',
+        to: 'Bilinear pairing',
+        kind: 'replaces',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: 'The commitment is contrasted with a plain pairing.',
+        evidence: [],
+      },
+      {
+        from: 'Bilinear pairing',
+        to: 'KZG commitment',
+        kind: 'extends',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: 'The pairing adds capability to the commitment.',
+        evidence: [],
+      },
+    ];
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), longValue);
+    expect(result.relations.map((entry) => entry.kind)).toEqual([
+      'definition',
+      'approximates',
+      'replaces',
+      'extends',
+    ]);
+    expect(result.relations.every((entry) => entry.direction === 'from-first')).toBe(true);
+  });
+
+  it('rejects a new-kind relation whose direction is not from-first', () => {
+    const payload = suggestion();
+    payload.relations[0].kind = 'definition';
+    payload.relations[0].direction = 'undirected';
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), value);
+    expect(result.relations).toHaveLength(1);
+    expect(result.rejectedDetails.map((entry) => entry.code)).toContain('relation-direction');
+  });
+
+  it('lowers direct support when the concept name is the model’s own wording', () => {
+    const payload = suggestion();
+    payload.concepts[0].name = 'Commitment binding property';
+    payload.concepts[0].aliases = ['binding guarantee'];
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), value);
+    expect(result.concepts[0]?.support).toBe('inferred');
+    expect(result.diagnostics.nameNotVerbatim).toBe(1);
+    expect(result.warnings.some((warning) => warning.includes('不是所给原文中的逐字术语'))).toBe(
+      true,
+    );
+  });
+
+  it('keeps direct support when an alias is verbatim in a passage', () => {
+    const payload = suggestion();
+    payload.concepts[0].name = 'Commitment binding property';
+    payload.concepts[0].aliases = ['a single group element'];
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), value);
+    expect(result.concepts[0]?.support).toBe('direct');
+    expect(result.diagnostics.nameNotVerbatim).toBe(0);
+  });
+
+  it('does not resolve an ambiguous existing name to the first concept', () => {
+    const withExisting = normalizeKnowledgeRequest(
+      request({
+        existingConcepts: [
+          { name: 'KZG commitment', aliases: ['KZG'], summary: '' },
+          { name: 'Commitment scheme', aliases: ['KZG'], summary: '' },
+        ],
+      }),
+    );
+    if (!withExisting.ok) throw new Error('fixture is not valid');
+    const payload = suggestion();
+    payload.concepts = [
+      { name: 'KZG', aliases: [], summary: '', support: 'inferred', evidence: [] },
+      payload.concepts[1],
+    ];
+    payload.relations = [
+      {
+        from: 'KZG',
+        to: 'Bilinear pairing',
+        kind: 'related',
+        direction: 'undirected',
+        support: 'inferred',
+        explanation: 'An ambiguous endpoint.',
+        evidence: [],
+      },
+    ];
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), withExisting.value);
+    expect(result.concepts.map((entry) => entry.name)).toEqual(['Bilinear pairing']);
+    expect(result.relations).toHaveLength(0);
+    const codes = result.rejectedDetails.map((entry) => entry.code);
+    expect(codes).toContain('concept-ambiguous-existing');
+    expect(codes).toContain('relation-ambiguous-concept');
+    expect(result.diagnostics.ambiguousExistingNames).toBe(1);
+    expect(result.diagnostics.ambiguousConceptsSkipped).toBe(1);
+    expect(result.diagnostics.ambiguousRelationsSkipped).toBe(1);
+    expect(result.diagnostics.matchedExisting).toBe(0);
+  });
+
+  it('matches an existing concept case-insensitively without renaming it', () => {
+    const withExisting = normalizeKnowledgeRequest(
+      request({ existingConcepts: [{ name: 'KZG commitment', aliases: [], summary: '' }] }),
+    );
+    if (!withExisting.ok) throw new Error('fixture is not valid');
+    const payload = suggestion();
+    payload.concepts[0].name = 'kzg COMMITMENT';
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), withExisting.value);
+    expect(result.concepts[0]?.name).toBe('KZG commitment');
+    expect(result.concepts[0]?.existing).toBe(true);
+    expect(result.diagnostics.matchedExisting).toBe(1);
+  });
+
+  it('caps suggestions when the supplied context is very small', () => {
+    const payload = {
+      groundedInText: true,
+      concepts: Array.from({ length: 6 }, (_, index) => ({
+        name: `Concept ${String(index + 1)}`,
+        aliases: [],
+        summary: 'A placeholder concept.',
+        support: 'inferred',
+        evidence: [],
+      })),
+      relations: [
+        [1, 2],
+        [1, 3],
+        [1, 4],
+        [1, 5],
+        [1, 6],
+        [2, 3],
+      ].map(([from, to]) => ({
+        from: `Concept ${String(from)}`,
+        to: `Concept ${String(to)}`,
+        kind: 'related',
+        direction: 'undirected',
+        support: 'inferred',
+        explanation: 'A general association.',
+        evidence: [],
+      })),
+    };
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), value);
+    expect(result.diagnostics.smallContext).toBe(true);
+    expect(result.concepts).toHaveLength(3);
+    expect(result.relations).toHaveLength(3);
+    expect(result.diagnostics.smallContextLimited).toBeGreaterThan(0);
+    expect(result.warnings.some((warning) => warning.includes('最多保留'))).toBe(true);
+  });
+
+  it('does not apply the small-context cap when the context is large enough', () => {
+    const payload = {
+      groundedInText: true,
+      concepts: Array.from({ length: 6 }, (_, index) => ({
+        name: `Concept ${String(index + 1)}`,
+        aliases: [],
+        summary: 'A placeholder concept.',
+        support: 'inferred',
+        evidence: [],
+      })),
+      relations: [
+        [1, 2],
+        [1, 3],
+        [1, 4],
+        [1, 5],
+        [1, 6],
+        [2, 3],
+      ].map(([from, to]) => ({
+        from: `Concept ${String(from)}`,
+        to: `Concept ${String(to)}`,
+        kind: 'related',
+        direction: 'undirected',
+        support: 'inferred',
+        explanation: 'A general association.',
+        evidence: [],
+      })),
+    };
+    const result = verifyKnowledgeSuggestions(JSON.stringify(payload), longValue);
+    expect(result.diagnostics.smallContext).toBe(false);
+    expect(result.concepts).toHaveLength(6);
+    expect(result.relations).toHaveLength(6);
+  });
 });
 
 describe('the knowledge endpoint', () => {
@@ -510,6 +722,88 @@ describe('the knowledge endpoint', () => {
       expect(invalidKindBody.rejectedDetails.some((entry) => entry.code === 'relation-kind')).toBe(
         true,
       );
+    } finally {
+      await service.stop();
+    }
+  });
+
+  it('exercises the Phase 8.2 mock scenarios through the endpoint', async () => {
+    const service = await startTestService();
+    const padded = request({
+      passages: request().passages.map((entry) => ({
+        ...entry,
+        text: `${entry.text} ${'Background context for the relation test. '.repeat(40)}`,
+      })),
+    });
+    try {
+      const newKinds = await postJson(service.base, '/api/ai/knowledge', {
+        ...padded,
+        focus: '[[mock:knowledge-new-kinds]]',
+      });
+      const newKindsBody = await newKinds.json();
+      expect(newKindsBody.status).toBe('valid');
+      expect(newKindsBody.relations.map((entry) => entry.kind)).toEqual([
+        'definition',
+        'approximates',
+        'replaces',
+        'extends',
+      ]);
+
+      const coined = await postJson(service.base, '/api/ai/knowledge', {
+        ...request(),
+        focus: '[[mock:knowledge-coined-name]]',
+      });
+      const coinedBody = await coined.json();
+      expect(coinedBody.concepts[0].support).toBe('inferred');
+      expect(coinedBody.diagnostics.nameNotVerbatim).toBeGreaterThan(0);
+
+      const many = await postJson(service.base, '/api/ai/knowledge', {
+        ...request(),
+        focus: '[[mock:knowledge-many]]',
+      });
+      const manyBody = await many.json();
+      expect(manyBody.diagnostics.smallContext).toBe(true);
+      expect(manyBody.concepts).toHaveLength(3);
+      expect(manyBody.relations).toHaveLength(3);
+
+      const requestBody = request({
+        focus: '[[mock:knowledge-existing]]',
+        existingConcepts: [{ name: 'KZG commitment', aliases: ['KZG'], summary: '' }],
+      });
+      const existing = await postJson(service.base, '/api/ai/knowledge', requestBody);
+      const existingBody = await existing.json();
+      expect(existingBody.diagnostics.matchedExisting).toBe(1);
+      expect(existingBody.concepts[0]).toMatchObject({ name: 'KZG commitment', existing: true });
+
+      const aliasReuse = await postJson(service.base, '/api/ai/knowledge', {
+        ...request({
+          focus: '[[mock:knowledge-existing-alias]]',
+          existingConcepts: [{ name: 'KZG commitment', aliases: ['KZG'], summary: '' }],
+        }),
+      });
+      const aliasReuseBody = await aliasReuse.json();
+      expect(aliasReuseBody.diagnostics.matchedExisting).toBe(1);
+      expect(aliasReuseBody.concepts[0]).toMatchObject({
+        name: 'KZG commitment',
+        existing: true,
+      });
+      expect(aliasReuseBody.relations[0]?.from).toBe('KZG commitment');
+
+      const ambiguous = await postJson(service.base, '/api/ai/knowledge', {
+        ...request({
+          focus: '[[mock:knowledge-ambiguous]]',
+          existingConcepts: [
+            { name: 'KZG commitment', aliases: ['KZG'], summary: '' },
+            { name: 'KZG proof', aliases: ['KZG'], summary: '' },
+          ],
+        }),
+      });
+      const ambiguousBody = await ambiguous.json();
+      const ambiguousCodes = ambiguousBody.rejectedDetails.map((entry) => entry.code);
+      expect(ambiguousCodes).toContain('concept-ambiguous-existing');
+      expect(ambiguousCodes).toContain('relation-ambiguous-concept');
+      expect(ambiguousBody.diagnostics.matchedExisting).toBe(0);
+      expect(ambiguousBody.concepts.map((entry) => entry.name)).not.toContain('KZG commitment');
     } finally {
       await service.stop();
     }

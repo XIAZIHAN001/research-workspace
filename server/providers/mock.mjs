@@ -47,6 +47,13 @@ export const MOCK_TRIGGERS = {
   '[[mock:knowledge-bypass]]': 'knowledge-bypass',
   '[[mock:knowledge-formula]]': 'knowledge-formula',
   '[[mock:knowledge-invalid-kind]]': 'knowledge-invalid-kind',
+  /** Phase 8.2: relation semantics, coined names, short context, existing-concept reuse. */
+  '[[mock:knowledge-new-kinds]]': 'knowledge-new-kinds',
+  '[[mock:knowledge-coined-name]]': 'knowledge-coined-name',
+  '[[mock:knowledge-many]]': 'knowledge-many',
+  '[[mock:knowledge-existing]]': 'knowledge-existing',
+  '[[mock:knowledge-existing-alias]]': 'knowledge-existing-alias',
+  '[[mock:knowledge-ambiguous]]': 'knowledge-ambiguous',
 };
 
 function pickTrigger(question) {
@@ -203,10 +210,14 @@ function knowledgeReply(meta, scenario) {
     (sentence) => sentence !== quoteOne && /^[A-Z0-9(]/.test(sentence),
   );
   const quoteTwo = (secondSentence ?? quoteOne).slice(0, 200);
+  // One alias is literally in the passage, so the default mock still exercises the "verbatim
+  // name keeps direct support" path. The concept's display name is deliberately the mock label.
+  const words = text.split(/\s+/).filter((word) => word !== '');
+  const anchor = words.length >= 4 ? words.slice(0, 4).join(' ') : text.slice(0, 16);
 
   const conceptA = {
     name: '模拟概念 A',
-    aliases: ['Mock idea A'],
+    aliases: anchor.length >= 4 ? [anchor, 'Mock idea A'] : ['Mock idea A'],
     summary: '（本地模拟）这是一个用于验证知识建议数据流的占位概念，不是对论文内容的学术判断。',
     support: 'direct',
     evidence: [{ passageId: selection.id, quote: quoteOne }],
@@ -297,6 +308,167 @@ function knowledgeReply(meta, scenario) {
       '（本地模拟）原文的公式在文字层里是碎片；下面补写的 LaTeX 是模型解释，不是 PDF 原文。';
     relationAB.explanation =
       '（本地模拟）模型补写的公式 $$R(u) := \\log \\frac{P_1(u)}{P_0(u)}$$ 只是对碎片的重建，属于模型解释。';
+  }
+  if (scenario === 'knowledge-new-kinds') {
+    const conceptC = {
+      name: '模拟概念 C',
+      aliases: [],
+      summary: '（本地模拟）第三个占位概念，用于展示非前置的学术关系。',
+      support: 'inferred',
+      evidence: [],
+    };
+    payload.concepts = [conceptA, conceptB, conceptC];
+    payload.relations = [
+      {
+        from: conceptA.name,
+        to: conceptB.name,
+        kind: 'definition',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: '（本地模拟）A 的定义依赖 B；这是定义依赖，不是学习前置。',
+        evidence: [],
+      },
+      {
+        from: conceptB.name,
+        to: conceptA.name,
+        kind: 'approximates',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: '（本地模拟）B 是 A 的近似实现；这是近似，不是扩展。',
+        evidence: [],
+      },
+      {
+        from: conceptA.name,
+        to: conceptC.name,
+        kind: 'replaces',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: '（本地模拟）A 替代/对照 C；这不是扩展。',
+        evidence: [],
+      },
+      {
+        from: conceptC.name,
+        to: conceptB.name,
+        kind: 'extends',
+        direction: 'from-first',
+        support: 'inferred',
+        explanation: '（本地模拟）C 扩展了 B 的能力。',
+        evidence: [],
+      },
+    ];
+  }
+  if (scenario === 'knowledge-coined-name') {
+    // No alias occurs in the passage: the reader should see direct support lowered to inferred,
+    // with a warning that the name is the model's own wording.
+    conceptA.aliases = ['Mock idea A'];
+    payload.concepts = [conceptA, conceptB];
+    payload.relations = [relationAB, relationRelated];
+  }
+  if (scenario === 'knowledge-many') {
+    const names = Array.from({ length: 6 }, (_, index) => `模拟概念 ${String(index + 1)}`);
+    payload.concepts = names.map((name) => ({
+      name,
+      aliases: [],
+      summary: '（本地模拟）用于验证短上下文建议数量上限。',
+      support: 'inferred',
+      evidence: [],
+    }));
+    const pairs = [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 4],
+      [4, 5],
+      [0, 2],
+      [0, 3],
+    ];
+    payload.relations = pairs.map(([from, to]) => ({
+      from: names[from],
+      to: names[to],
+      kind: 'related',
+      direction: 'undirected',
+      support: 'inferred',
+      explanation: '（本地模拟）两个占位概念相关。',
+      evidence: [],
+    }));
+  }
+  if (scenario === 'knowledge-existing') {
+    const existing = Array.isArray(meta.existingConcepts) ? meta.existingConcepts[0] : undefined;
+    if (existing !== undefined && typeof existing.name === 'string') {
+      payload.concepts = [
+        {
+          name: existing.name,
+          aliases: [],
+          summary: '',
+          support: 'direct',
+          evidence: [{ passageId: selection.id, quote: quoteOne }],
+        },
+        conceptA,
+      ];
+      payload.relations = [
+        {
+          from: existing.name,
+          to: conceptA.name,
+          kind: 'related',
+          direction: 'undirected',
+          support: 'inferred',
+          explanation: '（本地模拟）读者已有的概念与本次概念相关。',
+          evidence: [],
+        },
+      ];
+    }
+  }
+  if (scenario === 'knowledge-existing-alias') {
+    const existing = Array.isArray(meta.existingConcepts) ? meta.existingConcepts[0] : undefined;
+    const alias = Array.isArray(existing?.aliases) ? existing.aliases[0] : undefined;
+    if (typeof alias === 'string' && alias !== '') {
+      // Deliberately a different case from the stored alias, so normalisation is exercised.
+      const spelled = alias.toLowerCase();
+      payload.concepts = [
+        {
+          name: spelled,
+          aliases: [],
+          summary: '',
+          support: 'direct',
+          evidence: [{ passageId: selection.id, quote: quoteOne }],
+        },
+        conceptB,
+      ];
+      payload.relations = [
+        {
+          from: spelled,
+          to: conceptB.name,
+          kind: 'related',
+          direction: 'undirected',
+          support: 'inferred',
+          explanation: '（本地模拟）通过别名复用了已有概念。',
+          evidence: [],
+        },
+      ];
+    }
+  }
+  if (scenario === 'knowledge-ambiguous') {
+    payload.concepts = [
+      {
+        name: 'KZG',
+        aliases: [],
+        summary: '（本地模拟）一个同时匹配多个已有概念的名称。',
+        support: 'inferred',
+        evidence: [],
+      },
+      conceptB,
+    ];
+    payload.relations = [
+      {
+        from: 'KZG',
+        to: conceptB.name,
+        kind: 'related',
+        direction: 'undirected',
+        support: 'inferred',
+        explanation: '（本地模拟）这条关系的一端名称有歧义，应当被跳过。',
+        evidence: [],
+      },
+    ];
   }
 
   const body = JSON.stringify(payload);

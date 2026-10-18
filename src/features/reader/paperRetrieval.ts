@@ -23,6 +23,12 @@ export const MAX_SCAN_PAGES = 48;
 /** Characters of context; the service's own hard ceiling is 9000. */
 export const MAX_PLAN_CHARS = 6000;
 
+/**
+ * Mirrors `MIN_CONTEXT_CHARS` in `server/knowledge.mjs`. The plan can say this before anything
+ * is sent, so the reader knows why a very small selection will produce very few suggestions.
+ */
+export const SMALL_CONTEXT_CHARS = 1000;
+
 /** One source segment before it is cut down. */
 export const MAX_SEGMENT_CHARS = 1200;
 
@@ -583,6 +589,11 @@ export function buildRetrievalPlan(input: PlanInput): RetrievalPlan {
   const skipped = Math.max(0, input.pageCount - pages.length);
   if (skipped > 0) {
     notices.push(`本次扫描了 ${String(pages.length)} 页，其余 ${String(skipped)} 页未扫描。`);
+  }
+  if (total > 0 && total < SMALL_CONTEXT_CHARS) {
+    notices.push(
+      `本次上下文只有 ${String(total)} 字，少于 ${String(SMALL_CONTEXT_CHARS)} 字；服务端最多保留 3 个新概念和 3 条新关系，也允许模型不生成建议。`,
+    );
   }
 
   return {

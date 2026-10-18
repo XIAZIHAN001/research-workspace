@@ -214,6 +214,40 @@ describe('reading a backup data section', () => {
     expect(parseBackupData(data).ok).toBe(false);
   });
 
+  it('reads the Phase 8.2 academic relation kinds without rewriting them', () => {
+    const data = rawData({
+      projects: {
+        version: 5,
+        projects: [project('p1', '项目', 'paper1')],
+        papers: { paper1: paper('paper1', '论文') },
+        annotations: [],
+        selectedId: 'p1',
+      },
+      knowledge: {
+        version: 1,
+        concepts: [
+          concept('c1', 'DLM', ['p1']),
+          concept('c2', 'shared canvas', ['p1']),
+          concept('c3', 'single primary representation', ['p1']),
+        ],
+        evidence: [],
+        relations: [
+          relation('r1', 'c1', 'c2', 'definition'),
+          relation('r2', 'c2', 'c1', 'approximates'),
+          relation('r3', 'c1', 'c3', 'replaces'),
+        ],
+      },
+    });
+    const parsed = parseBackupData(data);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.contents.knowledge.relations.map((entry) => entry.kind)).toEqual([
+      'definition',
+      'approximates',
+      'replaces',
+    ]);
+  });
+
   it('keeps cosmetic problems as warnings rather than refusing the restore', () => {
     const parsed = parseBackupData(
       rawData({ preferences: { theme: 'neon', paper: 'warm', avatar: 'javascript:alert(1)' } }),

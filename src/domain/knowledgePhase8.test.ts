@@ -3,6 +3,7 @@ import type { NormalizedRect } from './annotation';
 import {
   EMPTY_KNOWLEDGE,
   conceptIdForName,
+  conceptMatchesForName,
   confirmRelationChecked,
   createConcept,
   createEvidence,
@@ -13,6 +14,8 @@ import {
   learningPath,
   mergeSuggestions,
   parseKnowledgeState,
+  relationDirectionText,
+  relationSemanticHint,
   updateRelationKind,
   type Concept,
   type ConceptRelation,
@@ -454,5 +457,177 @@ describe('Phase 8: evidence-backed suggestions', () => {
     const parsed = parseKnowledgeState(payload);
     expect(parsed?.relations[0]?.support).toBe('inferred');
     expect(parsed?.evidence[0]?.verification).toBe('located');
+  });
+});
+
+describe('Phase 8.2: relation semantics and identity safety', () => {
+  it('fills direction placeholders without rewriting names that contain A or B', () => {
+    expect(relationDirectionText('definition', 'Bilinear pairing', 'KZG commitment')).toBe(
+      'Bilinear pairing 的定义依赖 KZG commitment',
+    );
+    expect(relationDirectionText('prerequisite', 'Model B', 'Model A')).toBe(
+      '要理解 Model B，需要先理解 Model A',
+    );
+  });
+
+  it('flags a definition rationale written as a learning prerequisite (DLM → shared canvas)', () => {
+    const hint = relationSemanticHint({
+      kind: 'prerequisite',
+      rationale:
+        'DLM is defined as a model that generates by iteratively denoising a shared canvas.',
+      note: '',
+    });
+    expect(hint?.suggestedKind).toBe('definition');
+    expect(hint?.message).toContain('定义依赖');
+  });
+
+  it('flags a replacement rationale written as an extension (complementary → primary)', () => {
+    const hint = relationSemanticHint({
+      kind: 'extends',
+      rationale:
+        'Complementary representations replace the single primary representation rather than extend it.',
+      note: '',
+    });
+    expect(hint?.suggestedKind).toBe('replaces');
+  });
+
+  it('flags an approximation rationale written as an extension (resampling → Q_β)', () => {
+    const hint = relationSemanticHint({
+      kind: 'extends',
+      rationale:
+        'Importance resampling approximates Q_β when the normalising constant is intractable.',
+      note: '',
+    });
+    expect(hint?.suggestedKind).toBe('approximates');
+  });
+
+  it('flags a prerequisite justified only by co-occurrence', () => {
+    const hint = relationSemanticHint({
+      kind: 'prerequisite',
+      rationale: 'Both concepts appear in the same paragraph, so they co-occur.',
+      note: '',
+    });
+    expect(hint?.suggestedKind).toBe('related');
+    expect(hint?.message).toContain('同一段出现不足以构成前置');
+  });
+
+  it('does not hint when the rationale states a genuine learning order or extension', () => {
+    expect(
+      relationSemanticHint({
+        kind: 'prerequisite',
+        rationale:
+          'A reader needs to understand the shared canvas before understanding how DLM denoises it.',
+        note: '',
+      }),
+    ).toBeNull();
+    expect(
+      relationSemanticHint({
+        kind: 'extends',
+        rationale: 'The new layer adds a capability the base model did not have.',
+        note: '',
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps a confirmed relation’s kind untouched until a person changes it', () => {
+    let state = concept(EMPTY_KNOWLEDGE, 'DLM');
+    state = concept(state, 'Shared canvas');
+    const [dlm, canvas] = state.concepts;
+    if (dlm === undefined || canvas === undefined) throw new Error('missing concepts');
+    state = {
+      ...state,
+      relations: [
+        {
+          ...suggestedRelation('r-def', dlm.id, canvas.id, 'prerequisite'),
+          rationale: 'DLM is defined as denoising a shared canvas.',
+        },
+      ],
+    };
+
+    // The check is advisory only: computing it cannot reclassify anything.
+    expect(relationSemanticHint(state.relations[0]!)?.suggestedKind).toBe('definition');
+    expect(state.relations[0]?.kind).toBe('prerequisite');
+
+    // The explicit action is the only path that changes the stored kind.
+    const changed = updateRelationKind(state, 'r-def', 'definition', 30);
+    expect(changed.ok).toBe(true);
+    expect(changed.state.relations[0]?.kind).toBe('definition');
+    expect(changed.state.relations[0]?.status).toBe('confirmed');
+  });
+
+  it('treats the same name on two concepts as ambiguous, not as one identity', () => {
+    let state = concept(EMPTY_KNOWLEDGE, 'Shared canvas');
+    state = concept(state, 'Shared canvas');
+    const [one, two] = state.concepts;
+    if (one === undefined || two === undefined) throw new Error('missing concepts');
+
+    expect(conceptMatchesForName(state, '  shared   CANVAS ').map((entry) => entry.id)).toEqual([
+      one.id,
+      two.id,
+    ]);
+    expect(conceptIdForName(state, 'shared canvas')).toBeNull();
+  });
+
+  it('treats a shared alias as ambiguous across two differently named concepts', () => {
+    let state = concept(EMPTY_KNOWLEDGE, 'DLM');
+    state = concept(state, 'Diffusion language model');
+    const [short, long] = state.concepts;
+    if (short === undefined || long === undefined) throw new Error('missing concepts');
+    state = {
+      ...state,
+      concepts: state.concepts.map((entry) => ({ ...entry, aliases: ['DLM'] })),
+    };
+
+    expect(conceptMatchesForName(state, 'dlm').map((entry) => entry.id)).toEqual([
+      short.id,
+      long.id,
+    ]);
+    expect(conceptIdForName(state, 'DLM')).toBeNull();
+  });
+
+  it('skips a concept and its relation when a name matches several existing concepts', () => {
+    let state = concept(EMPTY_KNOWLEDGE, 'Representation');
+    state = concept(state, 'Complementary representations');
+    const [first, second] = state.concepts;
+    if (first === undefined || second === undefined) throw new Error('missing concepts');
+    state = {
+      ...state,
+      concepts: state.concepts.map((entry) => ({ ...entry, aliases: ['rep'] })),
+    };
+
+    const result = mergeSuggestions(state, {
+      concepts: [proposal('c-new', 'REP', { aliases: [] })],
+      relations: [suggestedRelation('r-new', 'c-new', second.id, 'related')],
+      evidence: [],
+    });
+
+    expect(result.report.addedConcepts).toBe(0);
+    expect(result.report.reusedConcepts).toBe(0);
+    expect(result.report.addedRelations).toBe(0);
+    expect(result.report.skipped[0]?.reason).toContain('仅凭同名合并');
+    expect(result.report.skipped.some((entry) => entry.kind === 'relation')).toBe(true);
+    expect(result.state.concepts).toHaveLength(2);
+    expect(result.state.relations).toHaveLength(0);
+  });
+
+  it('still reuses a concept through a unique alias without adding a duplicate', () => {
+    let state = concept(EMPTY_KNOWLEDGE, 'Diffusion language model');
+    const existing = state.concepts[0];
+    if (existing === undefined) throw new Error('missing concept');
+    state = {
+      ...state,
+      concepts: [{ ...existing, aliases: ['DLM'] }],
+    };
+
+    const result = mergeSuggestions(state, {
+      concepts: [proposal('c-new', 'dlm', { aliases: [] })],
+      relations: [],
+      evidence: [],
+    });
+
+    expect(result.report.addedConcepts).toBe(0);
+    expect(result.report.reusedConcepts).toBe(1);
+    expect(result.state.concepts).toHaveLength(1);
+    expect(result.state.concepts[0]?.summary).toBe(existing.summary);
   });
 });

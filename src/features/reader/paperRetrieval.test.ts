@@ -69,6 +69,19 @@ describe('buildRetrievalPlan', () => {
     expect(plan.totalChars).toBeLessThanOrEqual(plan.maxChars);
   });
 
+  it('warns before sending when the whole context is below the service threshold', () => {
+    const plan = buildRetrievalPlan({
+      pages: [page(2, `${selection} The commitment is a single group element.`)],
+      pageCount: 2,
+      currentPage: 2,
+      selection,
+      conceptNames: [],
+    });
+    expect(plan.totalChars).toBeLessThan(1000);
+    expect(plan.notices.some((notice) => notice.includes('最多保留 3 个新概念'))).toBe(true);
+    expect(plan.notices.some((notice) => notice.includes('允许模型不生成建议'))).toBe(true);
+  });
+
   it('caps the context and says it was truncated', () => {
     const long = 'KZG commitment bilinear pairing '.repeat(80);
     const plan = buildRetrievalPlan({

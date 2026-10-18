@@ -3,10 +3,12 @@ import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import {
+  ACADEMIC_RELATION_KINDS,
   EVIDENCE_SOURCE_LABEL,
   RELATION_KIND_LABEL,
   RELATION_SUPPORT_LABEL,
   evidenceForRelation,
+  relationDirectionText,
   isStaleEvidence,
   learningPath,
   papersOf,
@@ -18,6 +20,7 @@ import {
   type RelationKind,
 } from '../../domain/knowledge';
 import type { KnowledgeApi } from './useKnowledgeApi';
+import { RelationHint } from './RelationHint';
 
 interface ConceptDetailProps {
   concept: Concept;
@@ -36,9 +39,12 @@ interface ConceptDetailProps {
 }
 
 const RELATION_HINT: Record<RelationKind, string> = {
-  prerequisite: '要理解这个概念，需要先理解…',
+  prerequisite: '要理解这个概念，需要先理解…（只用于学习顺序）',
+  definition: '这个概念的定义或核心刻画依赖…',
+  approximates: '这个概念是…的近似实现或近似计算',
+  replaces: '这个概念替代、取代或对照…',
   related: '与这个概念相关的另一个概念…',
-  extends: '这个概念扩展了…',
+  extends: '这个概念扩展了…（在原有基础上增加能力）',
 };
 
 /**
@@ -109,6 +115,12 @@ export function ConceptDetail({
       relation.kind === 'extends' &&
       relation.from === concept.id &&
       relation.status === 'confirmed',
+  );
+  const academicEdges = relations.filter(
+    (relation) =>
+      relation.status === 'confirmed' &&
+      ACADEMIC_RELATION_KINDS.includes(relation.kind) &&
+      (relation.from === concept.id || relation.to === concept.id),
   );
 
   /** Annotations of this project's papers that are not already attached to this concept. */
@@ -403,11 +415,15 @@ export function ConceptDetail({
                       ))}
                     </ul>
                   )}
+                  <RelationHint relation={relation} api={api} onNotice={onNotice} />
                 </li>
               );
             })}
           </ul>
         )}
+        <p className="concept-hint">
+          「前置知识」只表示学习顺序；定义、近似、替代关系不是前置，请使用对应类型。
+        </p>
         {dependents.length > 0 && (
           <p className="concept-hint">
             被这些概念依赖：
@@ -533,10 +549,112 @@ export function ConceptDetail({
                       ))}
                     </ul>
                   )}
+                  <RelationHint relation={relation} api={api} onNotice={onNotice} />
                 </li>
               );
             })}
           </ul>
+        </section>
+      )}
+
+      {academicEdges.length > 0 && (
+        <section className="concept-block" aria-labelledby={`academic-${concept.id}`}>
+          <h4 id={`academic-${concept.id}`}>定义、近似与替代</h4>
+          <ul className="concept-links">
+            {academicEdges.map((relation) => {
+              const other = relation.from === concept.id ? relation.to : relation.from;
+              const evidence = evidenceForRelation(state, relation.id);
+              return (
+                <li key={relation.id} className="confirmed-relation">
+                  <div className="suggested-relation-head">
+                    <span className="kb-kind">{RELATION_KIND_LABEL[relation.kind]}</span>
+                    <button type="button" className="link-btn" onClick={() => onSelect(other)}>
+                      {nameOf(other)}
+                    </button>
+                    {relation.support !== undefined && (
+                      <span className={`kb-support kb-support-${relation.support}`}>
+                        {RELATION_SUPPORT_LABEL[relation.support]}
+                      </span>
+                    )}
+                    <select
+                      className="kb-select kb-select-kind"
+                      aria-label={`把与 ${nameOf(other)} 的关系改为`}
+                      value={relation.kind}
+                      onChange={(event) => {
+                        const result = api.updateRelationKind(
+                          relation.id,
+                          event.target.value as RelationKind,
+                        );
+                        onNotice(result.ok ? '关系类型已修改。' : (result.reason ?? '无法修改。'));
+                      }}
+                    >
+                      {(Object.keys(RELATION_KIND_LABEL) as RelationKind[]).map((kind) => (
+                        <option key={kind} value={kind}>
+                          {RELATION_KIND_LABEL[kind]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="link-remove"
+                      aria-label={`删除与 ${nameOf(other)} 的关系`}
+                      onClick={() => {
+                        api.deleteRelation(relation.id);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <p className="concept-hint">
+                    {relationDirectionText(
+                      relation.kind,
+                      nameOf(relation.from),
+                      nameOf(relation.to),
+                    )}
+                  </p>
+                  {relation.rationale !== undefined && relation.rationale !== '' && (
+                    <p className="suggested-relation-why">
+                      <span className="knowledge-label">模型解释</span>
+                      {relation.rationale}
+                    </p>
+                  )}
+                  {evidence.length > 0 && (
+                    <ul className="suggested-relation-evidence">
+                      {evidence.map((entry) => (
+                        <li key={entry.id}>
+                          <span
+                            className="evidence-paper"
+                            title={`文件 ${entry.pdfSha256.slice(0, 12)}…`}
+                          >
+                            {papers[entry.paperId]?.title ?? '（论文已不在库中）'}
+                          </span>
+                          <span className="kb-kind">第 {entry.page} 页</span>
+                          <span className="evidence-quote">“{entry.quote}”</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            disabled={papers[entry.paperId]?.pdf?.sha256 !== entry.pdfSha256}
+                            onClick={() => {
+                              onOpenReader(entry.paperId, {
+                                page: entry.page,
+                                quote: entry.quote,
+                              });
+                            }}
+                          >
+                            回到原文
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <RelationHint relation={relation} api={api} onNotice={onNotice} />
+                </li>
+              );
+            })}
+          </ul>
+          <p className="concept-hint">
+            这些是学术关系，不会进入「前置知识」学习路径；只有「前置知识」才决定学习顺序。
+          </p>
         </section>
       )}
 
@@ -594,6 +712,7 @@ export function ConceptDetail({
                       ))}
                     </ul>
                   )}
+                  <RelationHint relation={relation} api={api} onNotice={onNotice} />
                   <div className="concept-actions">
                     <button
                       type="button"

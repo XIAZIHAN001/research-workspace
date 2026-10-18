@@ -25,7 +25,7 @@ export const OFFLINE_REFUSAL_EXIT = 4;
  * Returns a value rather than exiting, so the same function can be used by a test that needs to
  * assert the refusal as well as by scripts that act on it.
  */
-export async function probeProxy(origin) {
+export async function probeProxy(origin, { allowedProviders = ['mock'] } = {}) {
   let response;
   try {
     response = await fetch(`${origin}api/ai/health`);
@@ -41,7 +41,7 @@ export async function probeProxy(origin) {
     return { ok: false, reason: 'not-json' };
   }
   if (typeof health !== 'object' || health === null) return { ok: false, reason: 'not-json' };
-  if (health.provider !== 'mock' || health.online !== false) {
+  if (!allowedProviders.includes(health.provider) || health.online !== false) {
     return { ok: false, reason: 'online-provider', health };
   }
   if (typeof health.instanceId !== 'string' || health.instanceId === '') {
@@ -55,11 +55,14 @@ export async function probeProxy(origin) {
  * Refuses to continue unless the page's own origin is served by the offline mock this run
  * started. `expectedInstance` is the id reported by the service process the script spawned.
  */
-export async function requireOfflineProxy(origin, { expectedInstance, label = '验收' } = {}) {
-  const probe = await probeProxy(origin);
+export async function requireOfflineProxy(
+  origin,
+  { expectedInstance, label = '验收', allowedProviders = ['mock'] } = {},
+) {
+  const probe = await probeProxy(origin, { allowedProviders });
   if (!probe.ok) {
     process.stderr.write(
-      `${label}在浏览器打开之前中止：预览地址 ${origin} 后面的服务不是本次启动的离线 mock。\n` +
+      `${label}在浏览器打开之前中止：预览地址 ${origin} 后面的服务不是本次启动的离线提供方。\n` +
         `  原因：${describe(probe)}\n` +
         '  这可能是端口上另有服务（包括付费服务），也可能是预览代理没有指向 AI_PORT。\n',
     );

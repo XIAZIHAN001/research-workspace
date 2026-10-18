@@ -1,0 +1,252 @@
+{
+  "scenario": "boundary-repeat",
+  "derivedFrom": ".cache/verify/phase8.1-live/live/responses/12-boundary-repeat.json",
+  "derivation": "Model-shaped reply reconstructed from the stored verified response: passages echo the original request, evidence keeps only passageId and quote.",
+  "attribution": {
+    "paper": "Multi-Target Few-Shot Prompting with Diffusion Language Models",
+    "authors": ["Anton Xue", "Alan Li", "Rahul Saha"],
+    "arxiv": "2610.22294",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "note": "Short passages are kept only so the stored model output can be replayed against the same text."
+  },
+  "request": {
+    "paper": {
+      "id": "dlm-2610.22294",
+      "title": "Multi-Target Few-Shot Prompting with Diffusion Language Models",
+      "page": 2
+    },
+    "focus": "Diffusion language models (DLMs) offer a natural interface for these tasks because they are not restricted to next-token prediction and can generate tokens anywhere on the shared canvas",
+    "scope": "selection",
+    "passages": [
+      {
+        "id": "selection",
+        "page": 2,
+        "text": "to prompt design can interfere with the model’s adherence to demonstrations (Min et al., 2022; Wei et al., 2023; Zhao et al., 2021). Although guidance methods have been developed to mitigate these issues, they are primarily designed for autoregressive models and do not directly apply to in-place editing (Peng et al., 2025; Shi et al., 2024b). Diffusion language models (DLMs) offer a natural interface for these tasks because they are not restricted to next-token prediction and can generate tokens anywhere on the shared canvas (Austin et al., 2021; Sahoo et al., 2024; Shi et al., 2024a). As illustrated in Figure 1, the missing output regions are initially masked and progressively filled, while demonstrations and surrounding context remain visible. Each generated token can therefore condition on both left and right context, avoiding the specialized prompting harnesses",
+        "selection": true,
+        "role": "selection",
+        "label": "读者选中的原文"
+      },
+      {
+        "id": "ctx-1",
+        "page": 1,
+        "text": "Multi-Target Few-Shot Prompting with Diffusion Language Models Anton Xue, Alan Li, and Rahul Saha University of Texas at Austin anton.xue@utexas.edu alan.li@cs.utexas.edu rahul.saha@utexas.edu github.com/AntonXue/fewshot-dlms Abstract Few-shot prompting is useful when instructions and rewards are hard to specify. One such application is editing by example, where a demonstrated formatting change or API migration may need to be applied across multiple sites. However, such edits often depend on both left and right context, making generation with causal autoregressive models awkward. We therefore introduce multi-target few-shot prompting with diffusion language models, where examples guide the infilling of multiple masked regions",
+        "selection": false,
+        "role": "neighbor",
+        "label": "相关段落：第 1 页"
+      },
+      {
+        "id": "ctx-2",
+        "page": 3,
+        "text": "models (Li et al., 2023; O’Brien and Lewis, 2023), while context-aware methods compare predictions under different conditioning contexts to strengthen the influence of supplied evidence or demonstrations (Peng et al., 2025; Shi et al., 2024b; Song et al., 2025; Whitammer et al., 2022). In diffusion models, classifier-free guidance adjusts the influence of conditioning information (Ho and Salimans, 2021), while KL-regularized reward tilting (Korbak et al., 2022; Rafailov et al., 2023) and inference-time resampling (Singhal et al., 2025) provide mechanisms for reweighting candidate generations. However, extending likelihood-based comparisons to complete DLM infills requires tractable sequence-level likelihoods under a specified decoding procedure. Diffusion language models. Masked diffusion language models iteratively unmask positions within a shared canvas, supporting flexible generation orders and parallel decoding (Austin et al., 2021; Sahoo et al., 2024; Shi et al., 2024a).",
+        "selection": false,
+        "role": "neighbor",
+        "label": "相关段落：第 3 页"
+      }
+    ],
+    "existingConcepts": [],
+    "existingRelations": []
+  },
+  "reply": {
+    "groundedInText": true,
+    "concepts": [
+      {
+        "name": "Diffusion language models (DLMs)",
+        "aliases": ["DLMs", "masked diffusion language models"],
+        "summary": "一类不局限于下一词预测、可在共享画布上任意位置生成 token 的语言模型；掩码扩散模型通过迭代解掩码位置实现灵活生成顺序与并行解码。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "Diffusion language models (DLMs) offer a natural interface for these tasks because they are not restricted to next-token prediction and can generate tokens anywhere on the shared canvas"
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "Masked diffusion language models iteratively unmask positions within a shared canvas, supporting flexible generation orders and parallel decoding"
+          }
+        ]
+      },
+      {
+        "name": "Shared canvas",
+        "aliases": [],
+        "summary": "DLM 中演示、上下文与待生成区域共处的同一序列空间；生成 token 可位于其中任意被掩码的位置。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "can generate tokens anywhere on the shared canvas"
+          },
+          {
+            "passageId": "ctx-2",
+            "quote": "iteratively unmask positions within a shared canvas"
+          }
+        ]
+      },
+      {
+        "name": "In-place editing / infilling of masked regions",
+        "aliases": ["in-place editing", "infilling"],
+        "summary": "在原文中就地填补被掩码的输出区域，而非从头续写；是编辑示例任务的核心操作形式。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "the missing output regions are initially masked and progressively filled, while demonstrations and surrounding context remain visible"
+          },
+          {
+            "passageId": "ctx-1",
+            "quote": "examples guide the infilling of multiple masked regions"
+          }
+        ]
+      },
+      {
+        "name": "Bidirectional context conditioning",
+        "aliases": ["left and right context"],
+        "summary": "每个生成 token 可同时以左侧和右侧上下文为条件，这是就地编辑所依赖的性质。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "Each generated token can therefore condition on both left and right context, avoiding the specialized prompting harnesses"
+          },
+          {
+            "passageId": "ctx-1",
+            "quote": "such edits often depend on both left and right context, making generation with causal autoregressive models awkward"
+          }
+        ]
+      },
+      {
+        "name": "Autoregressive models",
+        "aliases": ["causal autoregressive models"],
+        "summary": "按下一词预测逐位生成的模型；受因果方向限制，处理依赖左右上下文的编辑较为别扭，且现有引导方法主要为其设计。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "they are primarily designed for autoregressive models and do not directly apply to in-place editing"
+          },
+          {
+            "passageId": "ctx-1",
+            "quote": "making generation with causal autoregressive models awkward"
+          }
+        ]
+      },
+      {
+        "name": "Multi-target few-shot prompting",
+        "aliases": [],
+        "summary": "用示例引导多个被掩码区域同时填充的少样本提示设定，是论文提出的任务形式。",
+        "support": "direct",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "We therefore introduce multi-target few-shot prompting with diffusion language models, where examples guide the infilling of multiple masked regions"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "from": "Diffusion language models (DLMs)",
+        "to": "Shared canvas",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "原文把“可在共享画布任意位置生成 token”作为 DLM 的定义性能力，理解 DLM 需先理解共享画布这一载体。",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "can generate tokens anywhere on the shared canvas"
+          }
+        ]
+      },
+      {
+        "from": "Shared canvas",
+        "to": "Bidirectional context conditioning",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "inferred",
+        "explanation": "原文由“可在画布任意位置生成”推出每个 token 可同时以左右上下文为条件；这是推断出的因果链，原文未显式写“因为共享画布所以双向”。",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "Each generated token can therefore condition on both left and right context"
+          }
+        ]
+      },
+      {
+        "from": "Bidirectional context conditioning",
+        "to": "In-place editing / infilling of masked regions",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "原文指出编辑依赖左右上下文，而因果自回归模型因此显得别扭，说明双向条件是就地编辑可行的前提。",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "such edits often depend on both left and right context, making generation with causal autoregressive models awkward"
+          }
+        ]
+      },
+      {
+        "from": "Diffusion language models (DLMs)",
+        "to": "In-place editing / infilling of masked regions",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "原文称 DLM 为这类任务提供自然接口，因为不受下一词预测限制，可先掩码再逐步填充缺失输出区域。",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "Diffusion language models (DLMs) offer a natural interface for these tasks because they are not restricted to next-token prediction"
+          },
+          {
+            "passageId": "selection",
+            "quote": "the missing output regions are initially masked and progressively filled, while demonstrations and surrounding context remain visible"
+          }
+        ]
+      },
+      {
+        "from": "Autoregressive models",
+        "to": "In-place editing / infilling of masked regions",
+        "kind": "related",
+        "direction": "undirected",
+        "support": "direct",
+        "explanation": "原文将自回归模型与就地编辑对照：前者受因果方向限制，现有引导方法也不直接适用于就地编辑。",
+        "evidence": [
+          {
+            "passageId": "selection",
+            "quote": "they are primarily designed for autoregressive models and do not directly apply to in-place editing"
+          }
+        ]
+      },
+      {
+        "from": "Multi-target few-shot prompting",
+        "to": "In-place editing / infilling of masked regions",
+        "kind": "prerequisite",
+        "direction": "from-first",
+        "support": "direct",
+        "explanation": "该提示设定以示例引导多个掩码区域的填充，理解掩码填充是理解该设定的前提。",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "where examples guide the infilling of multiple masked regions"
+          }
+        ]
+      },
+      {
+        "from": "Multi-target few-shot prompting",
+        "to": "Diffusion language models (DLMs)",
+        "kind": "related",
+        "direction": "undirected",
+        "support": "direct",
+        "explanation": "论文把多目标少样本提示与扩散语言模型结合为同一方法名，二者是组合使用关系而非单向依赖。",
+        "evidence": [
+          {
+            "passageId": "ctx-1",
+            "quote": "We therefore introduce multi-target few-shot prompting with diffusion language models"
+          }
+        ]
+      }
+    ]
+  },
+  "reproducedRejection": null
+}

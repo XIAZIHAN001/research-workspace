@@ -295,6 +295,67 @@ describe('KnowledgeView: relations', () => {
     expect(within(detail).queryByText(/AI 建议的关系/)).not.toBeInTheDocument();
     expect(within(detail).getAllByRole('button', { name: 'B' }).length).toBeGreaterThan(0);
   });
+
+  it('hints at a definition written as a prerequisite, and changes it only on request', async () => {
+    const disk = memory();
+    const store = createKnowledgeStore(disk);
+    store.dispatch({
+      type: 'concept/create',
+      input: { name: 'DLM', projectIds: [PROJECT.id] },
+      id: 'dlm',
+      at: 1,
+    });
+    store.dispatch({
+      type: 'concept/create',
+      input: { name: 'Shared canvas', projectIds: [PROJECT.id] },
+      id: 'canvas',
+      at: 1,
+    });
+    store.dispatch({
+      type: 'suggestions/add',
+      concepts: [],
+      relations: [
+        {
+          id: 'r-def',
+          from: 'dlm',
+          to: 'canvas',
+          kind: 'prerequisite',
+          status: 'confirmed',
+          origin: 'user',
+          note: '',
+          support: 'direct',
+          rationale: 'DLM is defined as a model that iteratively denoises a shared canvas.',
+          provider: 'mock',
+          providerLabel: '本地模拟',
+          model: 'mock-1',
+          rulesVersion: 'k2',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      evidence: [],
+    });
+    store.dispatch({ type: 'relation/confirm', id: 'r-def', at: 2 });
+    render(<Harness store={store} />);
+
+    const detail = screen.getByRole('region', { name: '概念：DLM' });
+    expect(within(detail).getByText(/说明更像「定义依赖」/)).toBeInTheDocument();
+    expect(within(detail).getByLabelText('把与 Shared canvas 的关系改为')).toHaveValue(
+      'prerequisite',
+    );
+    expect(within(detail).getByText('学习路径')).toBeInTheDocument();
+
+    await userEvent.click(within(detail).getByRole('button', { name: '改为「定义依赖」' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('关系类型已改为「定义依赖」');
+    expect(within(detail).getByLabelText('把与 Shared canvas 的关系改为')).toHaveValue(
+      'definition',
+    );
+    expect(within(detail).getByText('定义、近似与替代')).toBeInTheDocument();
+    expect(within(detail).getByText(/还没有记录它依赖什么/)).toBeInTheDocument();
+    // The academic relation no longer contributes a learning path.
+    expect(within(detail).queryByText('学习路径')).not.toBeInTheDocument();
+  });
 });
 
 describe('KnowledgeView: evidence', () => {

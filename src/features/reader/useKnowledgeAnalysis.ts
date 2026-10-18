@@ -17,6 +17,7 @@ import type { Annotation } from '../../domain/annotation';
 import type { DifficultySuggestion } from '../../domain/difficulty';
 import {
   conceptIdForName,
+  conceptMatchesForName,
   createEvidence,
   type Concept,
   type ConceptEvidence,
@@ -418,7 +419,13 @@ export function buildSuggestionBatch(
 
   const remember = (name: string, id: string): void => {
     const key = name.replace(/\s+/g, ' ').trim().toLowerCase();
-    if (key !== '' && !idByName.has(key)) idByName.set(key, id);
+    if (key === '' || idByName.has(key)) return;
+    const matches = conceptMatchesForName(input.state, name);
+    // A name that means several things cannot identify one concept, and a new concept's alias
+    // must not shadow a different concept the reader already has.
+    if (matches.length > 1) return;
+    if (matches.length === 1 && matches[0]?.id !== id) return;
+    idByName.set(key, id);
   };
 
   const resolve = (name: string): string | null => {
@@ -434,7 +441,13 @@ export function buildSuggestionBatch(
   };
 
   for (const proposed of analysis.concepts) {
-    const existing = conceptIdForName(input.state, proposed.name);
+    const matches = conceptMatchesForName(input.state, proposed.name);
+    if (matches.length > 1) {
+      // The server already refuses ambiguous names; this keeps a hand-built batch from creating
+      // a duplicate node next to the two concepts the name could mean.
+      continue;
+    }
+    const existing = matches[0]?.id ?? null;
     if (existing !== null) {
       remember(proposed.name, existing);
       for (const alias of proposed.aliases) remember(alias, existing);

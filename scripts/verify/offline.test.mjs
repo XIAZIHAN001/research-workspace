@@ -55,6 +55,29 @@ describe('probeProxy', () => {
     }
   });
 
+  it('accepts the offline replay provider only when the run names it', async () => {
+    const peer = await serving(json({ provider: 'replay', online: false, instanceId: 'replay-1' }));
+    try {
+      expect((await probeProxy(peer.origin)).reason).toBe('online-provider');
+      const probe = await probeProxy(peer.origin, { allowedProviders: ['replay'] });
+      expect(probe.ok).toBe(true);
+      expect(probe.health.provider).toBe('replay');
+    } finally {
+      await peer.stop();
+    }
+  });
+
+  it('still refuses a replay-labelled service that claims to be online', async () => {
+    const peer = await serving(json({ provider: 'replay', online: true, instanceId: 'replay-1' }));
+    try {
+      const probe = await probeProxy(peer.origin, { allowedProviders: ['replay'] });
+      expect(probe.ok).toBe(false);
+      expect(probe.reason).toBe('online-provider');
+    } finally {
+      await peer.stop();
+    }
+  });
+
   it('refuses a service that cannot say which process it is', async () => {
     const peer = await serving(json({ provider: 'mock', online: false }));
     try {

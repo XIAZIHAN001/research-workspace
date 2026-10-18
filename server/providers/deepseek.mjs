@@ -82,7 +82,18 @@ export function createDeepSeekProvider({
     /** Shown next to the cost warning, so the reader knows what is being paid for. */
     reasoning: thinking === 'disabled' ? '思考模式关闭' : `思考模式 ${reasoningEffort}`,
 
-    async complete({ system, messages, maxTokens, signal }) {
+    async complete({ system, messages, maxTokens, signal, temperature = 0.3 }) {
+      // Temperature is per call. The knowledge path asks for 0: it is a classification task and
+      // the reader is going to check every relation, so sampling variety buys nothing. 0 does not
+      // make the service deterministic — batching and hardware can still change logits — it only
+      // removes the deliberate sampling noise.
+      const sampling =
+        typeof temperature === 'number' &&
+        Number.isFinite(temperature) &&
+        temperature >= 0 &&
+        temperature <= 2
+          ? temperature
+          : 0.3;
       const controller = new AbortController();
       let timedOut = false;
       const timer = setTimeout(() => {
@@ -111,7 +122,7 @@ export function createDeepSeekProvider({
             thinking: { type: thinking },
             reasoning_effort: reasoningEffort,
             max_tokens: maxTokens,
-            temperature: 0.3,
+            temperature: sampling,
             stream: false,
             // Deliberately *not* `response_format: json_object`.
             //
