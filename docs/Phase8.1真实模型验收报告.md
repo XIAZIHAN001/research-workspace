@@ -319,7 +319,7 @@ Ledger 的保守估算（输入按峰值缓存未命中、输出按峰值，忽�
 
 ## 十五、Git、证据与可复现性
 
-- 分支：`phase8-evidence-knowledge`；Phase 8 提交 `2697994` / `8589368`。Phase 8.1 的 `scripts/verify/live-knowledge-8.1.mjs` 与本报告在完成后本地提交；未推送远程。
+- 分支：`phase8-evidence-knowledge`；Phase 8 提交 `2697994` / `8589368`。Phase 8.1 完成提交 **`310f1e5`**（`scripts/verify/live-knowledge-8.1.mjs` 与本报告）；报告中的提交号更新为紧随其后的小提交。未推送远程。
 - 未修改应用源码、Phase 8 报告、知识库或备份。
 - 运行器与原始证据在 `.cache/verify/phase8.1-live/`（Git 忽略）：
   - `live-ledger.json`：12 次请求的计数、token、延迟、预留/估算费用、实例 ID；
