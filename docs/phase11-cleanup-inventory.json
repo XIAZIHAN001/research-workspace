@@ -1,0 +1,280 @@
+{
+  "schema": 5,
+  "knowledgeVersion": 2,
+  "projects": [
+    {
+      "id": "1979da71-c29d-4888-861f-7191f32c076e",
+      "name": "桌面验收 2026-10-19T05-13-50",
+      "updatedAt": 1792386835353,
+      "paperIds": ["fd7122a3-fd64-42f5-815a-59819e9dc58e", "d0f724a9-8ff3-4d62-afb3-7db667c66f94"],
+      "papers": [
+        {
+          "id": "fd7122a3-fd64-42f5-815a-59819e9dc58e",
+          "title": "桌面验收 2026-10-19T05-13-50",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "d0f724a9-8ff3-4d62-afb3-7db667c66f94",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "8a8bcbcb-e428-4ba8-af56-672ffb5421da",
+      "name": "桌面验收 2026-10-18T12-25-45",
+      "updatedAt": 1792326351105,
+      "paperIds": ["0d8406ca-42ac-4b3b-990d-9b74a287fc40", "7afb4448-08a3-4b33-b643-9a754400ccd9"],
+      "papers": [
+        {
+          "id": "0d8406ca-42ac-4b3b-990d-9b74a287fc40",
+          "title": "桌面验收 2026-10-18T12-25-45",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "7afb4448-08a3-4b33-b643-9a754400ccd9",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "7ab01423-1d84-4987-91f7-86005cb293e0",
+      "name": "桌面验收 2026-10-18T12-23-51",
+      "updatedAt": 1792326235959,
+      "paperIds": ["286485ef-c722-4cd1-b8e6-9684c7c18997", "c2feb2d8-eb6d-4258-b1d5-18ce5d18f5be"],
+      "papers": [
+        {
+          "id": "286485ef-c722-4cd1-b8e6-9684c7c18997",
+          "title": "桌面验收 2026-10-18T12-23-51",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "c2feb2d8-eb6d-4258-b1d5-18ce5d18f5be",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "c62199ac-1c95-4983-bc73-6ed6df298f60",
+      "name": "桌面验收 2026-10-18T12-21-56",
+      "updatedAt": 1792326122155,
+      "paperIds": ["701e5d3c-9fed-4d21-8f35-9beed3f3dbf8", "d75b5dc9-076a-4de0-9d67-263b7b11fd80"],
+      "papers": [
+        {
+          "id": "701e5d3c-9fed-4d21-8f35-9beed3f3dbf8",
+          "title": "桌面验收 2026-10-18T12-21-56",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "d75b5dc9-076a-4de0-9d67-263b7b11fd80",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "7264aa35-e6be-4f97-85dc-5eb9eab9e6a2",
+      "name": "桌面验收 2026-10-18T12-17-29",
+      "updatedAt": 1792325853175,
+      "paperIds": ["5be1f5e9-23c3-4436-8232-c605c2bbcdbc", "6c82c736-58a8-46f9-a318-f563602ea269"],
+      "papers": [
+        {
+          "id": "5be1f5e9-23c3-4436-8232-c605c2bbcdbc",
+          "title": "桌面验收 2026-10-18T12-17-29",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "6c82c736-58a8-46f9-a318-f563602ea269",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "fc280f98-5830-4623-a46f-3df3e7b9bf15",
+      "name": "桌面验收 2026-10-18T12-07-19",
+      "updatedAt": 1792325244082,
+      "paperIds": ["50a78416-5475-41da-a426-948119c70169", "ba07b5f8-29fa-4517-b7f4-c0187c654761"],
+      "papers": [
+        {
+          "id": "50a78416-5475-41da-a426-948119c70169",
+          "title": "桌面验收 2026-10-18T12-07-19",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "ba07b5f8-29fa-4517-b7f4-c0187c654761",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "e72ad86a-a74b-41b8-91ed-9b4844abd7dd",
+      "name": "桌面验收 2026-10-18T12-06-26",
+      "updatedAt": 1792325190326,
+      "paperIds": ["ac33ba27-5319-425b-9287-c2a9f1c0da95", "dc1c73a1-a78a-4deb-b5f0-7518b4a8a2f4"],
+      "papers": [
+        {
+          "id": "ac33ba27-5319-425b-9287-c2a9f1c0da95",
+          "title": "桌面验收 2026-10-18T12-06-26",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "dc1c73a1-a78a-4deb-b5f0-7518b4a8a2f4",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "44bce295-7f25-4a85-aa7f-7488775cf738",
+      "name": "桌面验收 2026-10-18T12-05-34",
+      "updatedAt": 1792325137707,
+      "paperIds": ["9ce1f447-480d-4a31-a278-874b0ab04351"],
+      "papers": [
+        {
+          "id": "9ce1f447-480d-4a31-a278-874b0ab04351",
+          "title": "桌面验收 2026-10-18T12-05-34",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "6b6bf399-b664-411b-a288-5aba172d0831",
+      "name": "桌面验收 2026-10-18T12-03-06",
+      "updatedAt": 1792324991098,
+      "paperIds": ["f4d836c1-dc18-4bd1-82b4-d848051020f0", "31c2bfde-4d7e-480d-b54b-3a2ebcf14bc7"],
+      "papers": [
+        {
+          "id": "f4d836c1-dc18-4bd1-82b4-d848051020f0",
+          "title": "桌面验收 2026-10-18T12-03-06",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "31c2bfde-4d7e-480d-b54b-3a2ebcf14bc7",
+          "title": "desktop long",
+          "pdfSha256": "123b2a395fee50d8cd9d6940f56b3f1fd33ad8ac0c819471e63f5b94ed68266b",
+          "sharedWithProjects": 1,
+          "annotations": 7,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "28f5fbc1-48bc-43b3-b9b4-766a5f933024",
+      "name": "桌面验收 2026-10-18T12-01-43",
+      "updatedAt": 1792324907317,
+      "paperIds": ["3a483b58-c18c-4592-a577-c9a40b8418e3", "c89b98f9-badd-40bc-a82b-61101b17d7a3"],
+      "papers": [
+        {
+          "id": "3a483b58-c18c-4592-a577-c9a40b8418e3",
+          "title": "桌面验收 2026-10-18T12-01-43",
+          "pdfSha256": null,
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        },
+        {
+          "id": "c89b98f9-badd-40bc-a82b-61101b17d7a3",
+          "title": "desktop two column",
+          "pdfSha256": "cd7a9ff378cf8a7c7da5d84b68c582c22c5ee7dd71a797980098ecd7e99103dc",
+          "sharedWithProjects": 1,
+          "annotations": 0,
+          "concepts": 0
+        }
+      ],
+      "suspectedTestFixture": true
+    },
+    {
+      "id": "ad9c22c7-5b32-41c9-be3d-81858ad87a7b",
+      "name": "Phase 9 真实精读",
+      "updatedAt": 1792318872945,
+      "paperIds": ["9d912d7e-5e1c-4c7d-81d4-8f726f6a5af8", "1d3164a2-f92e-4299-a27c-e199c266b4fa"],
+      "papers": [
+        {
+          "id": "9d912d7e-5e1c-4c7d-81d4-8f726f6a5af8",
+          "title": "Phase 9 真实精读",
+          "pdfSha256": "8b9ccec04b42a53da4dedc96f01203ba7a1cb3c2a599371f2395186246db8188",
+          "sharedWithProjects": 1,
+          "annotations": 4,
+          "concepts": 4
+        },
+        {
+          "id": "1d3164a2-f92e-4299-a27c-e199c266b4fa",
+          "title": "2610.22327",
+          "pdfSha256": "2cdef1653c1be2101847c7df950e96139d96641c2520f136c1adabb7b89c379b",
+          "sharedWithProjects": 1,
+          "annotations": 1,
+          "concepts": 1
+        }
+      ],
+      "suspectedTestFixture": true
+    }
+  ],
+  "totals": {
+    "projects": 11,
+    "papers": 21,
+    "annotations": 12,
+    "concepts": 12,
+    "relations": 3
+  }
+}
