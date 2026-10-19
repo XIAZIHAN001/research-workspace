@@ -48,6 +48,8 @@ const MESSAGES: Record<AiFailureKind, string> = {
   auth: '模型服务拒绝了这次请求（凭据无效或没有权限）。',
   upstream: '模型服务返回了错误，这次没有得到回答。',
   'bad-request': '这次请求的内容不符合服务的要求，没有发送出去。',
+  'budget-exceeded':
+    '本次会话的在线模型预算已经用完，这次请求没有发送。可以在桌面「AI 设置」里调整上限，或重启 AI 服务开始新的会话。',
   unknown: '这次提问失败了，没有得到回答。',
 };
 
@@ -110,6 +112,7 @@ function kindFor(status: number, code: unknown): AiFailureKind {
   if (code === 'invalid-request') return 'invalid-request';
   if (code === 'rate-limit' || status === 429) return 'rate-limit';
   if (code === 'auth') return 'auth';
+  if (code === 'budget-exceeded') return 'budget-exceeded';
   if (code === 'bad-request' || status === 400 || status === 413) return 'bad-request';
   if (status === 502) return 'upstream';
   return 'unknown';

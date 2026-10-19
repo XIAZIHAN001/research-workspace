@@ -13,7 +13,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { LIMITS } from './config.mjs';
+import { DEFAULT_BUDGET, LIMITS } from './config.mjs';
 import { verifyAnswer } from './citations.mjs';
 import {
   DIFFICULTY_RULES_VERSION,
@@ -42,6 +42,23 @@ import {
 import { buildMessages, normalizeAskRequest } from './prompt.mjs';
 import { createProvider } from './providers/index.mjs';
 import { createLogger } from './log.mjs';
+import { describePrice, estimateCostCny } from './pricing.mjs';
+
+/**
+ * A pessimistic input estimate, in tokens, used only for the *upper bound* a call may consume.
+ *
+ * Chinese text is roughly one token per character and English about a quarter, so half a
+ * character per token plus a fixed allowance is above either. Overestimating means a budget is
+ * exhausted a little early, which is the safe direction; underestimating would mean a call slips
+ * past the limit.
+ */
+function estimatePromptTokens(chars) {
+  return 400 + Math.ceil(chars / 2);
+}
+
+function charCount(system, messages) {
+  return system.length + messages.reduce((sum, message) => sum + (message.content?.length ?? 0), 0);
+}
 
 /** Headers a browser needs before it will let the page read our reply, for allowed origins only. */
 function corsHeaders(origin) {
@@ -67,6 +84,120 @@ export function createAiServer({
   const gate = new ConcurrencyGate(LIMITS.concurrentRequests);
 
   /**
+   * Session accounting for the cost controls.
+   *
+   * This is in-memory on purpose: a sidecar restart is a new session and resets both the
+   * counters and the budget. That makes "restart the service" the explicit way to start over,
+   * rather than a budget that silently rolls over.
+   *
+   * `requests` counts attempts, including failed ones — a loop that keeps failing must still run
+   * out. Token totals come from the provider's own `usage`; when it reports none, the preflight
+   * upper bound is recorded instead and `exactTokens` becomes false, so the interface can say
+   * the figure is conservative rather than exact.
+   */
+  const budget = config.budget ?? { ...DEFAULT_BUDGET };
+  const usage = {
+    requests: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    reasoningTokens: 0,
+    estimatedCostCny: 0,
+    costKnown: true,
+    unknownCostRequests: 0,
+    exactTokens: true,
+  };
+  let reservedTokens = 0;
+
+  function usedTokens() {
+    return usage.promptTokens + usage.completionTokens;
+  }
+
+  function usageSnapshot() {
+    return {
+      requests: usage.requests,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      reasoningTokens: usage.reasoningTokens,
+      totalTokens: usedTokens(),
+      estimatedCostCny: Number(usage.estimatedCostCny.toFixed(4)),
+      costKnown: usage.costKnown,
+      unknownCostRequests: usage.unknownCostRequests,
+      exactTokens: usage.exactTokens,
+    };
+  }
+
+  /**
+   * Checks the paid budget and reserves the upper bound for one call.
+   *
+   * The reservation is what makes concurrent requests safe: four requests that each fit the
+   * remaining budget individually must not all pass and then collectively overspend. It is
+   * released when the call fails and settled with the reported usage when it succeeds.
+   */
+  function reserveBudget({ contextChars, maxTokens }) {
+    const bound = estimatePromptTokens(contextChars) + maxTokens;
+    if (online && usage.requests >= budget.requests) {
+      return {
+        ok: false,
+        message: `本次会话的在线请求次数已达上限（${String(usage.requests)}/${String(budget.requests)}）。可以在桌面「AI 设置」里调整上限，或重启 AI 服务开始新的会话。`,
+      };
+    }
+    if (online && usedTokens() + reservedTokens + bound > budget.tokensPerSession) {
+      return {
+        ok: false,
+        message: `本次会话的在线 token 预算不足：已用 ${String(usedTokens())}，本次最多还需 ${String(bound)}，上限 ${String(budget.tokensPerSession)}。可以在桌面「AI 设置」里调整上限，或重启 AI 服务开始新的会话。`,
+      };
+    }
+    usage.requests += 1;
+    reservedTokens += bound;
+    return { ok: true, bound };
+  }
+
+  function settleBudget(reservation, reported) {
+    reservedTokens = Math.max(0, reservedTokens - reservation.bound);
+    const prompt = typeof reported?.promptTokens === 'number' ? reported.promptTokens : null;
+    const completion =
+      typeof reported?.completionTokens === 'number' ? reported.completionTokens : null;
+    const reasoning =
+      typeof reported?.reasoningTokens === 'number' ? reported.reasoningTokens : null;
+    const cached =
+      typeof reported?.cachedPromptTokens === 'number' ? reported.cachedPromptTokens : null;
+
+    if (prompt === null && completion === null) {
+      // The provider did not report usage. Record the upper bound instead of zero, so the
+      // session budget cannot be bypassed by a provider that omits its accounting.
+      usage.promptTokens += reservation.bound;
+      usage.exactTokens = false;
+    } else {
+      usage.promptTokens += prompt ?? 0;
+      usage.completionTokens += completion ?? 0;
+      if (reasoning !== null) usage.reasoningTokens += reasoning;
+      if (prompt === null || completion === null) usage.exactTokens = false;
+    }
+
+    const cost = estimateCostCny(chosen.model, {
+      promptTokens: prompt ?? reservation.bound,
+      completionTokens: completion ?? 0,
+      cachedPromptTokens: cached,
+    });
+    if (cost === null) {
+      usage.costKnown = false;
+      usage.unknownCostRequests += 1;
+    } else {
+      usage.estimatedCostCny += cost;
+    }
+  }
+
+  function releaseBudget(reservation) {
+    reservedTokens = Math.max(0, reservedTokens - reservation.bound);
+  }
+
+  function maxTokensForCall() {
+    return online
+      ? Math.min(config.answerTokens ?? LIMITS.answerTokens, budget.tokensPerRequest)
+      : (config.answerTokens ?? LIMITS.answerTokens);
+  }
+
+  /**
    * Identifies *this process*, not this build.
    *
    * Phase 5 ended with two questions going to a service nobody meant to talk to. A port being
@@ -88,6 +219,10 @@ export function createAiServer({
     reasoning: chosen.reasoning ?? null,
     /** True when a call reaches a paid service. The interface says so before anything is sent. */
     online,
+    /** The session caps the interface shows and the service enforces. Reset on restart. */
+    budget: { ...budget },
+    /** The basis of the cost estimate, or an explicit statement that there is none. */
+    pricing: describePrice(chosen.model),
     limits: {
       passages: LIMITS.passages,
       passageChars: LIMITS.passageChars,
@@ -96,7 +231,7 @@ export function createAiServer({
       requestsPerMinute: LIMITS.requestsPerMinute,
       // Reported so a live run can record, in its own evidence, which ceiling produced the
       // result — and so a stale process cannot silently keep using the old one.
-      answerTokens: config.answerTokens ?? LIMITS.answerTokens,
+      answerTokens: maxTokensForCall(),
       knowledgePassages: LIMITS.knowledgePassages,
       knowledgeContextChars: LIMITS.knowledgeContextChars,
       knowledgePages: LIMITS.knowledgePages,
@@ -151,14 +286,40 @@ export function createAiServer({
       const ask = normalized.value;
       const { system, messages } = buildMessages(ask);
       const chars = ask.passages.reduce((sum, passage) => sum + passage.text.length, 0);
+      const maxTokens = maxTokensForCall();
 
-      const outcome = await chosen.complete({
-        system,
-        messages,
-        maxTokens: config.answerTokens ?? LIMITS.answerTokens,
-        signal: controller.signal,
-        meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
+      // The budget check happens before the call, with a pessimistic input estimate and the
+      // generation ceiling, so a refusal is decided without spending anything.
+      const reservation = reserveBudget({
+        contextChars: charCount(system, messages),
+        maxTokens,
       });
+      if (!reservation.ok) {
+        sendJson(response, 429, { error: 'budget-exceeded', message: reservation.message });
+        log.request({
+          method: 'POST',
+          path: url.pathname,
+          status: 429,
+          ms: Date.now() - started,
+          provider: chosen.name,
+        });
+        return;
+      }
+
+      let outcome;
+      try {
+        outcome = await chosen.complete({
+          system,
+          messages,
+          maxTokens,
+          signal: controller.signal,
+          meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
+        });
+      } catch (error) {
+        releaseBudget(reservation);
+        throw error;
+      }
+      settleBudget(reservation, outcome.usage);
 
       const verified = verifyAnswer(outcome.text, ask.passages, { truncated: outcome.truncated });
       const payload = {
@@ -283,19 +444,43 @@ export function createAiServer({
       }
       const page = normalized.value;
       const { system, messages } = buildDifficultyMessages(page);
+      const maxTokens = maxTokensForCall();
 
-      const outcome = await chosen.complete({
-        system,
-        messages,
-        maxTokens: config.answerTokens ?? LIMITS.answerTokens,
-        signal: controller.signal,
-        meta: {
-          task: 'difficulty',
-          title: page.paper.title,
-          page: page.paper.page,
-          pageText: page.pageText,
-        },
+      const reservation = reserveBudget({
+        contextChars: charCount(system, messages),
+        maxTokens,
       });
+      if (!reservation.ok) {
+        sendJson(response, 429, { error: 'budget-exceeded', message: reservation.message });
+        log.request({
+          method: 'POST',
+          path: url.pathname,
+          status: 429,
+          ms: Date.now() - started,
+          provider: chosen.name,
+        });
+        return;
+      }
+
+      let outcome;
+      try {
+        outcome = await chosen.complete({
+          system,
+          messages,
+          maxTokens,
+          signal: controller.signal,
+          meta: {
+            task: 'difficulty',
+            title: page.paper.title,
+            page: page.paper.page,
+            pageText: page.pageText,
+          },
+        });
+      } catch (error) {
+        releaseBudget(reservation);
+        throw error;
+      }
+      settleBudget(reservation, outcome.usage);
 
       const verified = verifySuggestions(outcome.text, page.pageText);
       sendJson(response, 200, {
@@ -402,23 +587,47 @@ export function createAiServer({
       }
       const knowledgeRequest = normalized.value;
       const { system, messages } = buildKnowledgeMessages(knowledgeRequest);
+      const maxTokens = maxTokensForCall();
 
-      const outcome = await chosen.complete({
-        system,
-        messages,
-        maxTokens: config.answerTokens ?? LIMITS.answerTokens,
-        signal: controller.signal,
-        // Classification, not prose: no deliberate sampling variety. Still checked line by line.
-        temperature: 0,
-        meta: {
-          task: 'knowledge',
-          paper: knowledgeRequest.paper,
-          focus: knowledgeRequest.focus,
-          passages: knowledgeRequest.passages,
-          existingConcepts: knowledgeRequest.existingConcepts,
-          existingRelations: knowledgeRequest.existingRelations,
-        },
+      const reservation = reserveBudget({
+        contextChars: charCount(system, messages),
+        maxTokens,
       });
+      if (!reservation.ok) {
+        sendJson(response, 429, { error: 'budget-exceeded', message: reservation.message });
+        log.request({
+          method: 'POST',
+          path: url.pathname,
+          status: 429,
+          ms: Date.now() - started,
+          provider: chosen.name,
+        });
+        return;
+      }
+
+      let outcome;
+      try {
+        outcome = await chosen.complete({
+          system,
+          messages,
+          maxTokens,
+          signal: controller.signal,
+          // Classification, not prose: no deliberate sampling variety. Still checked line by line.
+          temperature: 0,
+          meta: {
+            task: 'knowledge',
+            paper: knowledgeRequest.paper,
+            focus: knowledgeRequest.focus,
+            passages: knowledgeRequest.passages,
+            existingConcepts: knowledgeRequest.existingConcepts,
+            existingRelations: knowledgeRequest.existingRelations,
+          },
+        });
+      } catch (error) {
+        releaseBudget(reservation);
+        throw error;
+      }
+      settleBudget(reservation, outcome.usage);
 
       const verified = verifyKnowledgeSuggestions(outcome.text, knowledgeRequest, {
         truncated: outcome.truncated === true,
@@ -540,7 +749,9 @@ export function createAiServer({
     }
 
     if (url.pathname === '/api/ai/health') {
-      sendJson(response, 200, health);
+      // Budget usage changes with every call, so it is read at request time rather than baked
+      // into the startup snapshot.
+      sendJson(response, 200, { ...health, usage: usageSnapshot() });
       return;
     }
 

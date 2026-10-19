@@ -12,5 +12,7 @@ if errorlevel 1 (
   exit /b 1
 )
 set "PATH=%CARGO_HOME%\bin;%PATH%"
-endlocal & set "PATH=%PATH%" & set "RUSTUP_HOME=%RUSTUP_HOME%" & set "CARGO_HOME=%CARGO_HOME%"
+rem vcvars64 also sets INCLUDE/LIB/LIBPATH. They must survive endlocal, or cl.exe starts
+rem successfully and then fails to find its headers with a bare exit code 2.
+endlocal & set "PATH=%PATH%" & set "RUSTUP_HOME=%RUSTUP_HOME%" & set "CARGO_HOME=%CARGO_HOME%" & set "INCLUDE=%INCLUDE%" & set "LIB=%LIB%" & set "LIBPATH=%LIBPATH%" & set "VSCMD_ARG_TGT_ARCH=%VSCMD_ARG_TGT_ARCH%"
 %*

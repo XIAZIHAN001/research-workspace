@@ -54,6 +54,8 @@ function baseOptions(overrides: Partial<DifficultyScanOptions> = {}): Difficulty
     paperId: 'paper-1',
     pdfSha256: 'a'.repeat(64),
     model: 'mock-1',
+    online: false,
+    serviceInstanceId: 'service-instance-1',
     currentPage: 3,
     pageTextFor: (page) => (page === 3 ? PAGE_TEXT : null),
     locate: () => ({
@@ -110,6 +112,58 @@ describe('useDifficultyScan', () => {
     });
     expect(analyze).toHaveBeenCalledTimes(1);
     expect(result.current.analysedPages).toBe(1);
+  });
+
+  it('requires a fresh consent before automatic analysis makes paid calls', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const analyze = vi.fn(async () => ({ ok: true as const, value: analysis() }));
+    const { result } = renderHook(() => useDifficultyScan(baseOptions({ analyze, online: true })));
+
+    // Online, enabled from a saved preference, and still nothing is sent.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(analyze).not.toHaveBeenCalled();
+    expect(result.current.autoPaused).toBe(true);
+
+    await act(async () => {
+      result.current.grantOnlineConsent();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    await flush();
+    expect(result.current.autoPaused).toBe(false);
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it('revokes the paid consent when the service mode changes', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const analyze = vi.fn(async () => ({ ok: true as const, value: analysis() }));
+    const { result, rerender } = renderHook(
+      ({ online, serviceInstanceId }: { online: boolean; serviceInstanceId: string }) =>
+        useDifficultyScan(baseOptions({ analyze, online, serviceInstanceId })),
+      { initialProps: { online: false, serviceInstanceId: 'service-instance-1' } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    // Offline consent existed implicitly; going online restarts the service, and the new
+    // instance id must stop the automatic pass until consent is granted again.
+    rerender({ online: true, serviceInstanceId: 'service-instance-2' });
+    expect(result.current.enabled).toBe(true);
+    expect(result.current.autoPaused).toBe(true);
+    await act(async () => {
+      result.current.grantOnlineConsent();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(result.current.autoPaused).toBe(false);
   });
 
   it('keeps a failure inside the hook, and offers to retry', async () => {

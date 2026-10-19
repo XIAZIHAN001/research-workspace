@@ -218,3 +218,69 @@ describe('isLoopbackOrigin', () => {
     }
   });
 });
+
+describe('desktop online configuration', () => {
+  it('allows an online start with a deferred key, and only then', () => {
+    const deferred = readConfig(
+      { AI_PROVIDER: 'deepseek' },
+      { deferredKey: true, requireOfficialEndpoint: true },
+    );
+    expect(deferred.apiKey).toBe('');
+    expect(deferred.deferredKey).toBe(true);
+    expect(configProblems(deferred)).toEqual([]);
+
+    // The same configuration without the deferred flag is a misconfiguration: a plain
+    // `ai:serve` must not come up online without a key.
+    const missing = readConfig({ AI_PROVIDER: 'deepseek' }, { requireOfficialEndpoint: true });
+    expect(configProblems(missing).join(' ')).toContain('DEEPSEEK_API_KEY');
+  });
+
+  it('accepts exactly the official endpoint in the desktop product', () => {
+    const base = { AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'sk-test-value' };
+    const official = readConfig(base, { requireOfficialEndpoint: true });
+    expect(configProblems(official)).toEqual([]);
+
+    const elsewhere = readConfig(
+      { ...base, DEEPSEEK_BASE_URL: 'https://api.example.com' },
+      { requireOfficialEndpoint: true },
+    );
+    expect(configProblems(elsewhere).join(' ')).toContain('只允许官方 DeepSeek 端点');
+
+    // A loopback simulator is allowed only when the launcher says so.
+    const loopback = readConfig(
+      {
+        ...base,
+        DEEPSEEK_BASE_URL: 'http://127.0.0.1:9000',
+        AI_ALLOW_LOOPBACK_UPSTREAM: '1',
+      },
+      { requireOfficialEndpoint: true },
+    );
+    expect(configProblems(loopback)).toEqual([]);
+
+    const disguised = readConfig(
+      { ...base, DEEPSEEK_BASE_URL: 'http://127.0.0.1:9000' },
+      { requireOfficialEndpoint: true },
+    );
+    expect(configProblems(disguised).join(' ')).toContain('只允许官方');
+  });
+
+  it('reads the desktop mode and the session budget, with safe fallbacks', () => {
+    expect(readConfig({ AI_DESKTOP_MODE: 'online' }).desktopMode).toBe('online');
+    expect(readConfig({ AI_DESKTOP_MODE: 'anything-else' }).desktopMode).toBe('mock');
+
+    expect(
+      readConfig({
+        AI_BUDGET_REQUESTS: '3',
+        AI_BUDGET_TOKENS_PER_REQUEST: '1024',
+        AI_BUDGET_TOKENS_SESSION: '5000',
+      }).budget,
+    ).toEqual({ requests: 3, tokensPerRequest: 1024, tokensPerSession: 5000 });
+
+    // Out-of-range values fall back rather than becoming a limit that blocks every call or a
+    // limit that permits a million tokens.
+    expect(readConfig({ AI_BUDGET_REQUESTS: '0' }).budget.requests).toBe(50);
+    expect(readConfig({ AI_BUDGET_REQUESTS: '1001' }).budget.requests).toBe(50);
+    expect(readConfig({ AI_BUDGET_TOKENS_PER_REQUEST: '99' }).budget.tokensPerRequest).toBe(8192);
+    expect(readConfig({ AI_BUDGET_TOKENS_SESSION: '1' }).budget.tokensPerSession).toBe(200_000);
+  });
+});

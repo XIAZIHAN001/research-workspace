@@ -24,6 +24,7 @@ import type { PdfBlobStore } from '../../services/pdfStore';
 import { makeId } from '../../services/ids';
 import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
+import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
@@ -263,6 +264,8 @@ export function ReaderView({
     paperId: paper.id,
     pdfSha256: pdfSha256 ?? '',
     model: health?.model ?? '',
+    online: health?.online === true,
+    serviceInstanceId: health?.instanceId ?? '',
     currentPage,
     pageTextFor,
     locate: locateQuote,
@@ -773,14 +776,38 @@ export function ReaderView({
     if (health !== null) return;
     if (panel !== 'ai' && panel !== 'difficulty' && panel !== 'knowledge' && !scan.enabled) return;
     let cancelled = false;
-    void (async () => {
+    let retry: number | undefined;
+    const load = async (): Promise<void> => {
       const found = await fetchAiHealth();
-      if (!cancelled) setHealth(found);
-    })();
+      if (cancelled) return;
+      if (found === null) {
+        // The sidecar may be restarting for a mode change. Retry while the panel is open
+        // instead of leaving it permanently without provider information.
+        retry = window.setTimeout(() => {
+          void load();
+        }, 1500);
+        return;
+      }
+      setHealth(found);
+    };
+    void load();
     return () => {
       cancelled = true;
+      if (retry !== undefined) window.clearTimeout(retry);
     };
   }, [panel, health, scan.enabled]);
+
+  // A desktop mode or key change replaces the service process. The old health no longer
+  // describes the service the panels will talk to, so drop it and let the effect above refetch.
+  useEffect(() => {
+    const refresh = (): void => {
+      setHealth(null);
+    };
+    window.addEventListener(AI_MODE_EVENT, refresh);
+    return () => {
+      window.removeEventListener(AI_MODE_EVENT, refresh);
+    };
+  }, []);
 
   // A notice is a passing remark, not a permanent state.
   useEffect(() => {

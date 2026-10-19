@@ -77,3 +77,279 @@
     display: none;
   }
 }
+
+/*
+ * AI settings. The dialog has to hold two different kinds of statement: a write-only secret
+ * field, and the numbers that explain what a session may spend. Sections are separated by a
+ * hairline so the key never looks like part of the budget controls.
+ *
+ * The generic dialog is 440px wide, which is right for a confirmation but clips a two-column
+ * mode selector and a stats grid. This dialog therefore widens itself and owns the vertical
+ * scroll; the content below only lays out, so there is exactly one scroll container.
+ */
+.dialog:has(.ai-settings) {
+  width: min(780px, calc(100vw - 32px));
+  max-height: min(88vh, 900px);
+  overflow-y: auto;
+  /* A dense settings panel, not a floating card: the page behind must not show through the
+     labels and values. The sheen keeps the material feel without a translucent base. */
+  background: linear-gradient(162deg, var(--sheen), transparent 42%), var(--bg-base);
+  backdrop-filter: blur(28px) saturate(1.2);
+}
+
+.ai-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding-right: 2px;
+}
+
+.ai-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ai-settings__section:last-of-type {
+  border-bottom: 0;
+}
+
+.ai-settings h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-settings__hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-settings__notice {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.ai-mode-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-mode-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-mode-card[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.ai-mode-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ai-mode-card__title {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.ai-mode-card__text {
+  grid-column: 1 / -1;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.ai-settings__state {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ai-settings__state[data-online='true'] {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.ai-settings__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-settings__confirm p {
+  margin: 0;
+}
+
+.ai-settings__credential {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ai-settings__credential[data-configured='true'] {
+  color: var(--ok);
+}
+
+.ai-settings__key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.ai-settings__field input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--glass-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.ai-settings__field input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.ai-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-settings__danger {
+  color: var(--danger);
+}
+
+.ai-settings__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 18px;
+  margin: 0;
+}
+
+.ai-settings__stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--hairline);
+}
+
+.ai-settings__stats dt {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.ai-settings__stats dd {
+  margin: 0;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-settings__stats dd[data-warning='true'] {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.ai-settings__pricing {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.ai-settings__pricing[data-known='false'] {
+  color: var(--warn);
+}
+
+.ai-settings__budget {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-settings__note {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.ai-settings__note[data-kind='success'] {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 9%, transparent);
+}
+
+.ai-settings__note[data-kind='warning'] {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+}
+
+.ai-settings__note[data-kind='error'] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+
+@media (max-width: 900px) {
+  .dialog:has(.ai-settings) {
+    width: calc(100vw - 16px);
+  }
+
+  .ai-settings {
+    width: 100%;
+  }
+
+  .ai-mode-choices,
+  .ai-settings__stats,
+  .ai-settings__budget {
+    grid-template-columns: 1fr;
+  }
+}

@@ -62,7 +62,15 @@ async function main() {
     },
     server: {
       source: relative(root, serverSource),
-      files: ['desktop.mjs', 'index.mjs', 'config.mjs', 'guards.mjs', 'log.mjs', 'providers'],
+      files: [
+        'desktop.mjs',
+        'index.mjs',
+        'config.mjs',
+        'guards.mjs',
+        'log.mjs',
+        'pricing.mjs',
+        'providers',
+      ],
     },
   };
   await writeFile(

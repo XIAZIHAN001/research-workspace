@@ -42,8 +42,10 @@ function scan(overrides: Partial<DifficultyScan> = {}): DifficultyScan {
     analysedPages: 1,
     current: [suggestion()],
     all: [suggestion()],
+    autoPaused: false,
     setEnabled: vi.fn(),
     setMarkersVisible: vi.fn(),
+    grantOnlineConsent: vi.fn(),
     analyse: vi.fn(),
     reanalyse: vi.fn(),
     ignore: vi.fn(),
@@ -84,9 +86,10 @@ describe('DifficultyPanel', () => {
 
   it('needs one confirming click, and the button says what it will do', async () => {
     const setEnabled = vi.fn();
+    const grantOnlineConsent = vi.fn();
     render(
       <DifficultyPanel
-        scan={scan({ enabled: false, current: [], all: [], setEnabled })}
+        scan={scan({ enabled: false, current: [], all: [], setEnabled, grantOnlineConsent })}
         online
         currentPage={3}
         onShow={vi.fn()}
@@ -98,6 +101,26 @@ describe('DifficultyPanel', () => {
     const confirm = screen.getByRole('button', { name: '开始分析（会调用在线模型）' });
     await userEvent.click(confirm);
     expect(setEnabled).toHaveBeenCalledWith(true);
+    // The confirmation covers the automatic pass too, not just the first page.
+    expect(grantOnlineConsent).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses automatic online analysis until the reader confirms it again', async () => {
+    const grantOnlineConsent = vi.fn();
+    render(
+      <DifficultyPanel
+        scan={scan({ enabled: true, autoPaused: true, grantOnlineConsent })}
+        online
+        currentPage={3}
+        onShow={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/自动分析会在你停留的每一页发起一次付费请求/)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: /确认开启在线自动分析（会持续产生费用）/ }),
+    );
+    expect(grantOnlineConsent).toHaveBeenCalledTimes(1);
   });
 
   it('lists this page’s suggestions with the quick explanation first', async () => {

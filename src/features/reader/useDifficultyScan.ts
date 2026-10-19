@@ -37,6 +37,19 @@ export interface DifficultyScanOptions {
   pdfSha256: string;
   /** The model name from the service's own health report; empty until it is known. */
   model: string;
+  /**
+   * True when the service is paid. Automatic scanning then needs an explicit, session-only
+   * consent: switching to online mode while the feature was already on must not silently turn
+   * every page into a billable request.
+   */
+  online: boolean;
+  /**
+   * Identity of the service process currently answering, from its health report.
+   *
+   * A consent is tied to this value. The shell restarts the sidecar on every mode or key
+   * change, so a new instance means the earlier consent no longer applies.
+   */
+  serviceInstanceId: string;
   currentPage: number;
   /** The page's rendered text, or null when that page is not on screen right now. */
   pageTextFor: (page: number) => string | null;
@@ -56,8 +69,12 @@ export interface DifficultyScan {
   current: DifficultySuggestion[];
   /** Every suggestion for this file, across the pages analysed so far. */
   all: DifficultySuggestion[];
+  /** True when automatic page scanning is held back until the reader confirms online costs. */
+  autoPaused: boolean;
   setEnabled: (next: boolean) => void;
   setMarkersVisible: (next: boolean) => void;
+  /** Confirms that automatic scanning may make paid calls for this session. */
+  grantOnlineConsent: () => void;
   analyse: (page?: number) => void;
   reanalyse: () => void;
   ignore: (id: string) => void;
@@ -76,12 +93,31 @@ export interface DifficultyScan {
  *   this hook; the page, the notes and the reading position are untouched.
  */
 export function useDifficultyScan(options: DifficultyScanOptions): DifficultyScan {
-  const { paperId, pdfSha256, model, currentPage, pageTextFor, locate, analyze } = options;
+  const {
+    paperId,
+    pdfSha256,
+    model,
+    online,
+    serviceInstanceId,
+    currentPage,
+    pageTextFor,
+    locate,
+    analyze,
+  } = options;
 
   const [prefs, setPrefs] = useState(() => loadDifficultyPrefs());
   const [state, setState] = useState<DifficultyState>(() => loadDifficulties());
   const [status, setStatus] = useState<'idle' | 'running' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Session-only permission for automatic scanning to make paid calls.
+   *
+   * The permission remembers which service instance it was given to. Every mode or key change
+   * restarts the sidecar with a new instance id, so an earlier consent stops matching without
+   * a state-synchronising effect or a persisted flag.
+   */
+  const [consentInstance, setConsentInstance] = useState<string | null>(null);
+  const onlineConsent = online && serviceInstanceId !== '' && consentInstance === serviceInstanceId;
 
   /** Pages that failed, so an automatic pass does not retry them in a loop. */
   const failedPages = useRef(new Set<number>());
@@ -188,6 +224,8 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
   // The automatic pass: one page, after the reader has settled on it.
   useEffect(() => {
     if (!prefs.enabled || model === '') return;
+    // A paid provider needs a fresh, explicit confirmation before page turns become charges.
+    if (online && !onlineConsent) return;
     if (failedPages.current.has(currentPage)) return;
     if (state.pages[pageKey(pdfSha256, currentPage, model)] !== undefined) return;
     const timer = window.setTimeout(() => {
@@ -196,7 +234,20 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
     return () => {
       window.clearTimeout(timer);
     };
-  }, [prefs.enabled, model, currentPage, pdfSha256, state.pages, analysePage]);
+  }, [
+    prefs.enabled,
+    model,
+    online,
+    onlineConsent,
+    currentPage,
+    pdfSha256,
+    state.pages,
+    analysePage,
+  ]);
+
+  const grantOnlineConsent = useCallback(() => {
+    setConsentInstance(serviceInstanceId);
+  }, [serviceInstanceId]);
 
   const setEnabled = useCallback((next: boolean) => {
     setPrefs((current) => {
@@ -266,8 +317,10 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
     analysedPages,
     current,
     all,
+    autoPaused: online && prefs.enabled && !onlineConsent,
     setEnabled,
     setMarkersVisible,
+    grantOnlineConsent,
     analyse,
     reanalyse,
     ignore,

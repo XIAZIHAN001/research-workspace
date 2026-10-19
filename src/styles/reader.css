@@ -1288,3 +1288,25 @@
   color: var(--text-2);
   font-size: 12px;
 }
+
+.difficulty-paused {
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.difficulty-paused p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.difficulty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

@@ -35,6 +35,35 @@ export const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 export const KNOWN_DEEPSEEK_MODELS = ['deepseek-flash', 'deepseek-v4-pro'];
 
 /**
+ * Desktop run modes.
+ *
+ * `mock` never reaches a network. `online` uses the DeepSeek provider and, before any key
+ * arrives, refuses to serve a model call. The desktop shell chooses one at spawn time; the
+ * request side cannot change it.
+ */
+export const DESKTOP_MODES = ['mock', 'online'];
+
+/**
+ * Per-session spending caps for the paid provider.
+ *
+ * `requests` counts attempts, including failed ones, because a retry loop is exactly what this
+ * is meant to stop. The two token limits bound the generation budget per call and the total
+ * session's upper-bound usage. They are enforced before the call, using a deliberately
+ * pessimistic input estimate, so exceeding a limit ends with a refusal rather than a bill.
+ */
+export const DEFAULT_BUDGET = {
+  requests: 50,
+  tokensPerRequest: 8192,
+  tokensPerSession: 200_000,
+};
+
+export const BUDGET_BOUNDS = {
+  requests: { min: 1, max: 1000 },
+  tokensPerRequest: { min: 256, max: 32_000 },
+  tokensPerSession: { min: 256, max: 10_000_000 },
+};
+
+/**
  * Thinking mode, which upstream defaults to *on* at effort `high`.
  *
  * That default matters here for a reason worth writing down: `reasoning_tokens` count towards
@@ -124,7 +153,12 @@ export function isLoopbackOrigin(origin) {
 
 export function readConfig(
   env = process.env,
-  { forceOffline = false, allowEphemeralPort = false } = {},
+  {
+    forceOffline = false,
+    allowEphemeralPort = false,
+    deferredKey = false,
+    requireOfficialEndpoint = false,
+  } = {},
 ) {
   // `--offline` is not a preference, it is a wall: a machine that happens to have a key in its
   // environment must still be able to start a service that cannot spend anything.
@@ -160,17 +194,46 @@ export function readConfig(
      */
     desktopInstance:
       typeof env.AI_DESKTOP_INSTANCE === 'string' ? env.AI_DESKTOP_INSTANCE.trim() : '',
+    /** `mock` or `online`; only meaningful to the desktop launcher. */
+    desktopMode: env.AI_DESKTOP_MODE === 'online' ? 'online' : 'mock',
     provider,
-    /** Set only for the deepseek provider; the mock provider ignores it entirely. */
+    /**
+     * Set only for the deepseek provider; the mock provider ignores it entirely.
+     *
+     * The desktop does not put the key in the environment at all. It starts the sidecar with
+     * `deferredKey: true` and sends the key over stdin once the process exists. Until that line
+     * arrives, the service refuses to listen for model calls.
+     */
     apiKey:
       forceOffline || typeof env.DEEPSEEK_API_KEY !== 'string' ? '' : env.DEEPSEEK_API_KEY.trim(),
+    deferredKey,
     baseUrl: (env.DEEPSEEK_BASE_URL ?? DEFAULT_DEEPSEEK_BASE_URL).replace(/\/+$/, ''),
+    /**
+     * A local simulator is allowed only when the launcher says so *and* the address is
+     * loopback. The desktop release never sets this flag; it is used by the offline integration
+     * harness, which stands in for api.deepseek.com without reaching it.
+     */
+    allowLoopbackUpstream: env.AI_ALLOW_LOOPBACK_UPSTREAM === '1',
+    requireOfficialEndpoint,
     model: isValidModelName(env.DEEPSEEK_MODEL) ? env.DEEPSEEK_MODEL : KNOWN_DEEPSEEK_MODELS[0],
     thinking,
     reasoningEffort,
     timeoutMs: readInt(env.AI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, { min: 1000, max: 600_000 }),
     /** Overrides the generation ceiling; bounded so a typo cannot ask for a million tokens. */
     answerTokens: readInt(env.AI_MAX_OUTPUT_TOKENS, LIMITS.answerTokens, { min: 256, max: 32_000 }),
+    budget: {
+      requests: readInt(env.AI_BUDGET_REQUESTS, DEFAULT_BUDGET.requests, BUDGET_BOUNDS.requests),
+      tokensPerRequest: readInt(
+        env.AI_BUDGET_TOKENS_PER_REQUEST,
+        DEFAULT_BUDGET.tokensPerRequest,
+        BUDGET_BOUNDS.tokensPerRequest,
+      ),
+      tokensPerSession: readInt(
+        env.AI_BUDGET_TOKENS_SESSION,
+        DEFAULT_BUDGET.tokensPerSession,
+        BUDGET_BOUNDS.tokensPerSession,
+      ),
+    },
     allowedOrigins: extraOrigins,
     /** Where the mock provider's answers come from; see providers/mock.mjs. */
     logRequests: env.AI_LOG_REQUESTS !== '0',
@@ -188,10 +251,22 @@ export function configProblems(config) {
   if (!PROVIDER_NAMES.includes(config.provider)) {
     problems.push(`未知的 AI_PROVIDER：${config.provider}`);
   }
-  if (config.provider === 'deepseek' && config.apiKey === '') {
+  if (config.provider === 'deepseek' && config.apiKey === '' && config.deferredKey !== true) {
     problems.push('AI_PROVIDER=deepseek 需要同时设置 DEEPSEEK_API_KEY（只从环境变量读取）。');
   }
-  if (config.provider === 'deepseek' && !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(config.baseUrl)) {
+  const loopbackUpstream =
+    config.allowLoopbackUpstream === true &&
+    /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(config.baseUrl);
+  if (config.requireOfficialEndpoint === true) {
+    // The desktop product talks to exactly one address. A test harness may stand a simulator on
+    // loopback, but nothing a page or a stray environment variable does can point the paid
+    // provider elsewhere.
+    if (config.baseUrl !== DEFAULT_DEEPSEEK_BASE_URL && !loopbackUpstream) {
+      problems.push(
+        `桌面版只允许官方 DeepSeek 端点 ${DEFAULT_DEEPSEEK_BASE_URL}，当前是 ${config.baseUrl}`,
+      );
+    }
+  } else if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(config.baseUrl) && !loopbackUpstream) {
     problems.push(`DEEPSEEK_BASE_URL 必须是 https 地址，当前是 ${config.baseUrl}`);
   }
   // A short desktop credential is not a credential. The shell generates 32 random bytes; this

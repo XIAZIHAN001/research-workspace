@@ -11,15 +11,20 @@
 //!   start is the sidecar it ships, and the only files it reads are its own resources;
 //! - the sidecar binds an ephemeral loopback port and requires a random bearer token, so a
 //!   stale service on a known port (or another local page) cannot be mistaken for it;
-//! - the sidecar is started offline. A key exported in the parent environment is not inherited
-//!   because the child environment is cleared and only the minimal variables are set;
+//! - the sidecar normally runs offline. Online mode is a separate, explicit choice, and the
+//!   API key is read from the Windows Credential Manager and handed to the sidecar over its
+//!   stdin — never through the environment, the command line or the webview;
+//! - one application instance only. A second launch focuses the existing window instead of
+//!   starting another shell, another sidecar or another writer to the same WebView data;
 //! - the webview's data directory is pinned under the application's local data directory so
 //!   LocalStorage/IndexedDB survive reinstalls of the same identifier.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod credentials;
+
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -31,6 +36,7 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use uuid::Uuid;
 
 const READY_PREFIX: &str = "RW_AI_READY ";
+const SECRET_PREFIX: &str = "RW_AI_SECRET ";
 const STATUS_EVENT: &str = "ai-service-status";
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 const STOP_GRACE: Duration = Duration::from_millis(1200);
@@ -38,6 +44,83 @@ const STATUS_STARTING: &str = "starting";
 const STATUS_READY: &str = "ready";
 const STATUS_FAILED: &str = "failed";
 const STATUS_STOPPED: &str = "stopped";
+
+/// The two ways the local service can run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AiMode {
+    Mock,
+    Online,
+}
+
+impl AiMode {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "mock" => Some(Self::Mock),
+            "online" => Some(Self::Online),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Mock => "mock",
+            Self::Online => "online",
+        }
+    }
+
+    fn provider(self) -> &'static str {
+        match self {
+            Self::Mock => "mock",
+            Self::Online => "deepseek",
+        }
+    }
+
+    fn expects_online(self) -> bool {
+        matches!(self, Self::Online)
+    }
+}
+
+/// The spending caps the interface can change. They are not secrets, so they live in a small
+/// JSON file under the application's config directory. The key never goes there.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BudgetSettings {
+    requests: u32,
+    tokens_per_request: u32,
+    tokens_per_session: u32,
+}
+
+impl Default for BudgetSettings {
+    fn default() -> Self {
+        Self {
+            requests: 50,
+            tokens_per_request: 8192,
+            tokens_per_session: 200_000,
+        }
+    }
+}
+
+impl BudgetSettings {
+    fn validate(&self) -> Result<(), String> {
+        if !(1..=1000).contains(&self.requests) {
+            return Err("会话请求上限必须在 1 到 1000 之间。".to_string());
+        }
+        if !(256..=32_000).contains(&self.tokens_per_request) {
+            return Err("单次生成 token 上限必须在 256 到 32000 之间。".to_string());
+        }
+        if !(256..=10_000_000).contains(&self.tokens_per_session) {
+            return Err("会话 token 上限必须在 256 到 10000000 之间。".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiPreferences {
+    #[serde(default)]
+    budget: BudgetSettings,
+}
 
 /// What the webview is allowed to know about the AI service.
 ///
@@ -47,21 +130,29 @@ const STATUS_STOPPED: &str = "stopped";
 #[serde(rename_all = "camelCase")]
 struct AiServiceStatus {
     state: String,
+    mode: String,
     base_url: Option<String>,
     token: Option<String>,
     provider: Option<String>,
+    model: Option<String>,
+    online: bool,
     instance_id: Option<String>,
+    credential_configured: bool,
     error: Option<String>,
 }
 
 impl AiServiceStatus {
-    fn empty(state: &str) -> Self {
+    fn empty(state: &str, mode: AiMode) -> Self {
         Self {
             state: state.to_string(),
+            mode: mode.as_str().to_string(),
             base_url: None,
             token: None,
             provider: None,
+            model: None,
+            online: false,
             instance_id: None,
+            credential_configured: false,
             error: None,
         }
     }
@@ -80,6 +171,7 @@ struct ReadyLine {
     instance_id: String,
     desktop_instance: String,
     provider: String,
+    model: String,
     online: bool,
 }
 
@@ -92,6 +184,9 @@ struct AiRuntime {
     /// Bumped by every start/stop. A monitor thread from an older generation must not write
     /// its result over a newer service's state.
     generation: u64,
+    /// The mode this runtime is meant to be in. Restarts reuse it; startup always uses mock.
+    mode: AiMode,
+    budget: BudgetSettings,
 }
 
 #[derive(Clone)]
@@ -102,9 +197,13 @@ impl AiManager {
         Self(Arc::new(Mutex::new(AiRuntime {
             child: None,
             stdin: None,
-            status: AiServiceStatus::empty(STATUS_STOPPED),
+            status: AiServiceStatus::empty(STATUS_STOPPED, AiMode::Mock),
             stderr: Arc::new(Mutex::new(VecDeque::new())),
             generation: 0,
+            // Every launch starts offline. The interface can switch to online in this session,
+            // but nothing about a previous session can turn a new launch into a paid one.
+            mode: AiMode::Mock,
+            budget: BudgetSettings::default(),
         })))
     }
 
@@ -112,28 +211,143 @@ impl AiManager {
         let mut runtime = self.0.lock().expect("AI runtime lock poisoned");
         runtime.generation = runtime.generation.wrapping_add(1);
         stop_child(&mut runtime);
-        runtime.status = AiServiceStatus::empty(STATUS_STOPPED);
+        runtime.status = AiServiceStatus::empty(STATUS_STOPPED, runtime.mode);
     }
+}
+
+fn current_status(manager: &AiManager) -> AiServiceStatus {
+    let mut status = {
+        let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        let mut status = runtime.status.clone();
+        if status.state != STATUS_READY {
+            // A port or credential that is not usable yet is not something the interface should
+            // hold on to; it will arrive with the ready event instead.
+            status.base_url = None;
+            status.token = None;
+        }
+        status
+    };
+    status.credential_configured = credentials::status().configured;
+    status
 }
 
 #[tauri::command]
 fn ai_service_info(manager: State<'_, AiManager>) -> AiServiceStatus {
-    let runtime = manager.0.lock().expect("AI runtime lock poisoned");
-    let mut status = runtime.status.clone();
-    if status.state != STATUS_READY {
-        // A port or credential that is not usable yet is not something the interface should
-        // hold on to; it will arrive with the ready event instead.
-        status.base_url = None;
-        status.token = None;
+    current_status(manager.inner())
+}
+
+#[tauri::command]
+fn ai_credentials_status() -> credentials::CredentialStatus {
+    credentials::status()
+}
+
+#[tauri::command]
+fn set_ai_api_key(
+    app: AppHandle,
+    manager: State<'_, AiManager>,
+    key: String,
+) -> Result<AiServiceStatus, String> {
+    let mut candidate = key.trim().to_string();
+    let valid = candidate.chars().count() >= credentials::KEY_MIN_CHARS
+        && candidate.chars().count() <= credentials::KEY_MAX_CHARS
+        && candidate.chars().all(|value| ('!'..='~').contains(&value));
+
+    if !valid {
+        wipe_string(&mut candidate);
+        return Err(format!(
+            "API Key 的长度必须在 {} 到 {} 个字符之间，并且不能包含空格或非 ASCII 字符。",
+            credentials::KEY_MIN_CHARS,
+            credentials::KEY_MAX_CHARS
+        ));
     }
-    status
+
+    let written = credentials::set(&candidate);
+    // This local copy exists only for the duration of the call. The IPC argument itself is
+    // owned by Tauri and is not persisted or logged by this shell.
+    wipe_string(&mut candidate);
+    written?;
+
+    // A key change while online takes effect by restarting with the new value. The old
+    // sidecar is stopped, so it cannot keep using the previous key.
+    let restart = {
+        let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        runtime.mode == AiMode::Online
+    };
+    if restart {
+        start_service(&app, manager.inner());
+    }
+    Ok(current_status(manager.inner()))
+}
+
+#[tauri::command]
+fn delete_ai_api_key(
+    app: AppHandle,
+    manager: State<'_, AiManager>,
+) -> Result<AiServiceStatus, String> {
+    credentials::delete()?;
+    // Removing the key must also remove the ability to use it: stop the online child and
+    // return to mock in the same action.
+    {
+        let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        runtime.mode = AiMode::Mock;
+    }
+    start_service(&app, manager.inner());
+    Ok(current_status(manager.inner()))
+}
+
+#[tauri::command]
+fn set_ai_mode(
+    app: AppHandle,
+    manager: State<'_, AiManager>,
+    mode: String,
+) -> Result<AiServiceStatus, String> {
+    let next = AiMode::parse(&mode)
+        .ok_or_else(|| "未知的 AI 模式；只能是 mock 或 online。".to_string())?;
+    if next == AiMode::Online && !credentials::status().configured {
+        return Err("还没有配置 API Key，不能进入在线模式。".to_string());
+    }
+    {
+        let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        runtime.mode = next;
+    }
+    start_service(&app, manager.inner());
+    Ok(current_status(manager.inner()))
+}
+
+#[tauri::command]
+fn get_ai_settings(manager: State<'_, AiManager>) -> BudgetSettings {
+    manager
+        .0
+        .lock()
+        .expect("AI runtime lock poisoned")
+        .budget
+        .clone()
+}
+
+#[tauri::command]
+fn update_ai_settings(
+    app: AppHandle,
+    manager: State<'_, AiManager>,
+    budget: BudgetSettings,
+) -> Result<BudgetSettings, String> {
+    budget.validate()?;
+    {
+        let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        runtime.budget = budget.clone();
+    }
+    save_preferences(&app, &AiPreferences {
+        budget: budget.clone(),
+    })?;
+    // The sidecar reads the budget from its environment, so applying a change means a fresh
+    // process. It also gives the reader a clean session counter to go with the new limits.
+    start_service(&app, manager.inner());
+    Ok(budget)
 }
 
 #[tauri::command]
 fn restart_ai_service(app: AppHandle, manager: State<'_, AiManager>) -> AiServiceStatus {
     start_service(&app, manager.inner());
-    let runtime = manager.0.lock().expect("AI runtime lock poisoned");
-    runtime.status.public()
+    current_status(manager.inner())
 }
 
 fn random_token() -> String {
@@ -175,6 +389,42 @@ fn native_path(path: &std::path::Path) -> PathBuf {
         }
     }
     path.to_path_buf()
+}
+
+fn preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join("ai-preferences.json"))
+        .map_err(|error| format!("找不到应用配置目录：{error}"))
+}
+
+fn load_preferences(app: &AppHandle) -> AiPreferences {
+    let Ok(path) = preferences_path(app) else {
+        return AiPreferences::default();
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return AiPreferences::default();
+    };
+    serde_json::from_str::<AiPreferences>(&text)
+        .map(|preferences| AiPreferences {
+            budget: if preferences.budget.validate().is_ok() {
+                preferences.budget
+            } else {
+                BudgetSettings::default()
+            },
+        })
+        .unwrap_or_default()
+}
+
+fn save_preferences(app: &AppHandle, preferences: &AiPreferences) -> Result<(), String> {
+    let path = preferences_path(app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("无法创建应用配置目录：{error}"))?;
+    }
+    let text = serde_json::to_string_pretty(preferences)
+        .map_err(|error| format!("无法序列化 AI 设置：{error}"))?;
+    std::fs::write(path, text).map_err(|error| format!("无法保存 AI 设置：{error}"))
 }
 
 fn stderr_tail(runtime: &AiRuntime) -> String {
@@ -231,10 +481,60 @@ fn emit_status(app: &AppHandle, status: &AiServiceStatus) {
     let _ = app.emit(STATUS_EVENT, status.public());
 }
 
+/// Overwrites the bytes of a string in place. The capacity stays, but the secret does not.
+fn wipe_string(value: &mut String) {
+    // Writing zeroes over a valid UTF-8 string keeps it valid: NUL is valid UTF-8.
+    unsafe {
+        value.as_bytes_mut().fill(0);
+    }
+}
+
+/**
+ * Hands the key to the child over its stdin.
+ *
+ * Nothing in this function writes the key to a log or an error: a failure is reported as a bare
+ * reason. The line buffer is wiped after the write; the child keeps the key in its own memory.
+ */
+fn write_secret(stdin: &mut ChildStdin, key: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct SecretPayload<'a> {
+        #[serde(rename = "apiKey")]
+        api_key: &'a str,
+    }
+
+    let mut payload = serde_json::to_string(&SecretPayload { api_key: key })
+        .map_err(|error| format!("无法构造凭据消息：{error}"))?;
+    let mut line = format!("{SECRET_PREFIX}{payload}\n").into_bytes();
+    let result = stdin
+        .write_all(&line)
+        .and_then(|()| stdin.flush())
+        .map_err(|error| format!("无法把 API Key 交给本地 AI 服务：{error}"));
+    line.fill(0);
+    unsafe {
+        payload.as_bytes_mut().fill(0);
+    }
+    result
+}
+
+#[cfg(debug_assertions)]
+fn is_loopback_http(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("http://") else {
+        return false;
+    };
+    let host = rest.split('/').next().unwrap_or("");
+    let Some((name, port)) = host.rsplit_once(':') else {
+        return false;
+    };
+    (name == "127.0.0.1" || name == "localhost")
+        && port.parse::<u16>().map(|value| value > 0).unwrap_or(false)
+}
+
 fn spawn_child(
     app: &AppHandle,
+    mode: AiMode,
     token: &str,
     instance: &str,
+    budget: &BudgetSettings,
     stderr_sink: Arc<Mutex<VecDeque<String>>>,
 ) -> Result<(Child, Option<ChildStdin>, ChildStdout), String> {
     let directory = sidecar_dir(app)?;
@@ -268,9 +568,20 @@ fn spawn_child(
         .env_clear()
         .env("AI_SESSION_TOKEN", token)
         .env("AI_DESKTOP_INSTANCE", instance)
+        .env("AI_DESKTOP_MODE", mode.as_str())
+        .env("AI_PROVIDER", mode.provider())
         .env("AI_PARENT_PID", std::process::id().to_string())
         .env("AI_PORT", "0")
         .env("AI_LOG_REQUESTS", "0")
+        .env("AI_BUDGET_REQUESTS", budget.requests.to_string())
+        .env(
+            "AI_BUDGET_TOKENS_PER_REQUEST",
+            budget.tokens_per_request.to_string(),
+        )
+        .env(
+            "AI_BUDGET_TOKENS_SESSION",
+            budget.tokens_per_session.to_string(),
+        )
         // Windows serves the built front end from http://tauri.localhost; Linux and macOS use
         // the custom tauri://localhost scheme. All three are listed so the same sidecar
         // configuration works on every desktop target.
@@ -278,6 +589,20 @@ fn spawn_child(
             "AI_ALLOWED_ORIGINS",
             "http://tauri.localhost,https://tauri.localhost,tauri://localhost",
         );
+
+    // Test-only upstream simulation. It exists in debug builds so the offline integration run
+    // can stand a fake DeepSeek on loopback; a release build has no such branch, so the shipped
+    // application can only talk to the official endpoint. The value comes from the process
+    // environment, never from a page or from an IPC call.
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(value) = std::env::var("RW_AI_TEST_UPSTREAM") {
+            if is_loopback_http(&value) {
+                command.env("DEEPSEEK_BASE_URL", value);
+                command.env("AI_ALLOW_LOOPBACK_UPSTREAM", "1");
+            }
+        }
+    }
 
     for key in [
         "SystemRoot",
@@ -340,6 +665,7 @@ fn monitor_service(
     stdout: ChildStdout,
     instance: String,
     token: String,
+    expected_mode: AiMode,
 ) {
     let (ready_tx, ready_rx) = mpsc::channel::<Option<ReadyLine>>();
     thread::spawn(move || {
@@ -390,32 +716,42 @@ fn monitor_service(
         return;
     }
 
-    // The ready line is the child's own claim. It must name the instance this shell generated
-    // and it must say it is offline; anything else is not the service we started.
+    // The ready line is the child's own claim. It must name the instance this shell generated,
+    // it must say the mode we asked for, and it must name the provider that mode implies.
+    // Anything else is not the service we started.
     let valid = ready
         .as_ref()
         .map(|value| {
             value.port != 0
                 && value.desktop_instance == instance
                 && value.instance_id.len() >= 8
-                && !value.online
+                && value.provider == expected_mode.provider()
+                && value.online == expected_mode.expects_online()
+                && !value.model.trim().is_empty()
         })
         .unwrap_or(false);
 
     if !valid {
         stop_child(&mut runtime);
         let reason = if ready.is_some() {
-            "本地 AI 服务返回的身份不匹配，已停止该进程。".to_string()
+            format!(
+                "本地 AI 服务返回的身份或模式不匹配（期望 {}），已停止该进程。",
+                expected_mode.as_str()
+            )
         } else {
             "本地 AI 服务没有在限定时间内就绪。".to_string()
         };
         let error = with_details(reason, &runtime);
         runtime.status = AiServiceStatus {
             state: STATUS_FAILED.to_string(),
+            mode: expected_mode.as_str().to_string(),
             base_url: None,
             token: None,
             provider: None,
+            model: None,
+            online: false,
             instance_id: None,
+            credential_configured: credentials::status().configured,
             error: Some(error),
         };
         let status = runtime.status.clone();
@@ -428,10 +764,14 @@ fn monitor_service(
 
     runtime.status = AiServiceStatus {
         state: STATUS_READY.to_string(),
+        mode: expected_mode.as_str().to_string(),
         base_url: Some(format!("http://127.0.0.1:{}", value.port)),
         token: Some(token),
         provider: Some(value.provider),
+        model: Some(value.model),
+        online: value.online,
         instance_id: Some(value.instance_id),
+        credential_configured: credentials::status().configured,
         error: None,
     };
     let ready_status = runtime.status.clone();
@@ -460,10 +800,14 @@ fn monitor_service(
         let error = with_details(format!("本地 AI 服务已退出（退出码 {code}）。"), &runtime);
         runtime.status = AiServiceStatus {
             state: STATUS_FAILED.to_string(),
+            mode: expected_mode.as_str().to_string(),
             base_url: None,
             token: None,
             provider: None,
+            model: None,
+            online: false,
             instance_id: None,
+            credential_configured: credentials::status().configured,
             error: Some(error),
         };
         let failed = runtime.status.clone();
@@ -480,13 +824,92 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
     let generation = runtime.generation;
     let token = random_token();
     let instance = Uuid::new_v4().to_string();
+    let mode = runtime.mode;
+    let budget = runtime.budget.clone();
     let stderr_sink = Arc::new(Mutex::new(VecDeque::new()));
     runtime.stderr = stderr_sink.clone();
-    runtime.status = AiServiceStatus::empty(STATUS_STARTING);
+    runtime.status = AiServiceStatus::empty(STATUS_STARTING, mode);
+    runtime.status.credential_configured = credentials::status().configured;
     let starting = runtime.status.clone();
 
-    match spawn_child(app, &token, &instance, stderr_sink) {
-        Ok((child, stdin, stdout)) => {
+    match spawn_child(app, mode, &token, &instance, &budget, stderr_sink) {
+        Ok((mut child, mut stdin, stdout)) => {
+            if mode == AiMode::Online {
+                // Read the key only now, after the child exists. An absent or unreadable key is
+                // a failed start, not a quiet fallback to a different service.
+                match credentials::get() {
+                    Ok(Some(mut key)) => {
+                        let handed = match stdin.as_mut() {
+                            Some(pipe) => write_secret(pipe, &key),
+                            None => Err("本地 AI 服务没有可用的凭据通道。".to_string()),
+                        };
+                        wipe_string(&mut key);
+                        if let Err(error) = handed {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            runtime.status = AiServiceStatus {
+                                state: STATUS_FAILED.to_string(),
+                                mode: mode.as_str().to_string(),
+                                base_url: None,
+                                token: None,
+                                provider: None,
+                                model: None,
+                                online: false,
+                                instance_id: None,
+                                credential_configured: credentials::status().configured,
+                                error: Some(error),
+                            };
+                            let failed = runtime.status.clone();
+                            drop(runtime);
+                            emit_status(app, &failed);
+                            return;
+                        }
+                    }
+                    Ok(None) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        runtime.status = AiServiceStatus {
+                            state: STATUS_FAILED.to_string(),
+                            mode: mode.as_str().to_string(),
+                            base_url: None,
+                            token: None,
+                            provider: None,
+                            model: None,
+                            online: false,
+                            instance_id: None,
+                            credential_configured: false,
+                            error: Some(
+                                "没有找到已保存的 API Key，在线服务没有启动。".to_string(),
+                            ),
+                        };
+                        let failed = runtime.status.clone();
+                        drop(runtime);
+                        emit_status(app, &failed);
+                        return;
+                    }
+                    Err(error) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        runtime.status = AiServiceStatus {
+                            state: STATUS_FAILED.to_string(),
+                            mode: mode.as_str().to_string(),
+                            base_url: None,
+                            token: None,
+                            provider: None,
+                            model: None,
+                            online: false,
+                            instance_id: None,
+                            credential_configured: false,
+                            error: Some(error),
+                        };
+                        let failed = runtime.status.clone();
+                        drop(runtime);
+                        emit_status(app, &failed);
+                        return;
+                    }
+                }
+            }
+
             runtime.child = Some(child);
             runtime.stdin = stdin;
             drop(runtime);
@@ -494,17 +917,29 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
             let app = app.clone();
             let manager = manager.clone();
             thread::spawn(move || {
-                monitor_service(app, manager, generation, stdout, instance, token);
+                monitor_service(
+                    app,
+                    manager,
+                    generation,
+                    stdout,
+                    instance,
+                    token,
+                    mode,
+                );
             });
         }
         Err(error) => {
             let error = with_details(error, &runtime);
             runtime.status = AiServiceStatus {
                 state: STATUS_FAILED.to_string(),
+                mode: mode.as_str().to_string(),
                 base_url: None,
                 token: None,
                 provider: None,
+                model: None,
+                online: false,
                 instance_id: None,
+                credential_configured: credentials::status().configured,
                 error: Some(error),
             };
             let failed = runtime.status.clone();
@@ -514,18 +949,48 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
     }
 }
 
+fn focus_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn main() {
     let manager = AiManager::new();
 
     let app = tauri::Builder::default()
+        // The single-instance guard must be the first plugin: it needs to decide whether this
+        // process is allowed to continue before any window or sidecar is created. It keys on
+        // the bundle identifier, so the dev build (com.researchworkspace.desktop.dev) is a
+        // separate instance namespace and can run beside the installed application.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            focus_main_window(app);
+        }))
         .manage(manager)
         .invoke_handler(tauri::generate_handler![
             ai_service_info,
+            ai_credentials_status,
+            set_ai_api_key,
+            delete_ai_api_key,
+            set_ai_mode,
+            get_ai_settings,
+            update_ai_settings,
             restart_ai_service
         ])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+
+            // The spending caps are ordinary preferences, not secrets. A corrupt or missing
+            // file falls back to the defaults rather than stopping the application.
+            let preferences = load_preferences(&app.handle().clone());
+            let manager = app.state::<AiManager>().inner().clone();
+            {
+                let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
+                runtime.budget = preferences.budget;
+            }
 
             let mut builder = tauri::WebviewWindowBuilder::new(
                 app,

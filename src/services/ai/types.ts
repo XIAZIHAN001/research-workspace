@@ -136,6 +136,8 @@ export type AiFailureKind =
   | 'auth'
   | 'upstream'
   | 'bad-request'
+  /** The session's own spending cap was reached before the call was made. */
+  | 'budget-exceeded'
   | 'unknown';
 
 export interface AiFailure {
@@ -143,14 +145,63 @@ export interface AiFailure {
   message: string;
 }
 
+export interface AiBudget {
+  /** Attempts allowed in this service session, including failed ones. */
+  requests: number;
+  /** Generation ceiling per call, reasoning included. */
+  tokensPerRequest: number;
+  /** Upper-bound prompt-plus-completion tokens for the whole session. */
+  tokensPerSession: number;
+}
+
+/**
+ * What this service process has spent so far.
+ *
+ * `exactTokens` is false when a provider omitted usage and the upper bound was recorded
+ * instead. `estimatedCostCny` is an estimate from the price table, not a bill; `costKnown` is
+ * false when the model has no price row at all, in which case the estimate is unreliable.
+ */
+export interface AiUsageTotals {
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCostCny: number;
+  costKnown: boolean;
+  unknownCostRequests: number;
+  exactTokens: boolean;
+}
+
+export interface AiPricing {
+  model: string;
+  known: boolean;
+  currency: string;
+  asOf: string;
+  source: string;
+  basis?: string;
+  usdCny?: number;
+  perMillionUsd?: {
+    inputCacheHit: number;
+    inputCacheMiss: number;
+    output: number;
+  };
+  note: string;
+}
+
 export interface AiHealth {
   ok: boolean;
   provider: string;
   label: string;
   model: string;
+  /** Identifies this service process; changes on every restart. */
+  instanceId?: string;
   /** What the provider will spend per call, in its own terms; null for the offline provider. */
   reasoning: string | null;
   online: boolean;
+  budget?: AiBudget;
+  usage?: AiUsageTotals;
+  pricing?: AiPricing;
   limits: {
     passages: number;
     passageChars: number;

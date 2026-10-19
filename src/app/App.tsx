@@ -22,6 +22,8 @@ import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
 import { BackupDialog } from '../features/backup/BackupDialog';
 import { AiServiceBadge } from '../features/desktop/AiServiceBadge';
+import { AiSettingsDialog } from '../features/desktop/AiSettingsDialog';
+import { isDesktopApp } from '../services/desktop/aiService';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createAnnotation } from '../domain/annotation';
@@ -129,6 +131,8 @@ export function App({
   const [knowledgeMode, setKnowledgeMode] = useState<'list' | 'graph'>('list');
   const [knowledgeSelectedId, setKnowledgeSelectedId] = useState<string | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const desktop = useMemo(() => isDesktopApp(), []);
 
   const paperList = useMemo(
     () =>
@@ -356,6 +360,13 @@ export function App({
         onBackup={() => {
           setBackupOpen(true);
         }}
+        onAiSettings={
+          desktop
+            ? () => {
+                setAiSettingsOpen(true);
+              }
+            : undefined
+        }
       />
 
       {sidebar.narrow && sidebar.open && (
@@ -676,7 +687,17 @@ export function App({
         />
       )}
 
-      <AiServiceBadge />
+      <AiServiceBadge
+        onOpenSettings={() => {
+          setAiSettingsOpen(true);
+        }}
+      />
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        onClose={() => {
+          setAiSettingsOpen(false);
+        }}
+      />
     </div>
   );
 }

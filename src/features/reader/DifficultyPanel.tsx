@@ -68,6 +68,11 @@ export function DifficultyPanel({
                 className="btn btn-primary"
                 onClick={() => {
                   scan.setEnabled(true);
+                  // The reader just confirmed an online analysis of the current page. Granting
+                  // the session consent here is what lets later pages continue automatically;
+                  // without it, only this page would be analysed and the rest would silently
+                  // stop with no obvious cause.
+                  if (online) scan.grantOnlineConsent();
                   setConfirming(false);
                 }}
               >
@@ -104,7 +109,7 @@ export function DifficultyPanel({
               }}
             >
               <RefreshCw size={13} aria-hidden="true" />
-              重新分析
+              {online ? '重新分析（会调用在线模型）' : '重新分析'}
             </button>
             <button
               type="button"
@@ -131,10 +136,41 @@ export function DifficultyPanel({
               </>
             )}
             {scan.status === 'idle' &&
-              (scan.analysedPages === 0
-                ? `已开启。翻到想读的页面就会自动分析（第 ${currentPage} 页稍后开始）。`
-                : `已分析 ${scan.analysedPages} 页；本页有 ${scan.current.length} 条建议。`)}
+              (scan.autoPaused
+                ? '在线模式下自动分析已暂停：翻页不会自动产生费用，直到你重新确认。'
+                : scan.analysedPages === 0
+                  ? `已开启。翻到想读的页面就会自动分析（第 ${currentPage} 页稍后开始）。`
+                  : `已分析 ${scan.analysedPages} 页；本页有 ${scan.current.length} 条建议。`)}
           </p>
+
+          {scan.autoPaused && (
+            <div className="difficulty-confirm difficulty-paused" role="alert">
+              <p>
+                在线模式下，自动分析会在你停留的每一页发起一次付费请求。切换到在线模式后，
+                之前的离线授权不算数，需要在这里重新确认。
+              </p>
+              <div className="difficulty-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    scan.grantOnlineConsent();
+                  }}
+                >
+                  确认开启在线自动分析（会持续产生费用）
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  onClick={() => {
+                    scan.analyse(currentPage);
+                  }}
+                >
+                  只分析当前页
+                </button>
+              </div>
+            </div>
+          )}
 
           {scan.status === 'error' && (
             <button

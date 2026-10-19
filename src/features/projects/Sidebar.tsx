@@ -1,4 +1,12 @@
-import { HardDriveDownload, House, Library, PanelLeftClose, Plus, Settings2 } from 'lucide-react';
+import {
+  HardDriveDownload,
+  House,
+  KeyRound,
+  Library,
+  PanelLeftClose,
+  Plus,
+  Settings2,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import type { Project } from '../../domain/project';
 import { ThemeSwitch } from '../theme/ThemeSwitch';
@@ -34,6 +42,8 @@ interface SidebarProps {
   onThemeChange: (pref: ThemePref) => void;
   /** Opens the export/restore dialog. */
   onBackup: () => void;
+  /** Desktop only: opens the AI mode, key and budget dialog. */
+  onAiSettings?: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -157,6 +167,12 @@ export function Sidebar(props: SidebarProps) {
       </nav>
 
       <div className="sidebar-foot">
+        {props.onAiSettings !== undefined && (
+          <button type="button" className="btn btn-quiet" onClick={props.onAiSettings}>
+            <KeyRound size={14} aria-hidden="true" />
+            AI 设置
+          </button>
+        )}
         <button type="button" className="btn btn-quiet" onClick={props.onBackup}>
           <HardDriveDownload size={14} aria-hidden="true" />
           备份与恢复
