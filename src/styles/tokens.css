@@ -31,6 +31,8 @@
 
   --sidebar-w: 248px;
   --glass-blur: 20px;
+  /* The only colour that used to be written by hand. It stays a UI-neutral. */
+  --scroll-thumb: rgb(128 140 150 / 0.4);
   /* Fade for the pointer light; append it to any transition list on a glowing element. */
   --glow-t: --glow var(--dur) var(--ease-out);
 }
@@ -68,7 +70,10 @@
   --ambient-bottom: rgb(0 0 0 / 0.035);
   --sheet: var(--color-bg-panel);
   --sheet-edge: var(--color-border-subtle);
-  --sheet-shadow: 0 10px 30px -24px rgb(0 0 0 / 0.18);
+  --sheet-shadow: 0 12px 32px -24px rgb(0 0 0 / 0.22), 0 2px 6px -2px rgb(0 0 0 / 0.08);
+  /* Cards sit on the sheet: a hair warmer/whiter than the sheet so they read as objects. */
+  --card: rgb(255 255 255 / 0.66);
+  --card-edge: rgb(0 0 0 / 0.09);
 
   --text: var(--color-text-primary);
   --text-2: var(--color-text-secondary);
@@ -92,8 +97,8 @@
   --rim-mid: rgb(255 255 255 / 0.42);
   --rim-low: rgb(255 255 255 / 0.2);
   --inner-hi: rgb(255 255 255 / 0.8);
-  --elev-rest: 0 8px 24px -18px rgb(0 0 0 / 0.18);
-  --elev-float: 0 18px 40px -22px rgb(0 0 0 / 0.26);
+  --elev-rest: 0 8px 24px -18px rgb(0 0 0 / 0.22), 0 1px 3px -1px rgb(0 0 0 / 0.06);
+  --elev-float: 0 18px 40px -22px rgb(0 0 0 / 0.28), 0 4px 12px -4px rgb(0 0 0 / 0.1);
   --foot-tint: rgb(0 0 0 / 0.025);
   --row-hover: rgb(0 0 0 / 0.055);
   --row-active: rgb(0 0 0 / 0.08);
@@ -153,6 +158,9 @@
   --sheet: var(--color-bg-panel);
   --sheet-edge: var(--color-border-subtle);
   --sheet-shadow: 0 12px 34px -22px rgb(0 0 0 / 0.8);
+  /* Cards sit on the sheet: a hair warmer/whiter than the sheet so they read as objects. */
+  --card: rgb(255 255 255 / 0.055);
+  --card-edge: rgb(255 255 255 / 0.1);
 
   --text: var(--color-text-primary);
   --text-2: var(--color-text-secondary);

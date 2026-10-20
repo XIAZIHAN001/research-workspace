@@ -47,7 +47,7 @@ button {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgb(128 140 150 / 0.4) transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 :focus-visible {
@@ -86,8 +86,7 @@ button {
   .icon-btn:active,
   .chip:active,
   .nav-item:active,
-  button.row-main:active,
-  .ai-mode-card:active {
+  button.row-main:active {
     transform: none;
   }
 

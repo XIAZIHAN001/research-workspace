@@ -157,6 +157,12 @@
   font-size: 13px;
 }
 
+/* The "A → B" arrow. The semantic core of a relation suggestion. */
+.knowledge-suggestion-direction {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .knowledge-match-kind,
 .knowledge-evidence-verification,
 .knowledge-evidence-stale,

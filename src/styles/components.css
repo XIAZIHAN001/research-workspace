@@ -682,7 +682,7 @@ button.row-main:active {
 .home-kicker {
   margin-bottom: 2px;
   color: var(--text-3);
-  font: 600 10.5px/1.4 var(--font-ui);
+  font: 600 11px/1.4 var(--font-ui);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -883,9 +883,9 @@ button.row-main:active {
   gap: 8px;
   min-width: 0;
   padding: 14px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--card-edge);
   border-radius: var(--r-md);
-  background: var(--color-bg-panel);
+  background: var(--card);
   box-shadow: var(--elev-rest);
 }
 
@@ -1030,7 +1030,7 @@ button.row-main:active {
   display: grid;
   grid-template-columns: 170px minmax(0, 1fr);
   gap: 28px;
-  width: min(1080px, 100%);
+  width: min(860px, 100%);
   margin: 0 auto;
 }
 
@@ -1084,7 +1084,7 @@ button.row-main:active {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: min(760px, 100%);
+  width: 100%;
 }
 
 .settings-panel-head {
@@ -1127,8 +1127,8 @@ button.row-main:active {
 
 .settings-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  gap: 22px;
   align-items: center;
   padding: 10px 0;
 }
@@ -1347,9 +1347,9 @@ button.row-main:active {
   align-items: flex-start;
   justify-content: space-between;
   padding: 12px 14px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--card-edge);
   border-radius: var(--r-md);
-  background: var(--glass-fill);
+  background: var(--card);
 }
 
 .paper-row-main {

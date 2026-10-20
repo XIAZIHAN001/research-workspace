@@ -144,7 +144,7 @@ export function Sidebar(props: SidebarProps) {
             </button>
           </div>
           {projects.length === 0 ? (
-            <p className="group-empty">还没有项目。点击右上角的加号，从一篇论文开始。</p>
+            <p className="group-empty">还没有项目。点上方的加号，从一篇论文开始。</p>
           ) : (
             <ul className="rows" data-managing={managing}>
               {projects.map((project) => (

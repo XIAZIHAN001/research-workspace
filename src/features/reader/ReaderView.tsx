@@ -174,6 +174,16 @@ export function ReaderView({
   const [currentPage, setCurrentPage] = useState(() => paper.reading?.page ?? 1);
   const [containerWidth, setContainerWidth] = useState(0);
   const [baseSize, setBaseSize] = useState<{ width: number; height: number } | null>(null);
+  /**
+   * Per-page real sizes, filled by each page's own measurement.
+   *
+   * A paper is usually all the same size, but mixed-height documents (a tall figure page,
+   * a landscape appendix) break that. The reader used to assume page 1's size applied to
+   * every page, which silently mis-places scroll offsets and page jumps on such documents.
+   * `baseSize` is only a starting estimate: any page that reports its real size replaces
+   * its own entry, and the column re-renders from the merged map.
+   */
+  const [pageHeights, setPageHeights] = useState<ReadonlyMap<number, number>>(() => new Map());
   const [pageDraft, setPageDraft] = useState<string | null>(null);
   const restored = useRef(false);
   /** Set while a jump is being scrolled to, so interim positions are ignored. */
@@ -300,11 +310,23 @@ export function ReaderView({
       ? fitWidthScale(containerWidth, baseSize.width)
       : manualScale;
 
-  const heights = useMemo(
-    () =>
-      baseSize === null ? [] : Array.from({ length: pageCount }, () => baseSize.height * scale),
-    [baseSize, pageCount, scale],
-  );
+  const heights = useMemo(() => {
+    if (baseSize === null) return [];
+    return Array.from({ length: pageCount }, (_, index) => {
+      const pageNumber = index + 1;
+      const measured = pageHeights.get(pageNumber);
+      // A page with its own measurement wins; otherwise fall back to the page-1 estimate.
+      return (measured ?? baseSize.height) * scale;
+    });
+  }, [baseSize, pageCount, scale, pageHeights]);
+
+  const onMeasure = useCallback((pageNumber: number, size: { width: number; height: number }) => {
+    setPageHeights((prev) => {
+      const next = new Map(prev);
+      next.set(pageNumber, size.height);
+      return next;
+    });
+  }, []);
   const tops = useMemo(() => pageTops(heights), [heights]);
   // Read by the scroll handler, which needs the current column rather than the one from
   // the render it was attached in.
@@ -991,6 +1013,7 @@ export function ReaderView({
                         width: (baseSize?.width ?? 600) * scale,
                         height: (baseSize?.height ?? 800) * scale,
                       }}
+                      onMeasure={onMeasure}
                       annotations={byPage.get(pageNumber) ?? []}
                       flashId={flashId}
                       spotlight={spotlight?.page === pageNumber ? spotlight.rects : null}

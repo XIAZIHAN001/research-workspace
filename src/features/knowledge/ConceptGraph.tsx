@@ -155,8 +155,8 @@ export function ConceptGraph({ concepts, relations, selectedId, onSelect }: Conc
           width={width * zoom}
           height={height * zoom}
           viewBox={`0 0 ${String(width)} ${String(height)}`}
-          role="img"
-          aria-label={`${String(concepts.length)} 个概念，${String(edges.length)} 条关系`}
+          role="group"
+          aria-label={`概念关系图：${String(concepts.length)} 个概念，${String(edges.length)} 条关系`}
         >
           <defs>
             <marker

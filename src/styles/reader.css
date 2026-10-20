@@ -116,6 +116,13 @@
   display: block;
 }
 
+/* The imperative canvas + text-layer host. Both children are positioned absolutely and
+   stretched to the page box, so the host itself has to occupy the full page. */
+.pdf-host {
+  position: absolute;
+  inset: 0;
+}
+
 /* --- Paper modes ---------------------------------------------------------- */
 
 /* The page box's own colour is set inline: it has to match the palette the canvas was rendered
@@ -147,8 +154,9 @@
   margin: 0;
   padding: 2px 7px;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--text) 76%, transparent);
-  color: #ffffff;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
   font-size: 10px;
   pointer-events: none;
 }
@@ -221,8 +229,9 @@
   margin: 0;
   padding: 4px 8px;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--text) 82%, transparent);
-  color: #ffffff;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--hairline);
+  color: var(--text-2);
   font-size: 12px;
 }
 
@@ -465,13 +474,14 @@
   position: absolute;
   top: 1px;
   right: 1px;
-  min-width: 13px;
+  min-width: 15px;
   padding: 0 3px;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 9px;
-  line-height: 13px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
   text-align: center;
 }
 
@@ -549,6 +559,12 @@
 
 .note-kind {
   font-weight: 600;
+}
+
+/* The page number in a note's meta line. */
+.note-page {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .note-quote {

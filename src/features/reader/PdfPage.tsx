@@ -12,6 +12,15 @@ interface PdfPageProps {
   active: boolean;
   /** Size to reserve while the page has not measured itself yet. */
   placeholder: { width: number; height: number };
+  /**
+   * Called once per page, when its real size is known.
+   *
+   * Most pages in a paper are the same size, so the reader estimates the column from page 1.
+   * Mixed-height documents (a tall figure page, a landscape appendix) would drift under that
+   * estimate: scroll offsets, page jumps and the virtualization window all need real numbers.
+   * The reader only re-measures when this fires; it is safe to fire on every scale change.
+   */
+  onMeasure?: (pageNumber: number, size: { width: number; height: number }) => void;
   /** Highlights made on this page, on this file. Their boxes are fractions of the page. */
   annotations?: readonly Annotation[];
   /** The annotation to draw attention to, right after the reader jumped to it. */
@@ -63,6 +72,7 @@ export function PdfPage({
   palette = 'original',
   suggestions = [],
   onSuggestionClick,
+  onMeasure,
 }: PdfPageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -88,7 +98,11 @@ export function PdfPage({
         const page = await doc.getPage(pageNumber);
         if (cancelled) return;
         const viewport = page.getViewport({ scale });
-        setSize({ width: viewport.width, height: viewport.height });
+        const next = { width: viewport.width, height: viewport.height };
+        setSize(next);
+        // One synchronous report per measurement. The reader is the only listener; it knows
+        // what to do with a real number and can drop the page-1 estimate for this page.
+        onMeasure?.(pageNumber, next);
       } catch {
         // A page that cannot be measured keeps the placeholder size; rendering reports it.
       }
@@ -96,7 +110,7 @@ export function PdfPage({
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNumber, scale]);
+  }, [doc, pageNumber, scale, onMeasure]);
 
   useEffect(() => {
     const host = hostRef.current;

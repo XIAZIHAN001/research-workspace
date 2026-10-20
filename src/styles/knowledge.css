@@ -346,6 +346,15 @@
   gap: 4px;
 }
 
+/* Confirmed relations carry real evidence. They get a small filled dot so they read as
+   "verified", distinct from unconfirmed suggestions shown in the same list. */
+.confirmed-relation {
+  padding: 1px 7px 1px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+
 .link-btn {
   padding: 0;
   border: 0;
