@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Project } from '../../domain/project';
+import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from '../../app/config';
 import { AvatarPicker } from '../home/AvatarPicker';
 import type { useAvatar } from '../home/useAvatar';
 import { formatRelativeDay } from '../../ui/format';
@@ -43,12 +44,18 @@ interface SidebarProps {
   /** Opens the export/restore dialog. */
   onBackup: () => void;
   onSettings: () => void;
+  /** Current column width in CSS pixels; the drag handle writes back through it. */
+  width: number;
+  /** True while the sidebar is an overlay, where dragging the width makes no sense. */
+  narrow: boolean;
+  onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onNudgeWidth: (delta: number) => void;
+  onResetWidth: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
   const { projects, selectedId, homeActive, libraryActive, now, managing, renamingId, open } =
     props;
-
   // updatedAt is the "last touched" clock; reading sessions will bump it once a reader exists.
   const recent = useMemo(
     () =>
@@ -70,7 +77,7 @@ export function Sidebar(props: SidebarProps) {
         <span className="brand">Research Workspace</span>
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn sidebar-collapse"
           aria-label="收起侧栏"
           title="收起侧栏"
           onClick={props.onCollapse}
@@ -202,6 +209,47 @@ export function Sidebar(props: SidebarProps) {
         />
         <span className="sidebar-user__label">本地工作区</span>
       </div>
+
+      {/*
+        The column's drag handle. It is a real control, not a decoration: it carries the role,
+        the value and the keyboard shortcuts, so the width is adjustable without a pointer and
+        a screen reader announces what it does. Hidden entirely while the sidebar is an overlay,
+        where it would have nothing to resize.
+      */}
+      {!props.narrow && (
+        <div
+          className="sidebar-resize"
+          role="separator"
+          aria-label="调整侧栏宽度"
+          aria-orientation="vertical"
+          aria-valuenow={props.width}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          tabIndex={0}
+          onPointerDown={props.onResizeStart}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft') {
+              event.preventDefault();
+              props.onNudgeWidth(-16);
+            } else if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              props.onNudgeWidth(16);
+            } else if (event.key === 'Home') {
+              event.preventDefault();
+              props.onNudgeWidth(SIDEBAR_MIN_WIDTH - props.width);
+            } else if (event.key === 'End') {
+              event.preventDefault();
+              props.onNudgeWidth(SIDEBAR_MAX_WIDTH - props.width);
+            } else if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              props.onResetWidth();
+            }
+          }}
+          onDoubleClick={props.onResetWidth}
+        >
+          <span className="sidebar-resize__grip" aria-hidden="true" />
+        </div>
+      )}
     </aside>
   );
 }

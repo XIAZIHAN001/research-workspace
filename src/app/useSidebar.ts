@@ -1,16 +1,38 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from '../ui/useMediaQuery';
 import { readItem, writeItem } from '../services/storage';
-import { NARROW_VIEWPORT_QUERY, SIDEBAR_STORAGE_KEY } from './config';
+import {
+  NARROW_VIEWPORT_QUERY,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_STORAGE_KEY,
+  SIDEBAR_WIDTH_STORAGE_KEY,
+} from './config';
+
+/** Clamps a stored or dragged width into the range the layout can actually use. */
+function clampWidth(raw: number | null, min: number, max: number, fallback: number): number {
+  if (raw === null || !Number.isFinite(raw)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(raw)));
+}
 
 /**
- * Wide windows keep a persisted open/closed column. Narrow windows start closed and show
- * the sidebar as an overlay that never persists, so a small window cannot hide it forever.
+ * Wide windows keep a persisted open/closed column and a persisted width. Narrow windows start
+ * closed and show the sidebar as an overlay that never persists, so a small window cannot hide
+ * it forever.
  */
 export function useSidebar() {
   const narrow = useMediaQuery(NARROW_VIEWPORT_QUERY);
   const [wideOpen, setWideOpen] = useState(() => readItem(SIDEBAR_STORAGE_KEY) !== 'closed');
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [width, setWidth] = useState(() =>
+    clampWidth(
+      Number(readItem(SIDEBAR_WIDTH_STORAGE_KEY)),
+      SIDEBAR_MIN_WIDTH,
+      SIDEBAR_MAX_WIDTH,
+      SIDEBAR_DEFAULT_WIDTH,
+    ),
+  );
   const open = narrow ? overlayOpen : wideOpen;
 
   const setOpen = useCallback(
@@ -24,6 +46,11 @@ export function useSidebar() {
     },
     [narrow],
   );
+
+  const setWidthRaw = useCallback((next: number) => {
+    setWidth(next);
+    writeItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next));
+  }, []);
 
   useEffect(() => {
     if (!narrow || !overlayOpen) return;
@@ -39,5 +66,60 @@ export function useSidebar() {
     };
   }, [narrow, overlayOpen]);
 
-  return { open, narrow, setOpen };
+  /**
+   * Drags the column's edge.
+   *
+   * Pointer capture keeps the drag alive when the cursor leaves the handle, and the width is
+   * written on every move so a reload mid-drag still restores what the reader had chosen. The
+   * direction is inverted on the overlay layout, where the sidebar covers the content instead
+   * of sitting beside it.
+   */
+  const startResize = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (narrow) return;
+      event.preventDefault();
+      const handle = event.currentTarget;
+      handle.setPointerCapture(event.pointerId);
+      const startX = event.clientX;
+      const startWidth = width;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+
+      const onMove = (move: PointerEvent): void => {
+        const delta = move.clientX - startX;
+        setWidthRaw(clampWidth(startWidth + delta, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, startWidth));
+      };
+      const onUp = (): void => {
+        handle.releasePointerCapture(event.pointerId);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    },
+    [narrow, width, setWidthRaw],
+  );
+
+  /** Keyboard equivalent, so the width is reachable without a pointer. */
+  const nudgeWidth = useCallback(
+    (delta: number) => {
+      setWidthRaw(clampWidth(width + delta, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, width));
+    },
+    [width, setWidthRaw],
+  );
+
+  const resetWidth = useCallback(() => {
+    setWidthRaw(SIDEBAR_DEFAULT_WIDTH);
+  }, [setWidthRaw]);
+
+  const widthRef = useRef(width);
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
+
+  return { open, narrow, setOpen, width, startResize, nudgeWidth, resetWidth, widthRef };
 }

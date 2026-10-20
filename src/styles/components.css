@@ -122,6 +122,27 @@
   transform: scale(0.94);
 }
 
+/*
+ * The sidebar's own collapse control.
+ *
+ * A bare icon button on the sidebar's own surface is very hard to find: it is 28px, borderless,
+ * and the only thing marking it is a low-contrast glyph. This one gets a permanent hairline and a
+ * filled hover so "collapse the sidebar" is discoverable without hunting for it.
+ */
+.sidebar-collapse {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--card-edge);
+  background: var(--card);
+  color: var(--text);
+}
+
+.sidebar-collapse:hover {
+  border-color: var(--select-edge);
+  background: var(--row-hover);
+  color: var(--text);
+}
+
 /* ---------- sidebar ---------- */
 .sidebar-top {
   display: flex;
@@ -606,6 +627,109 @@ button.row-main:active {
 .field-label {
   color: var(--text-2);
   font-size: 13px;
+}
+
+/*
+ * The file chooser.
+ *
+ * A native `<input type="file">` cannot be styled: the button, its label and its focus ring
+ * are drawn by the operating system, which is why it never matched the rest of this interface.
+ * So the input stays exactly where it is — it is what opens the picker, what accepts a drop and
+ * what a keyboard or a screen reader reaches — and a label styled as a drop zone is drawn over
+ * it. The input is not hidden from the accessibility tree: only its painting is suppressed.
+ */
+.file-input-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.file-drop {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 62px;
+  padding: 11px 13px;
+  border: 1px dashed var(--field-edge);
+  border-radius: var(--r-md);
+  background: var(--control-fill);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-hover) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+
+.file-drop:hover {
+  border-color: var(--select-edge);
+  background: var(--control-fill-hover);
+}
+
+.file-drop:active {
+  transform: scale(0.995);
+}
+
+/* Once a file is chosen the zone is a summary, not a target: solid, quieter, no dash. */
+.file-drop-filled {
+  border-style: solid;
+  border-color: var(--card-edge);
+  background: var(--card);
+}
+
+.file-drop-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  background: var(--control-fill);
+  color: var(--text-2);
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+.file-drop:hover .file-drop-icon {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.file-drop-filled .file-drop-icon {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.file-drop-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.file-drop-title {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-drop-hint {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/* The focus belongs to the real input, so the ring is drawn on the zone that stands for it. */
+.file-drop:has(.file-input-native:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .input {

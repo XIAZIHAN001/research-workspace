@@ -400,12 +400,62 @@
    to look and one thing to close. The panels themselves still own their headers and their
    close buttons; this only decides which of them is showing. */
 .reader-side {
+  position: relative;
   display: flex;
-  flex: 0 0 360px;
+  flex: 0 0 var(--panel-w, 360px);
   flex-direction: column;
   gap: 6px;
   min-width: 0;
   min-height: 0;
+}
+
+/*
+ * The panel column's drag handle, mirroring `.sidebar-resize` on the other side.
+ *
+ * It sits on the panel's left edge and grows the panel as it is dragged right. Like the
+ * sidebar's, it is a real separator with a value and keyboard steps rather than a bare div,
+ * so the width is reachable without a pointer.
+ */
+.panel-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.panel-resize__grip {
+  width: 2px;
+  height: 100%;
+  border-radius: 999px;
+  background: transparent;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    width var(--dur-hover) var(--ease-out);
+}
+
+.panel-resize:hover .panel-resize__grip,
+.panel-resize:focus-visible .panel-resize__grip {
+  width: 3px;
+  background: var(--select-edge);
+}
+
+.panel-resize:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.panel-resize:active .panel-resize__grip {
+  width: 3px;
+  background: var(--accent);
 }
 
 .reader-side > .ai-panel,

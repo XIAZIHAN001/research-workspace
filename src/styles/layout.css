@@ -58,7 +58,12 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /*
+   * Clipped on the block axis only. `overflow: hidden` on both axes would cut the resize handle
+   * in half, since it deliberately sits half outside the column so it is easy to grab.
+   */
+  overflow-x: visible;
+  overflow-y: hidden;
   border-radius: var(--r-lg);
   transition:
     opacity var(--dur) var(--ease-out),
@@ -69,6 +74,60 @@
 
 .sidebar > * {
   min-width: calc(var(--sidebar-w) - 2px);
+}
+
+/*
+ * The column's drag handle.
+ *
+ * It lives inside the sidebar, so `overflow: hidden` would normally clip it. `overflow: clip`
+ * on the axis would keep it inside too, so instead the handle is positioned half outside and
+ * the sidebar does not clip on the inline axis — the app grid's own `overflow: hidden` still
+ * keeps it from ever reaching anything else.
+ *
+ * The visible state is 2px of hairline that grows into an 11px accent bar on hover, focus or
+ * drag. It is deliberately discoverable: a reader who cannot find it cannot reclaim the width.
+ */
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  bottom: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.sidebar-resize__grip {
+  width: 2px;
+  height: 100%;
+  border-radius: 999px;
+  background: transparent;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    width var(--dur-hover) var(--ease-out);
+}
+
+.sidebar-resize:hover .sidebar-resize__grip,
+.sidebar-resize:focus-visible .sidebar-resize__grip {
+  width: 3px;
+  background: var(--select-edge);
+}
+
+.sidebar-resize:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+/* While the handle is held, the whole column is being sized; show that at the top too. */
+.sidebar-resize:active .sidebar-resize__grip {
+  width: 3px;
+  background: var(--accent);
 }
 
 .app[data-sidebar='closed'] .sidebar {

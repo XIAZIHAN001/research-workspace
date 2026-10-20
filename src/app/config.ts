@@ -13,6 +13,10 @@ export const THEME_LEVEL_STORAGE_KEY = 'rw.themeLevel';
 export const THEME_STYLE_STORAGE_KEY = 'rw.themeStyle';
 export const PAPER_STORAGE_KEY = 'rw.paper';
 export const SIDEBAR_STORAGE_KEY = 'rw.sidebar';
+/** How wide the sidebar column is, in CSS pixels. Kept beside the open/closed key. */
+export const SIDEBAR_WIDTH_STORAGE_KEY = 'rw.sidebarWidth';
+/** How wide the reader's side panel is, in CSS pixels. */
+export const PANEL_WIDTH_STORAGE_KEY = 'rw.panelWidth';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';
 export const PROJECTS_STORAGE_KEY = 'rw.projects';
 /** Verbatim copy of a payload that could not be read at all, kept for recovery by hand. */
@@ -25,6 +29,20 @@ export const DEFAULT_AVATAR_SRC = '/avatar/default.svg';
 
 /** Below this width the sidebar becomes an overlay instead of taking a column. */
 export const NARROW_VIEWPORT_QUERY = '(max-width: 759px)';
+/**
+ * How far a column may be dragged, in CSS pixels.
+ *
+ * The floor is the narrowest column that still fits a project name and its row buttons; the
+ * ceiling is wide enough for a long title but still leaves the reading column the majority of a
+ * 1280px window. Both ends are clamped in code, not only in CSS, so a stored value from an
+ * older build (or a hand-edited one) cannot produce an unusable layout.
+ */
+export const SIDEBAR_MIN_WIDTH = 200;
+export const SIDEBAR_MAX_WIDTH = 420;
+export const SIDEBAR_DEFAULT_WIDTH = 248;
+export const PANEL_MIN_WIDTH = 260;
+export const PANEL_MAX_WIDTH = 560;
+export const PANEL_DEFAULT_WIDTH = 360;
 export const DARK_SCHEME_QUERY = '(prefers-color-scheme: dark)';
 export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 

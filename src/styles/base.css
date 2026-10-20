@@ -16,8 +16,23 @@ body {
   background: var(--bg-base);
   color: var(--text);
   font: 400 14px/1.5 var(--font-ui);
+  /*
+   * Dark mode on a dark surface: subpixel (LCD) antialiasing is what makes light-on-dark text
+   * look fringed and "doubled", because the RGB subpixels are computed for a light backdrop.
+   * Switching to grayscale antialiasing in dark mode is the standard fix and is what makes
+   * the strokes read cleanly. Light mode keeps subpixel AA, where it genuinely helps.
+   *
+   * `text-rendering: optimizeLegibility` is deliberately NOT set: on Windows it enables
+   * OpenType shaping that, combined with the CJK fallback in --font-ui, produces uneven
+   * stroke weights that read as blur at body sizes.
+   */
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='dark'] body {
+  -webkit-font-smoothing: grayscale;
+  text-shadow: 0 0 1px rgb(0 0 0 / 0.55);
 }
 
 h1,

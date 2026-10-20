@@ -317,6 +317,7 @@ export function App({
       className="app"
       data-sidebar={sidebar.open ? 'open' : 'closed'}
       data-narrow={sidebar.narrow}
+      style={sidebar.narrow ? undefined : { '--sidebar-w': `${String(sidebar.width)}px` }}
     >
       <Sidebar
         open={sidebar.open}
@@ -363,6 +364,11 @@ export function App({
           setSettingsOpen(true);
           closeOverlay();
         }}
+        width={sidebar.width}
+        narrow={sidebar.narrow}
+        onResizeStart={sidebar.startResize}
+        onNudgeWidth={sidebar.nudgeWidth}
+        onResetWidth={sidebar.resetWidth}
       />
 
       {sidebar.narrow && sidebar.open && (

@@ -11,6 +11,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type {
   Annotation,
   AnnotationEdit,
@@ -22,6 +23,13 @@ import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import type { PdfBlobStore } from '../../services/pdfStore';
 import { makeId } from '../../services/ids';
+import { readItem, writeItem } from '../../services/storage';
+import {
+  PANEL_DEFAULT_WIDTH,
+  PANEL_MAX_WIDTH,
+  PANEL_MIN_WIDTH,
+  PANEL_WIDTH_STORAGE_KEY,
+} from '../../app/config';
 import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
@@ -202,6 +210,56 @@ export function ReaderView({
     typeof window.matchMedia === 'function' && !window.matchMedia(NOTES_OVERLAY_QUERY).matches
       ? 'notes'
       : null,
+  );
+  /**
+   * How wide the side panel column is.
+   *
+   * Persisted, clamped, and adjustable by dragging its edge or with the arrow keys. Reading is
+   * the reason this column exists, and a reader working through a proof needs it narrower or
+   * wider depending on the paper and the window — a fixed width serves neither.
+   */
+  const [panelWidth, setPanelWidthRaw] = useState(() => {
+    const stored = Number(readItem(PANEL_WIDTH_STORAGE_KEY));
+    if (!Number.isFinite(stored) || stored <= 0) return PANEL_DEFAULT_WIDTH;
+    return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(stored)));
+  });
+  const setPanelWidth = useCallback((next: number) => {
+    const clamped = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(next)));
+    setPanelWidthRaw(clamped);
+    writeItem(PANEL_WIDTH_STORAGE_KEY, String(clamped));
+  }, []);
+  const nudgePanelWidth = useCallback(
+    (delta: number) => {
+      setPanelWidth(panelWidth + delta);
+    },
+    [panelWidth, setPanelWidth],
+  );
+  /** Pointer-captured drag on the panel's left edge; growing the panel means dragging left. */
+  const startPanelResize = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const handle = event.currentTarget;
+      handle.setPointerCapture(event.pointerId);
+      const startX = event.clientX;
+      const startWidth = panelWidth;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+      const onMove = (move: PointerEvent): void => {
+        setPanelWidth(startWidth - (move.clientX - startX));
+      };
+      const onUp = (): void => {
+        handle.releasePointerCapture(event.pointerId);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+      };
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+    },
+    [panelWidth, setPanelWidth],
   );
   /** Boxes shown briefly when the reader follows a citation. Never saved, never a highlight. */
   const [spotlight, setSpotlight] = useState<{ page: number; rects: NormalizedRect[] } | null>(
@@ -1083,7 +1141,38 @@ export function ReaderView({
               </button>
             </div>
           ) : (
-            <div className="reader-side">
+            <div
+              className="reader-side"
+              style={{ '--panel-w': `${String(panelWidth)}px` } as CSSProperties}
+            >
+              <div
+                className="panel-resize"
+                role="separator"
+                aria-label="调整侧边面板宽度"
+                aria-orientation="vertical"
+                aria-valuenow={panelWidth}
+                aria-valuemin={PANEL_MIN_WIDTH}
+                aria-valuemax={PANEL_MAX_WIDTH}
+                tabIndex={0}
+                onPointerDown={startPanelResize}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    nudgePanelWidth(-16);
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    nudgePanelWidth(16);
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setPanelWidth(PANEL_MIN_WIDTH);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setPanelWidth(PANEL_MAX_WIDTH);
+                  }
+                }}
+              >
+                <span className="panel-resize__grip" aria-hidden="true" />
+              </div>
               <div className="reader-side-tabs" role="group" aria-label="侧边面板">
                 <button
                   type="button"
