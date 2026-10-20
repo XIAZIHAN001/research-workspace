@@ -545,7 +545,8 @@
   line-height: 1.45;
 }
 
-/* Narrow windows: the panel becomes the same overlay the other side panels use. */
+/* Narrow windows: the panel becomes the same overlay the other side panels use. The width is
+   `READER_OVERLAY_QUERY` in `app/config.ts` — the same breakpoint reader.css defines. */
 @media (max-width: 1100px) {
   .knowledge-panel {
     flex: 1 1 auto;

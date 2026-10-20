@@ -669,6 +669,13 @@
 }
 
 /* In a narrow window the panel covers the edge of the page instead of taking a column. */
+/*
+ * Below 1100px the column becomes an overlay.
+ *
+ * This number is duplicated in `app/config.ts` as `READER_OVERLAY_QUERY`, because a media query
+ * cannot read a custom property; that constant is what hides the resize handle (an overlay is
+ * sized here, not by `--panel-w`). The two must change together.
+ */
 @media (max-width: 1100px) {
   .reader-side {
     position: absolute;

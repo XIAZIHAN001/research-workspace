@@ -29,11 +29,13 @@ import {
   PANEL_MAX_WIDTH,
   PANEL_MIN_WIDTH,
   PANEL_WIDTH_STORAGE_KEY,
+  READER_OVERLAY_QUERY,
 } from '../../app/config';
 import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { useMediaQuery } from '../../ui/useMediaQuery';
 import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
@@ -113,8 +115,12 @@ interface ReaderViewProps {
   focus?: { page: number; quote: string } | null;
 }
 
-/** Below this width the notes panel covers part of the page instead of taking a column. */
-const NOTES_OVERLAY_QUERY = '(max-width: 1100px)';
+/**
+ * The overlay breakpoint lives in `app/config` because two modules need it and it has to stay in
+ * step with `styles/reader.css`: below it the side column covers part of the page instead of
+ * taking a column, and a drag handle there would resize nothing.
+ */
+const OVERLAY_QUERY = READER_OVERLAY_QUERY;
 
 /** How long to wait for a page the reader jumped to to finish rendering its text layer. */
 const RENDER_WAIT_MS = 2500;
@@ -231,10 +237,19 @@ export function ReaderView({
   const [pendingDelete, setPendingDelete] = useState<Annotation | null>(null);
   /** Which of the side panels is showing, if any. */
   const [panel, setPanel] = useState<'notes' | 'ai' | 'difficulty' | 'knowledge' | null>(() =>
-    typeof window.matchMedia === 'function' && !window.matchMedia(NOTES_OVERLAY_QUERY).matches
+    typeof window.matchMedia === 'function' && !window.matchMedia(OVERLAY_QUERY).matches
       ? 'notes'
       : null,
   );
+  /**
+   * Whether the side column is an overlay rather than a column of its own.
+   *
+   * The CSS switches `.reader-side` to `position: absolute` with a fixed width below this
+   * breakpoint, so `--panel-w` stops being what sizes it. A drag handle in that state would
+   * move a number nobody renders — the handle is hidden and the drag refuses to start.
+   */
+  const overlay = useMediaQuery(OVERLAY_QUERY);
+
   /**
    * How wide the side panel column is.
    *
@@ -261,6 +276,8 @@ export function ReaderView({
   /** Pointer-captured drag on the panel's left edge; growing the panel means dragging left. */
   const startPanelResize = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Belt and braces with the unrendered handle: an overlay is sized by the stylesheet.
+      if (overlay) return;
       event.preventDefault();
       const handle = event.currentTarget;
       handle.setPointerCapture(event.pointerId);
@@ -283,8 +300,9 @@ export function ReaderView({
       handle.addEventListener('pointerup', onUp);
       handle.addEventListener('pointercancel', onUp);
     },
-    [panelWidth, setPanelWidth],
+    [overlay, panelWidth, setPanelWidth],
   );
+
   /** Boxes shown briefly when the reader follows a citation. Never saved, never a highlight. */
   const [spotlight, setSpotlight] = useState<{ page: number; rects: NormalizedRect[] } | null>(
     null,
@@ -1170,34 +1188,36 @@ export function ReaderView({
               className="reader-side"
               style={{ '--panel-w': `${String(panelWidth)}px` } as CSSProperties}
             >
-              <div
-                className="panel-resize"
-                role="separator"
-                aria-label="调整侧边面板宽度"
-                aria-orientation="vertical"
-                aria-valuenow={panelWidth}
-                aria-valuemin={PANEL_MIN_WIDTH}
-                aria-valuemax={PANEL_MAX_WIDTH}
-                tabIndex={0}
-                onPointerDown={startPanelResize}
-                onKeyDown={(event) => {
-                  if (event.key === 'ArrowLeft') {
-                    event.preventDefault();
-                    nudgePanelWidth(-16);
-                  } else if (event.key === 'ArrowRight') {
-                    event.preventDefault();
-                    nudgePanelWidth(16);
-                  } else if (event.key === 'Home') {
-                    event.preventDefault();
-                    setPanelWidth(PANEL_MIN_WIDTH);
-                  } else if (event.key === 'End') {
-                    event.preventDefault();
-                    setPanelWidth(PANEL_MAX_WIDTH);
-                  }
-                }}
-              >
-                <span className="panel-resize__grip" aria-hidden="true" />
-              </div>
+              {!overlay && (
+                <div
+                  className="panel-resize"
+                  role="separator"
+                  aria-label="调整侧边面板宽度"
+                  aria-orientation="vertical"
+                  aria-valuenow={panelWidth}
+                  aria-valuemin={PANEL_MIN_WIDTH}
+                  aria-valuemax={PANEL_MAX_WIDTH}
+                  tabIndex={0}
+                  onPointerDown={startPanelResize}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowLeft') {
+                      event.preventDefault();
+                      nudgePanelWidth(-16);
+                    } else if (event.key === 'ArrowRight') {
+                      event.preventDefault();
+                      nudgePanelWidth(16);
+                    } else if (event.key === 'Home') {
+                      event.preventDefault();
+                      setPanelWidth(PANEL_MIN_WIDTH);
+                    } else if (event.key === 'End') {
+                      event.preventDefault();
+                      setPanelWidth(PANEL_MAX_WIDTH);
+                    }
+                  }}
+                >
+                  <span className="panel-resize__grip" aria-hidden="true" />
+                </div>
+              )}
               <div className="reader-side-tabs" role="group" aria-label="侧边面板">
                 <button
                   type="button"

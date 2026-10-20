@@ -29,6 +29,16 @@ export const DEFAULT_AVATAR_SRC = '/avatar/default.svg';
 
 /** Below this width the sidebar becomes an overlay instead of taking a column. */
 export const NARROW_VIEWPORT_QUERY = '(max-width: 759px)';
+
+/**
+ * Below this width the reader's side column becomes an overlay over the page.
+ *
+ * Deliberately not the sidebar's 759px: the reading layout needs the column to fold much
+ * earlier, because the page itself has to keep a readable width beside it. The number is
+ * duplicated in `styles/reader.css` (`@media (max-width: 1100px)`) because a media query cannot
+ * read a custom property — the two must change together, and the CSS block says so.
+ */
+export const READER_OVERLAY_QUERY = '(max-width: 1100px)';
 /**
  * How far a column may be dragged, in CSS pixels.
  *

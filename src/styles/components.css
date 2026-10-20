@@ -806,8 +806,16 @@ button.row-main:active {
   font-size: 12px;
 }
 
-/* The focus belongs to the real input, so the ring is drawn on the zone that stands for it. */
-.file-drop:has(.file-input-native:focus-visible) {
+/*
+ * The focus belongs to the real input, which is visually hidden — and `clip-path` takes its own
+ * outline with it, so without this the file picker is a Tab stop with no visible focus at all.
+ *
+ * The rule hangs off `.field`, not off the label: the focusable input is the field's own child
+ * and sits *before* the label, so a `:has(.file-input-native)` lookup inside the label matches
+ * nothing (the label only contains the inert, `tabIndex={-1}` mirror). Anchoring on the wrapper
+ * also keeps working if the two are ever reordered.
+ */
+.field:has(> .file-input-native:focus-visible) > .file-drop {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
