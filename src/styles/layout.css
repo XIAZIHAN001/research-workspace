@@ -84,8 +84,10 @@
  * the sidebar does not clip on the inline axis — the app grid's own `overflow: hidden` still
  * keeps it from ever reaching anything else.
  *
- * The visible state is 2px of hairline that grows into an 11px accent bar on hover, focus or
- * drag. It is deliberately discoverable: a reader who cannot find it cannot reclaim the width.
+ * Two layers, deliberately: a 12px-wide invisible hit area, and a 2px line inside it that only
+ * draws itself on hover, focus or drag (3px, in `--select-edge`, accent while held). At rest the
+ * handle is invisible, so the affordance is "discoverable by pointing at the edge" rather than
+ * "visible at all times" — the width is also reachable from the keyboard once focused.
  */
 .sidebar-resize {
   position: absolute;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMediaQuery } from '../ui/useMediaQuery';
 import { readItem, writeItem } from '../services/storage';
 import {
@@ -116,10 +116,5 @@ export function useSidebar() {
     setWidthRaw(SIDEBAR_DEFAULT_WIDTH);
   }, [setWidthRaw]);
 
-  const widthRef = useRef(width);
-  useEffect(() => {
-    widthRef.current = width;
-  }, [width]);
-
-  return { open, narrow, setOpen, width, startResize, nudgeWidth, resetWidth, widthRef };
+  return { open, narrow, setOpen, width, startResize, nudgeWidth, resetWidth };
 }

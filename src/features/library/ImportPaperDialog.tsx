@@ -245,7 +245,8 @@ function ImportForm({
                 const primary = event.currentTarget.form?.querySelector<HTMLInputElement>(
                   'input[data-autofocus]',
                 );
-                if (primary !== null && primary !== null) {
+                // `form?.` short-circuits to undefined, so both have to be excluded.
+                if (primary !== null && primary !== undefined) {
                   const transfer = new DataTransfer();
                   transfer.items.add(chosen);
                   primary.files = transfer.files;

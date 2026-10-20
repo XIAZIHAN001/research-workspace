@@ -193,15 +193,15 @@
 /*
  * Empty states.
  *
- * Three places in the app have nothing to show: the home panels, a project group in the
- * sidebar, and the knowledge candidate list. They were written three times and drifted three
- * ways — different padding, two different text colours, one centred and two not. So the shape
- * is defined once here and each of them only says what is genuinely different about itself:
- * the home panel is left-aligned because it sits under a left-aligned heading and carries a
- * call to action, the sidebar group is indented to line up under its parent's rows, and the
- * candidate list is centred because it is the whole panel.
+ * Four places in the app have nothing to show: the home panels, a project group in the sidebar,
+ * the knowledge candidate list, and the library. They were written separately and drifted —
+ * different padding, two different text colours, some centred and some not. So the shape is
+ * defined once here and each of them only says what is genuinely different about itself: the
+ * home panel is left-aligned because it sits under a left-aligned heading and carries a call to
+ * action, the sidebar group is indented to line up under its parent's rows, and the list-level
+ * ones are centred because they are the whole panel.
  */
-:is(.home-empty, .group-empty, .knowledge-empty) {
+:is(.home-empty, .group-empty, .knowledge-empty, .library-empty) {
   color: var(--text-3);
   font-size: 13px;
   line-height: 1.65;
@@ -1734,11 +1734,11 @@ button.row-main:active {
   list-style: none;
 }
 
+/* A whole-page list with nothing in it: centred, and given a little room to sit in. Its type
+   and colour come from the empty-state group above. */
 .library-empty {
   margin-block: auto;
   padding: 24px 0;
-  color: var(--text-2);
-  font-size: 13px;
   text-align: center;
 }
 
