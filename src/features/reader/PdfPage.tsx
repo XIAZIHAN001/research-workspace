@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Annotation, NormalizedRect } from '../../domain/annotation';
-import { paperBackground, recolorImageData, type PaperPalette } from './paperTheme';
+import { paperBackground, recolorImageDataAsync, type PaperPalette } from './paperTheme';
 import { isRenderCancelled, loadPdfjs, type PDFDocumentProxy } from './pdfjs';
 
 interface PdfPageProps {
@@ -119,6 +119,9 @@ export function PdfPage({
     let cancelled = false;
     let renderTask: { cancel: () => void } | null = null;
     let textLayer: { cancel: () => void } | null = null;
+    // The recolour is a multi-batch loop, so it needs a signal of its own: `cancelled` is only
+    // read at await points, and stopping mid-page is exactly where the long work is.
+    const alive = new AbortController();
     const canvas = document.createElement('canvas');
     canvas.className = 'pdf-canvas';
     canvas.setAttribute('aria-label', `第 ${pageNumber} 页`);
@@ -163,7 +166,8 @@ export function PdfPage({
         if (workContext !== null && visible !== null) {
           workContext.drawImage(canvas, 0, 0);
           const image = workContext.getImageData(0, 0, work.width, work.height);
-          const report = recolorImageData(image.data, palette);
+          const report = await recolorImageDataAsync(image.data, palette, alive.signal);
+          if (cancelled) return;
           if (report.outcome === 'recoloured') {
             workContext.putImageData(image, 0, 0);
             visible.clearRect(0, 0, canvas.width, canvas.height);
@@ -198,6 +202,7 @@ export function PdfPage({
 
     return () => {
       cancelled = true;
+      alive.abort();
       renderTask?.cancel();
       textLayer?.cancel();
       host.replaceChildren();

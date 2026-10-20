@@ -1,5 +1,5 @@
 import { Highlighter, MessageSquarePlus, Network, SendHorizontal, Sparkles, X } from 'lucide-react';
-import { useState, type SubmitEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
 import {
   ANNOTATION_KINDS,
   ANNOTATION_KIND_LABEL,
@@ -7,6 +7,7 @@ import {
   type AnnotationKind,
 } from '../../domain/annotation';
 import { AI_MODE_LABEL, type AiMode } from '../../services/ai/types';
+import { useViewportSize } from '../../ui/useViewportSize';
 
 interface AnnotationToolbarProps {
   /** Where to sit, in viewport coordinates: just above the selection. */
@@ -22,18 +23,18 @@ interface AnnotationToolbarProps {
   onDismiss: () => void;
 }
 
-/** Half the toolbar's widest state, used to keep the whole thing on screen. */
-const HALF_WIDTH = { actions: 230, menu: 200 };
+/** How close to a window edge the toolbar may get before it is pushed back in. */
 const EDGE = 8;
+/** Never above this, whatever the selection's y is: it would sit under the toolbar row. */
+const TOP_GAP = 56;
 /**
- * Roughly how tall each state is, used to keep the bottom edge on screen.
+ * The size used for the very first placement, before the element has been measured.
  *
- * A selection near the foot of the page puts the toolbar near the foot of the window, and the
- * menu opens downwards — so without this the last items were rendered below the viewport where
- * they could not be clicked at all. Measured, not measured *precisely*: it only has to be close
- * enough to keep the buttons reachable, and the stylesheet caps the height as a backstop.
+ * After mount the real size replaces this (see `measured` below), so this only decides where the
+ * toolbar lands for one frame. It is deliberately an over-estimate: placing a frame too low and
+ * then correcting is invisible, while placing it too high and correcting is a visible jump.
  */
-const HEIGHT = { actions: 84, menu: 280 };
+const FIRST_FRAME = { width: 460, height: 300 };
 
 const AI_MODES: readonly AiMode[] = ['explain', 'walkthrough', 'formula', 'translate', 'ask'];
 
@@ -59,18 +60,62 @@ export function AnnotationToolbar({
   const [note, setNote] = useState('');
   const [question, setQuestion] = useState('');
 
-  const half = composing || asking ? HALF_WIDTH.menu : HALF_WIDTH.actions;
-  const left = Math.min(
-    Math.max(spot.x, half + EDGE),
-    Math.max(half + EDGE, window.innerWidth - half - EDGE),
-  );
-  // Clamped on all four sides: horizontally so neither end runs off the window, vertically so
-  // the menu that opens downwards still ends above the bottom edge.
-  const estimatedHeight = composing || asking ? HEIGHT.menu : HEIGHT.actions;
-  const top = Math.min(
-    Math.max(spot.y - 12, 56),
-    Math.max(56, window.innerHeight - estimatedHeight - EDGE),
-  );
+  /*
+   * The toolbar is placed against the window, so it needs the window — as a value it is told
+   * about, not one it reaches for. `useViewportSize` re-renders on resize, which is what makes
+   * the clamping below correct after the window changes rather than only on first open.
+   */
+  const viewport = useViewportSize();
+
+  /*
+   * Its own size, measured rather than guessed.
+   *
+   * The old constants (230×84, 200×280) were estimates of a toolbar whose contents change with
+   * the locale, the number of AI modes and the width of a translated label — so they were
+   * wrong whenever they were not exactly right, and the toolbar clipped or drifted. Measuring
+   * the element removes the guess: the clamp is now correct by construction. `FIRST_FRAME`
+   * covers the single render before this has run.
+   */
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [measured, setMeasured] = useState(FIRST_FRAME);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (element === null) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry === undefined) return;
+      const box = entry.borderBoxSize?.[0];
+      const width = box?.inlineSize ?? element.offsetWidth;
+      const height = box?.blockSize ?? element.offsetHeight;
+      if (width > 0 && height > 0) setMeasured((current) =>
+        current.width === width && current.height === height ? current : { width, height },
+      );
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const half = measured.width / 2;
+  const width = viewport.width;
+  const height = viewport.height;
+  const left =
+    width === 0
+      ? spot.x
+      : Math.min(Math.max(spot.x, half + EDGE), Math.max(half + EDGE, width - half - EDGE));
+
+  /*
+   * The element is anchored by its bottom edge (`transform: translate(-50%, -100%)`), so it
+   * occupies [top − height, top]. With a measured height the clamp is exact: the floor is what
+   * keeps the top of the toolbar on screen, and the ceiling is what keeps its bottom on screen.
+   * The old estimate-based version had to leave a gap the size of the estimate at the bottom,
+   * because being wrong meant the last row of buttons was unreachable.
+   */
+  const floor = Math.max(TOP_GAP, measured.height + EDGE);
+  const ceiling = Math.max(floor, height - EDGE);
+  const top =
+    height === 0 ? Math.max(spot.y - 12, TOP_GAP) : Math.min(Math.max(spot.y - 12, floor), ceiling);
 
   const submitNote = (event: SubmitEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -85,6 +130,7 @@ export function AnnotationToolbar({
 
   return (
     <div
+      ref={ref}
       className="annotation-toolbar glass glass-strong"
       role="toolbar"
       aria-label="批注"

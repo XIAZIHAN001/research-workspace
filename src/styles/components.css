@@ -190,10 +190,50 @@
   padding: 0;
 }
 
-.group-empty {
-  padding: 6px 10px;
+/*
+ * Empty states.
+ *
+ * Three places in the app have nothing to show: the home panels, a project group in the
+ * sidebar, and the knowledge candidate list. They were written three times and drifted three
+ * ways — different padding, two different text colours, one centred and two not. So the shape
+ * is defined once here and each of them only says what is genuinely different about itself:
+ * the home panel is left-aligned because it sits under a left-aligned heading and carries a
+ * call to action, the sidebar group is indented to line up under its parent's rows, and the
+ * candidate list is centred because it is the whole panel.
+ */
+:is(.home-empty, .group-empty, .knowledge-empty) {
   color: var(--text-3);
   font-size: 13px;
+  line-height: 1.65;
+}
+
+/* A panel's own empty state: room to breathe, and an optional action under the sentence. */
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 20px 8px 14px;
+}
+
+.home-empty p {
+  max-width: 32em;
+}
+
+.home-empty .btn {
+  margin-top: 2px;
+}
+
+/* Inside the sidebar rail, where every row is indented by the same amount. */
+.group-empty {
+  padding: 6px 10px;
+}
+
+/* The whole knowledge panel, with nothing beside it. */
+.knowledge-empty {
+  margin: 0;
+  padding: 18px 16px;
+  text-align: center;
 }
 
 .nav-item,
@@ -321,11 +361,22 @@ button.row-main:active {
 }
 
 /* The base plate: a slightly denser tier under the list, so the sidebar reads as layers. */
+/*
+ * The three buttons at the foot of the rail.
+ *
+ * They were `.btn .btn-quiet`, which is a filled control: gradient fill, inner highlight, hairline
+ * and a lift. Three of those stacked at the bottom of a column that is otherwise made of flat
+ * transparent rows read as a second, competing navigation — and they sit directly under the
+ * project list, so the eye lands on chrome before content.
+ *
+ * They are now flat rows like `.nav-item` above: no fill at rest, fill on hover and on press.
+ * A raised hairline above the group keeps the boundary without making each row an object.
+ */
 .sidebar-foot {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px;
+  gap: 1px;
+  padding: 6px 8px 8px;
   border-top: 1px solid var(--ring);
   background: var(--foot-tint);
 }
@@ -334,8 +385,32 @@ button.row-main:active {
   justify-content: flex-start;
   width: 100%;
   overflow: hidden;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--text-3);
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-foot .btn-quiet:hover:not(:disabled) {
+  background-color: var(--row-hover);
+  color: var(--text-2);
+}
+
+.sidebar-foot .btn-quiet[aria-pressed='true'] {
+  background-color: var(--row-hover);
+  color: var(--text);
+}
+
+/* The pressed state is the "managing" toggle, so it needs a dot rather than only a colour. */
+.sidebar-foot .btn-quiet[aria-pressed='true']::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 /* The profile chip sits at the bottom-left, as in the desktop shells this app lives beside. */
@@ -474,10 +549,15 @@ button.row-main:active {
 /*
  * Segmented control. A single indicator slides under the pressed segment instead of each
  * button drawing its own background, so switching theme or tabs reads as one object moving.
- * Fixed 28px segments keep the geometry exact; :has() is supported by WebView2 and Chromium.
+ * :has() is supported by WebView2 and Chromium.
+ *
+ * The segments are 32×30 rather than the 28×24 they started at. These buttons are icon-only —
+ * there is no label to fall back on — so 24px was a 24px target with a 15px glyph in it, which
+ * is below the 32px comfortable minimum and visibly twitchy to hit. 30px of height still reads as
+ * a compact control next to a 34px text button rather than competing with it.
  */
 .segmented {
-  --seg-w: 28px;
+  --seg-w: 32px;
   --seg-gap: 2px;
   --seg-index: 0;
   position: relative;
@@ -497,7 +577,7 @@ button.row-main:active {
   left: 2px;
   z-index: 0;
   width: var(--seg-w);
-  height: 24px;
+  height: 30px;
   border-radius: 8px;
   background-color: var(--control-fill-hover);
   background-image: linear-gradient(180deg, var(--control-sheen), transparent 62%);
@@ -523,7 +603,7 @@ button.row-main:active {
   display: grid;
   place-items: center;
   width: var(--seg-w);
-  height: 24px;
+  height: 30px;
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -994,11 +1074,22 @@ button.row-main:active {
   text-wrap: balance;
 }
 
+/*
+ * The dashboard grid.
+ *
+ * `margin-block: auto` is what removes the "content stops halfway down the window" look. On a
+ * tall screen with three papers the grid now sits in the middle of the space instead of clinging
+ * to the header with half a screen of empty sheet under it. It is an auto margin rather than
+ * `justify-content: center` on purpose: auto margins collapse to zero once the content is taller
+ * than the space, so a long list still starts at the top and scrolls, where centring would push
+ * the first row out of reach above the scroll origin.
+ */
 .home-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
+  margin-block: auto;
 }
 
 .home-panel {
@@ -1096,24 +1187,7 @@ button.row-main:active {
   font-variant-numeric: tabular-nums;
 }
 
-.home-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 18px 8px 12px;
-  color: var(--text-3);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.home-empty p {
-  max-width: 32em;
-}
-
-.home-empty .btn {
-  margin-top: 2px;
-}
+/* `.home-empty` is defined with the other empty states, near `.home-panel`. */
 
 @media (max-width: 900px) {
   .home-grid {
@@ -1464,10 +1538,17 @@ button.row-main:active {
   list-style: none;
 }
 
+/*
+ * One paper, one card.
+ *
+ * `flex-wrap` was here so a narrow window could push the actions onto their own line, but with
+ * one primary action plus a menu button the action group is now narrow enough to never need it,
+ * and wrapping is what produced the dead band across the middle of the card at medium widths.
+ * The text column takes the slack instead (`flex: 1`), and the actions stay on the title's line.
+ */
 .paper-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 12px 16px;
   align-items: flex-start;
   justify-content: space-between;
   padding: 12px 14px;
@@ -1478,7 +1559,7 @@ button.row-main:active {
 
 .paper-row-main {
   display: flex;
-  flex: 1 1 14rem;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
@@ -1509,23 +1590,89 @@ button.row-main:active {
 
 .paper-row-actions {
   display: flex;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex: 0 0 auto;
   align-items: center;
+  gap: 6px;
   justify-content: flex-end;
 }
 
-.paper-row-link {
+/*
+ * A row's overflow menu.
+ *
+ * Positioned against the row rather than the window, so it opens downward over the next row and
+ * stays put while the list scrolls. `role="menu"` with `menuitem` children means the arrow-key
+ * and type-ahead behaviour is the browser's, not something re-implemented here.
+ */
+.row-overflow {
+  position: relative;
   display: inline-flex;
-  gap: 4px;
-  align-items: center;
 }
 
-.paper-row-link .input {
+.row-overflow-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 11rem;
+  padding: 4px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-md);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--elev-float);
+}
+
+.row-overflow-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+
+.row-overflow-item:hover,
+.row-overflow-item:focus-visible {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.row-overflow-item > svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+/* The project picker replaces its own menu item, so it is padded out to the text it replaced. */
+.row-overflow-link {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 4px;
+}
+
+.row-overflow-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-overflow-field .input {
   height: 30px;
-  max-width: 9rem;
-  font-size: 12px;
+  font-size: 12.5px;
+}
+
+.row-overflow-confirm {
+  flex: none;
+  height: 30px;
 }
 
 /* --- Library -------------------------------------------------------------- */
@@ -1536,7 +1683,7 @@ button.row-main:active {
   gap: 14px;
   width: min(920px, 100%);
   margin: 0 auto;
-  padding: 32px 24px 48px;
+  padding: 32px 24px;
 }
 
 .library-head {
@@ -1568,17 +1715,23 @@ button.row-main:active {
   flex: 1;
 }
 
+/* The list takes the slack, for the same reason `.home-grid` does: a three-paper library in a
+   tall window should not be a strip of text under a header. Collapses to zero once it scrolls. */
 .library-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0;
+  margin-block: auto;
   padding: 0;
   list-style: none;
 }
 
 .library-empty {
+  margin-block: auto;
+  padding: 24px 0;
   color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
 }
 
 /* --- Form rows ------------------------------------------------------------ */

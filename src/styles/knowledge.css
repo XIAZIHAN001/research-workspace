@@ -144,13 +144,7 @@
   font-size: 11px;
 }
 
-.knowledge-empty {
-  margin: 0;
-  padding: 16px;
-  color: var(--text-2);
-  font-size: 13px;
-  text-align: center;
-}
+/* `.knowledge-empty` shares its shape with the other empty states; see components.css. */
 
 .knowledge-body {
   display: grid;

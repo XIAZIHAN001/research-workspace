@@ -89,8 +89,11 @@ const MIN_PAGE_PIXELS = 4096;
 const DARK_PIXEL = 96;
 
 export interface RecolorReport {
-  /** `recoloured`, or `image-heavy` when the page was left alone. */
-  outcome: 'recoloured' | 'image-heavy';
+  /**
+   * `recoloured`, `image-heavy` when the page was left alone because it is mostly a
+   * picture, or `declined` when a cancelled render stopped the work part-way.
+   */
+  outcome: 'recoloured' | 'image-heavy' | 'declined';
   /** Share of pixels below `DARK_PIXEL` in luminance, before any change. */
   darkShare: number;
   /** Share of pixels above the chroma threshold. */
@@ -178,8 +181,61 @@ export function recolorImageData(data: Uint8ClampedArray, palette: PaperPalette)
     return { outcome: 'image-heavy', ...measured };
   }
 
+  recolourRange(data, 0, data.length, rampFor(palette));
+  return { outcome: 'recoloured', ...measured };
+}
+
+/** How many pixels one turn of the cooperative loop covers before it yields to the browser. */
+const RECOLOR_BATCH_PIXELS = 262_144;
+
+/**
+ * The same recolour, yielding to the browser between batches.
+ *
+ * A letter page at 2× device pixels is about 2.4 million pixels, and the ramp is three array
+ * reads and three writes per pixel. Done in one synchronous pass that is a long task: the
+ * scrollbar stops responding, a click is not seen for a beat, and switching paper mode with
+ * three pages in the render window does all three at once. Handing the thread back every few
+ * hundred thousand pixels keeps the reader interactive while the same work finishes — a little
+ * slower in total, but never in a way anyone can see.
+ *
+ * `signal` lets a cancelled render stop early rather than finish work nobody will look at.
+ */
+export async function recolorImageDataAsync(
+  data: Uint8ClampedArray,
+  palette: PaperPalette,
+  signal?: AbortSignal,
+): Promise<RecolorReport> {
+  const measured = measurePage(data);
+  if (palette === 'original') return { outcome: 'recoloured', ...measured };
+  if (measured.pixels >= MIN_PAGE_PIXELS && measured.darkShare > IMAGE_HEAVY_DARK_SHARE) {
+    return { outcome: 'image-heavy', ...measured };
+  }
+
   const ramp = rampFor(palette);
-  for (let index = 0; index < data.length; index += 4) {
+  const stride = RECOLOR_BATCH_PIXELS * 4;
+  for (let start = 0; start < data.length; start += stride) {
+    if (signal?.aborted === true) {
+      // The page is gone. Leave the buffer as far as it got; nobody is going to blit it.
+      return { outcome: 'declined', ...measured };
+    }
+    recolourRange(data, start, Math.min(start + stride, data.length), ramp);
+    // A macrotask, not a microtask: a microtask would run before the browser could paint, which
+    // is the entire point of yielding here.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
+  return { outcome: 'recoloured', ...measured };
+}
+
+/** Applies the ramp to one contiguous run of the buffer, four bytes (one pixel) at a time. */
+function recolourRange(
+  data: Uint8ClampedArray,
+  from: number,
+  to: number,
+  ramp: Uint8ClampedArray,
+): void {
+  for (let index = from; index < to; index += 4) {
     // A transparent pixel only happens if the caller did not ask pdf.js to paint a background;
     // leave it transparent rather than inventing paper behind it.
     if ((data[index + 3] ?? 255) === 0) continue;
@@ -195,7 +251,6 @@ export function recolorImageData(data: Uint8ClampedArray, palette: PaperPalette)
     data[index + 1] = ramp[level * 3 + 1] ?? 0;
     data[index + 2] = ramp[level * 3 + 2] ?? 0;
   }
-  return { outcome: 'recoloured', ...measured };
 }
 
 /** The page background behind a recoloured canvas, so no white gutter shows at the edges. */

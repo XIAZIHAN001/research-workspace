@@ -228,6 +228,10 @@ describe('the library', () => {
     });
     const row = screen.getAllByRole('article')[0];
     if (row === undefined) throw new Error('no paper row');
+    // The row keeps one visible action; filing a paper under a project is behind the overflow
+    // menu, so the flow is: open the menu, choose the project, confirm.
+    await user.click(within(row).getByRole('button', { name: '更多操作' }));
+    await user.click(within(row).getByRole('menuitem', { name: '加入项目' }));
     await user.selectOptions(
       within(row).getByLabelText('选择要加入的项目'),
       within(row).getByRole('option', { name: 'BERT' }),

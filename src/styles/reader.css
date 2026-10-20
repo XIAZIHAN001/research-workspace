@@ -363,11 +363,18 @@
   transform: scale(0.97);
 }
 
+/*
+ * Selected chip.
+ *
+ * No bold. A pressed filter reads as selected because it is filled and outlined in the accent —
+ * adding weight on top of that made a row of selected chips carry the same typographic emphasis
+ * as the one primary button on the screen, so the primary stopped being primary. Bold at this
+ * size is the primary button's job alone.
+ */
 .chip[aria-pressed='true'] {
   border-color: var(--select-edge);
   background-color: var(--accent-soft);
   color: var(--accent-hi);
-  font-weight: 600;
 }
 
 .annotation-input {
@@ -733,18 +740,46 @@
   gap: 6px;
 }
 
+/*
+ * The service-status line.
+ *
+ * This was a full-width bar under the panel header with a rule under it, so a one-sentence
+ * footnote carried the same weight as the panel's title — and when the provider was online it
+ * also went bold, which made "this call may cost money" compete with the answer itself. It is
+ * now a small chip that sits under the title: the same information, sized like a footnote.
+ *
+ * The state is carried by a dot in the accent colour plus the sentence, not by a saturated
+ * green. The rest of this interface is a neutral grey scale, and one saturated dot in a panel
+ * corner read as an unrelated system's badge rather than part of this one.
+ */
 .ai-provider {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
   margin: 0;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--hairline);
-  color: var(--text-2);
+  padding: 0 12px 8px;
+  color: var(--text-3);
   font-size: 11px;
+  line-height: 1.6;
+}
+
+.ai-provider::before {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transform: translateY(-2px);
 }
 
 /* Saying that a call costs money has to be legible before it is pretty. */
 .ai-provider[data-online='true'] {
-  color: var(--text);
-  font-weight: 600;
+  color: var(--warn);
+}
+
+.ai-provider[data-online='true']::before {
+  background: var(--warn);
 }
 
 .ai-empty {

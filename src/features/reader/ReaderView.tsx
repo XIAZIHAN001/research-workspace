@@ -34,6 +34,7 @@ import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { DifficultyPanel } from './DifficultyPanel';
@@ -131,9 +132,13 @@ async function waitForRenderedPage(
   root: HTMLElement | null,
   page: number,
   timeoutMs = RENDER_WAIT_MS,
+  signal?: AbortSignal,
 ): Promise<HTMLElement | null> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    // The reader may have been closed, or a different paper opened, while this was waiting.
+    // Polling a detached tree would keep a timer alive for the rest of the timeout.
+    if (signal?.aborted === true) return null;
     const element =
       root?.querySelector<HTMLElement>(`.pdf-page[data-page="${String(page)}"]`) ?? null;
     const layer = element?.querySelector<HTMLElement>('.textLayer') ?? null;
@@ -204,6 +209,25 @@ export function ReaderView({
   const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
+  /**
+   * Timers that belong to this reader, and a signal that says "this reader is gone".
+   *
+   * The reader polls for a page's text layer and flashes a highlight after a jump. Both are
+   * asynchronous and both used to outlive the component: a poll kept a timer alive after the
+   * reader closed, and a flash timer could set state on an unmounted tree. The hook cancels
+   * every pending timer on unmount, and the signal lets the poll stop waiting immediately
+   * rather than running out its full timeout first.
+   */
+  const timers = useTimeout();
+  const flashTimer = useRef<number | undefined>(undefined);
+  const alive = useRef<AbortController | null>(null);
+  if (alive.current === null) alive.current = new AbortController();
+  useEffect(() => {
+    const controller = alive.current;
+    return () => {
+      controller?.abort();
+    };
+  }, []);
   const [pendingDelete, setPendingDelete] = useState<Annotation | null>(null);
   /** Which of the side panels is showing, if any. */
   const [panel, setPanel] = useState<'notes' | 'ai' | 'difficulty' | 'knowledge' | null>(() =>
@@ -504,7 +528,7 @@ export function ReaderView({
     // that synchronously inside an effect cascades renders.
     void (async () => {
       scrollToPage(focus.page);
-      const page = await waitForRenderedPage(scrollRef.current, focus.page);
+      const page = await waitForRenderedPage(scrollRef.current, focus.page, RENDER_WAIT_MS, alive.current?.signal);
       if (page === null) {
         setSelectionNotice('这一页还没有渲染完，暂时无法标出这条出处；已经跳到该页。');
         return;
@@ -616,7 +640,7 @@ export function ReaderView({
     setActiveAnnotationId(annotation.id);
     scrollToPage(annotation.page);
     void (async () => {
-      const page = await waitForRenderedPage(scrollRef.current, annotation.page);
+      const page = await waitForRenderedPage(scrollRef.current, annotation.page, RENDER_WAIT_MS, alive.current?.signal);
       if (page === null) {
         // The page never finished rendering. The highlight is still drawn from its stored
         // boxes; there is simply nothing to check the text against, and nothing to claim.
@@ -635,7 +659,8 @@ export function ReaderView({
       }
     })();
     setFlashId(annotation.id);
-    window.setTimeout(() => {
+    // Replaces any flash still running, and is cancelled with the reader if it closes first.
+    flashTimer.current = timers.scheduleReplacing(flashTimer.current, () => {
       setFlashId((current) => (current === annotation.id ? null : current));
     }, 1600);
   };
@@ -652,7 +677,7 @@ export function ReaderView({
     setFlashId(null);
     setSpotlight(null);
     void (async () => {
-      const pageElement = await waitForRenderedPage(scrollRef.current, page);
+      const pageElement = await waitForRenderedPage(scrollRef.current, page, RENDER_WAIT_MS, alive.current?.signal);
       if (pageElement === null) {
         setSelectionNotice('这一页还没有渲染完，暂时无法标出引用位置；已经跳到该页。');
         return;

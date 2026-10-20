@@ -5,6 +5,7 @@ import {
   paperBackground,
   parsePaperMode,
   recolorImageData,
+  recolorImageDataAsync,
   resolvePaperMode,
 } from './paperTheme';
 
@@ -172,6 +173,40 @@ describe('recolorImageData: when it refuses', () => {
     const measured = measurePage(buffer(pixels));
     expect(measured.colourShare).toBeCloseTo(0.5, 2);
     expect(measured.darkShare).toBe(0);
+  });
+});
+
+describe('recolorImageDataAsync', () => {
+  it('reaches the same result as the synchronous pass', async () => {
+    const sync = textPage();
+    const async_ = textPage();
+    expect(recolorImageData(sync, 'dark').outcome).toBe('recoloured');
+    const report = await recolorImageDataAsync(async_, 'dark');
+    expect(report.outcome).toBe('recoloured');
+    expect([...async_]).toEqual([...sync]);
+  });
+
+  it('stops early and says so when the render was cancelled', async () => {
+    const controller = new AbortController();
+    // Big enough to need several batches, so the abort lands inside the loop rather than before it.
+    const pixels: [number, number, number][] = [];
+    for (let index = 0; index < 3_000_000; index += 1) pixels.push([255, 255, 255]);
+    const data = buffer(pixels);
+    controller.abort();
+    const report = await recolorImageDataAsync(data, 'dark', controller.signal);
+    expect(report.outcome).toBe('declined');
+    // Nothing was drawn over, because the caller blits nothing for a declined page.
+    expect(at(data, 0)).toEqual([255, 255, 255]);
+  });
+
+  it('still declines an image-heavy page without touching it', async () => {
+    const pixels: [number, number, number][] = [];
+    for (let index = 0; index < 4000; index += 1) pixels.push([40, 40, 40]);
+    for (let index = 0; index < 1000; index += 1) pixels.push([240, 240, 240]);
+    const data = buffer(pixels);
+    const before = [...data];
+    expect((await recolorImageDataAsync(data, 'dark')).outcome).toBe('image-heavy');
+    expect([...data]).toEqual(before);
   });
 });
 
