@@ -1,5 +1,6 @@
 /* global document, getComputedStyle, window */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -356,7 +357,7 @@ async function main() {
     await page.getByRole('button', { name: '适应宽度' }).click();
 
     // ---- Dark theme ------------------------------------------------------
-    await page.getByRole('button', { name: '深色' }).click();
+    await setAppTheme(page, '深色');
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
     const highlightPaint = await page
       .locator('.pdf-highlight')
@@ -368,7 +369,7 @@ async function main() {
       highlightPaint.startsWith('rgba(') || highlightPaint.startsWith('rgb('),
       highlightPaint,
     );
-    await page.getByRole('button', { name: '浅色' }).click();
+    await setAppTheme(page, '浅色');
 
     // ---- The same paper in another project -------------------------------
     await page.getByRole('button', { name: '返回' }).click();

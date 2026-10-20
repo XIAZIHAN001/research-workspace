@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2026-10-18T09:56:45.825Z",
+  "runStamp": "2026-10-18T09-56-13",
+  "passed": 0,
+  "failed": 1,
+  "details": {
+    "aiRequests": [
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-CJLTtrGn.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "run: the research workflow finished without an exception",
+        "passed": false,
+        "detail": "locator.setInputFiles: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: '导入论文' }).locator('input[type=\"file\"]')\u001b[22m\n"
+      }
+    ]
+  }
+}

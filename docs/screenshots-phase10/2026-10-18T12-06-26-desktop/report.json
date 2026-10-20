@@ -1,0 +1,182 @@
+{
+  "stamp": "2026-10-18T12-06-26",
+  "exe": "D:\\Research Workspace\\research-workspace.exe",
+  "passed": 33,
+  "total": 34,
+  "results": [
+    {
+      "name": "找到桌面应用可执行文件",
+      "passed": true,
+      "detail": "D:\\Research Workspace\\research-workspace.exe"
+    },
+    {
+      "name": "8787 端口陷阱（若空闲）",
+      "passed": true,
+      "detail": "已在 8787 启动陷阱服务"
+    },
+    {
+      "name": "桌面窗口加载 React 界面",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "WebView2 数据目录已创建",
+      "passed": true,
+      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop\\webview"
+    },
+    {
+      "name": "应用启动了自己的 rw-node sidecar",
+      "passed": true,
+      "detail": "app=32056 sidecar=13040"
+    },
+    {
+      "name": "sidecar 只监听回环地址",
+      "passed": true,
+      "detail": "127.0.0.1|1491"
+    },
+    {
+      "name": "sidecar 使用临时端口而非 8787",
+      "passed": true,
+      "detail": "127.0.0.1|1491"
+    },
+    {
+      "name": "AI 服务状态为就绪且离线 Mock",
+      "passed": true,
+      "detail": "AI 服务就绪 · 离线 Mock"
+    },
+    {
+      "name": "IPC 报告的 sidecar 地址与进程端口一致",
+      "passed": true,
+      "detail": "http://127.0.0.1:1491"
+    },
+    {
+      "name": "IPC 凭据为每次启动生成的长令牌",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "带凭据的健康检查成功",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "健康检查返回同一实例且离线",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "缺少凭据的请求被拒绝",
+      "passed": true,
+      "detail": "401"
+    },
+    {
+      "name": "PDF 在桌面 WebView 中渲染出文字层",
+      "passed": true,
+      "detail": "Long Document, page 1 of 3\n\n\nLONGPAGE-1 opens this page.\n\n\nLine 1 of page 1: fil"
+    },
+    {
+      "name": "PDF 画布具有实际尺寸",
+      "passed": true,
+      "detail": "648px"
+    },
+    {
+      "name": "翻页到第 2 页",
+      "passed": true,
+      "detail": "2"
+    },
+    {
+      "name": "AI Mock 返回回答",
+      "passed": true,
+      "detail": "（本地模拟回答：当前没有连接在线模型，以下内容由 mock provider 生成，仅用于验证流程。）\n\n你选中的是第 "
+    },
+    {
+      "name": "AI 面板标明离线来源",
+      "passed": true,
+      "detail": "回答来自 本地模拟（未连接在线模型）：不会发起任何在线调用。"
+    },
+    {
+      "name": "在桌面 WebView 中选中文字",
+      "passed": true,
+      "detail": "LONGPAGE-1 opens this page.\nLine 1 of pa"
+    },
+    {
+      "name": "高亮已绘制在 PDF 上",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "笔记面板读到刚保存的笔记",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "知识概念可在桌面应用中创建",
+      "passed": true,
+      "detail": "桌面验收概念 12-06-26"
+    },
+    {
+      "name": "桌面备份导出成功",
+      "passed": true,
+      "detail": "D:\\论文阅读解构项目\\src-tauri\\target\\phase10-artifacts\\desktop-export-2026-10-18T12-06-26.rwbackup"
+    },
+    {
+      "name": "应用正常关闭",
+      "passed": true,
+      "detail": "pid 32056"
+    },
+    {
+      "name": "正常关闭后 sidecar 进程结束",
+      "passed": true,
+      "detail": "13040"
+    },
+    {
+      "name": "重启后项目仍在",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "重启后笔记仍在",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "重启后知识概念仍在",
+      "passed": true,
+      "detail": "1b4afed8-acfd-4ed7-91bc-5ae37dd6d89f"
+    },
+    {
+      "name": "知识 schema 仍为 v2",
+      "passed": true,
+      "detail": "2"
+    },
+    {
+      "name": "重启后 PDF 仍可从 IndexedDB 打开",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "桌面导出的备份可在桌面应用中恢复并回读校验",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "强制结束应用后 sidecar 自行退出（无孤儿）",
+      "passed": true,
+      "detail": "42448"
+    },
+    {
+      "name": "桌面应用未向 8787 旧端口发出任何请求",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "桌面运行期间无控制台错误",
+      "passed": false,
+      "detail": "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ],
+  "consoleIssues": [
+    "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ],
+  "trapHits": []
+}

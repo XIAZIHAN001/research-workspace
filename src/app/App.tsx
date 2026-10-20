@@ -21,9 +21,8 @@ import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
 import { BackupDialog } from '../features/backup/BackupDialog';
-import { AiServiceBadge } from '../features/desktop/AiServiceBadge';
-import { AiSettingsDialog } from '../features/desktop/AiSettingsDialog';
-import { isDesktopApp } from '../services/desktop/aiService';
+import { SettingsDialog } from '../features/settings/SettingsDialog';
+import type { SettingsSection } from '../features/settings/SettingsView';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createAnnotation } from '../domain/annotation';
@@ -131,8 +130,8 @@ export function App({
   const [knowledgeMode, setKnowledgeMode] = useState<'list' | 'graph'>('list');
   const [knowledgeSelectedId, setKnowledgeSelectedId] = useState<string | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
-  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
-  const desktop = useMemo(() => isDesktopApp(), []);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('appearance');
 
   const paperList = useMemo(
     () =>
@@ -328,7 +327,7 @@ export function App({
         now={now}
         managing={managing}
         renamingId={renamingId}
-        themePref={theme.pref}
+        avatar={avatar}
         onHome={() => {
           setView('home');
           closeOverlay();
@@ -356,17 +355,14 @@ export function App({
           setRenamingId(null);
         }}
         onRequestDelete={setPendingDelete}
-        onThemeChange={theme.setPref}
         onBackup={() => {
           setBackupOpen(true);
         }}
-        onAiSettings={
-          desktop
-            ? () => {
-                setAiSettingsOpen(true);
-              }
-            : undefined
-        }
+        onSettings={() => {
+          setSettingsSection('appearance');
+          setSettingsOpen(true);
+          closeOverlay();
+        }}
       />
 
       {sidebar.narrow && sidebar.open && (
@@ -411,7 +407,7 @@ export function App({
         )}
 
         {notice !== null && (
-          <p className="banner" role="status">
+          <p className="banner banner-notice" role="status">
             {notice}
           </p>
         )}
@@ -588,14 +584,24 @@ export function App({
           />
         ) : (
           <HomeView
-            avatar={avatar}
             welcome={welcome}
             selected={selected}
+            projects={projects}
+            papers={paperList}
+            now={now}
             onCreate={() => {
               setCreating(true);
             }}
             onOpenSelected={() => {
               setView('project');
+            }}
+            onOpenProject={selectProject}
+            onOpenReader={openReader}
+            onImport={() => {
+              setImportRequest({ mode: 'new', paperId: null, projectId: selected?.id ?? null });
+            }}
+            onLibrary={() => {
+              setView('library');
             }}
           />
         )}
@@ -687,16 +693,18 @@ export function App({
         />
       )}
 
-      <AiServiceBadge
-        onOpenSettings={() => {
-          setAiSettingsOpen(true);
-        }}
-      />
-      <AiSettingsDialog
-        open={aiSettingsOpen}
+      <SettingsDialog
+        open={settingsOpen}
+        section={settingsSection}
+        onSection={setSettingsSection}
         onClose={() => {
-          setAiSettingsOpen(false);
+          setSettingsOpen(false);
         }}
+        pref={theme.pref}
+        level={theme.level}
+        onChangePref={theme.setPref}
+        onChangeLevel={theme.setLevel}
+        avatar={avatar}
       />
     </div>
   );

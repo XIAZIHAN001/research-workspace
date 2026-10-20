@@ -1,0 +1,46 @@
+{
+  "phase": 11,
+  "mode": "isolated-runtime-env",
+  "generatedAt": "2026-10-19T05:21:59.212Z",
+  "executable": "D:\\Research Workspace\\research-workspace.exe",
+  "path": "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem",
+  "results": [
+    {
+      "name": "无 Node/Rust/MSVC 的 PATH 下应用启动",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "AI 状态为离线 Mock",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "sidecar 来自安装目录而不是全局 Node",
+      "passed": true,
+      "detail": "D:\\Research Workspace\\sidecar\\rw-node.exe"
+    },
+    {
+      "name": "启动环境不含开发工具目录",
+      "passed": true,
+      "detail": "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem"
+    },
+    {
+      "name": "IPC 能取得服务地址与令牌",
+      "passed": true,
+      "detail": "\"4130eb8b-0f0c-404a-bfbf-bc05bd331d7b\""
+    },
+    {
+      "name": "健康检查证明离线服务可用",
+      "passed": true,
+      "detail": "\"mock\""
+    },
+    {
+      "name": "离线问答在纯净 PATH 下仍可完成",
+      "passed": true,
+      "detail": "status=200"
+    }
+  ],
+  "failures": 0,
+  "note": "这不是全新的 Windows 机器；WebView2 已安装，应用由本项目安装。干净机器安装仍未验证。"
+}

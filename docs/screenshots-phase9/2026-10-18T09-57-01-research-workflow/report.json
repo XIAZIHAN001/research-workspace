@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-10-18T09:57:07.055Z",
+  "runStamp": "2026-10-18T09-57-01",
+  "passed": 1,
+  "failed": 1,
+  "details": {
+    "aiRequests": [
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-CJLTtrGn.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf-Bb557k4W.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min--Ao2iAXA.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "setup: the core paper is a real multi-page PDF, not a placeholder",
+        "passed": true,
+        "detail": "33 pages, 1452162 bytes"
+      },
+      {
+        "name": "run: the research workflow finished without an exception",
+        "passed": false,
+        "detail": "the page does not contain the quotation: Common strategies select positions by prediction confidence "
+      }
+    ]
+  }
+}

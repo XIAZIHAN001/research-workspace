@@ -1,5 +1,6 @@
 /* global document, window, HTMLCanvasElement */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -519,7 +520,7 @@ async function main() {
 
     // Follow the app theme again, and check it really follows.
     await page.getByRole('button', { name: '跟随外观' }).click();
-    await page.getByRole('button', { name: '浅色' }).click();
+    await setAppTheme(page, '浅色');
     const followed = await waitForPaper(
       page,
       1,

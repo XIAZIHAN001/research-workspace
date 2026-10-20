@@ -1,5 +1,6 @@
 /* global document, window */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -355,7 +356,7 @@ async function main() {
     );
 
     // ---- Dark theme and a narrow window ------------------------------------
-    await page.getByRole('button', { name: '深色' }).click();
+    await setAppTheme(page, '深色');
     await page.waitForTimeout(300);
     await page.screenshot({ path: fileURLToPath(new URL('03-knowledge-dark.png', SHOT_DIR)) });
     const darkBox = await page.locator('.knowledge').boundingBox();
@@ -364,7 +365,7 @@ async function main() {
       darkBox !== null && darkBox.width <= 1440,
       `${String(Math.round(darkBox?.width ?? 0))}px wide`,
     );
-    await page.getByRole('button', { name: '浅色' }).click();
+    await setAppTheme(page, '浅色');
 
     await page.setViewportSize({ width: 900, height: 900 });
     await page.waitForTimeout(300);

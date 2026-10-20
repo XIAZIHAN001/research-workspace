@@ -1,0 +1,345 @@
+{
+  "generatedAt": "2026-10-19T05:20:55.968Z",
+  "run": "2026-10-19T05-20-44",
+  "provider": "mock (offline, through the real local service)",
+  "providerIdentity": {
+    "ok": true,
+    "instanceId": "9a730968-c134-481c-ab0d-51ac0143cf95",
+    "startedAt": "2026-10-19T05:20:44.853Z",
+    "provider": "mock",
+    "label": "本地模拟（未连接在线模型）",
+    "model": "mock-1",
+    "reasoning": null,
+    "online": false,
+    "budget": {
+      "requests": 50,
+      "tokensPerRequest": 8192,
+      "tokensPerSession": 200000
+    },
+    "pricing": {
+      "model": "mock-1",
+      "known": false,
+      "currency": "CNY",
+      "asOf": "2026-10-18",
+      "source": "https://api-docs.deepseek.com/quick_start/pricing",
+      "note": "没有这个模型的可用价格配置，费用估算不可靠；实际用量由模型服务结算。"
+    },
+    "limits": {
+      "passages": 8,
+      "passageChars": 2000,
+      "totalContextChars": 6000,
+      "questionChars": 1000,
+      "requestsPerMinute": 30,
+      "answerTokens": 8192,
+      "knowledgePassages": 8,
+      "knowledgeContextChars": 9000,
+      "knowledgePages": 6
+    },
+    "usage": {
+      "requests": 0,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "reasoningTokens": 0,
+      "totalTokens": 0,
+      "estimatedCostCny": 0,
+      "costKnown": true,
+      "unknownCostRequests": 0,
+      "exactTokens": true
+    }
+  },
+  "instanceId": "9a730968-c134-481c-ab0d-51ac0143cf95",
+  "environment": {
+    "offlineFlag": true,
+    "aiProviderEnv": null,
+    "deepseekKeyPresent": false
+  },
+  "fixture": "real CC-BY arXiv paper 2610.22294",
+  "passed": 54,
+  "failed": 0,
+  "results": [
+    {
+      "name": "setup: a real PDF is open in the reader",
+      "passed": true,
+      "detail": "1890 chars"
+    },
+    {
+      "name": "entry: the selection toolbar offers the five ways to ask",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "ask: the assistant panel opens from a real selection",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "request: the selected原文 is the primary passage, verbatim",
+      "passed": true,
+      "detail": "86 chars sent"
+    },
+    {
+      "name": "request: it carries the paper identity, the page and the file hash",
+      "passed": true,
+      "detail": "sent {\"id\":\"42a42642-5548-41e9-8258-dd43f652ad25\",\"title\":\"2610.22294\",\"page\":1,\"pdfSha256\":\"8b9ccec04b42a53da4dedc96f01203ba7a1cb3c2a599371f2395186246db8188\"} for 42a42642-554 sha 8b9ccec0"
+    },
+    {
+      "name": "request: it is a structured request, not a chat transcript",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "request: the context is bounded, not the document",
+      "passed": true,
+      "detail": "1134 chars in 3 passages"
+    },
+    {
+      "name": "request: every passage comes from the page being read",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "request: no text from a page the reader is not on",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "citation: following it marks the exact words it quoted",
+      "passed": true,
+      "detail": "[1] 第 1 页 → worst edge 0.0px from the fresh selection"
+    },
+    {
+      "name": "citation: the chip names a page, not a guess",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "privacy: a conversation is not written to storage",
+      "passed": true,
+      "detail": "0 notes stored"
+    },
+    {
+      "name": "note: the explanation is saved through the ordinary annotation path",
+      "passed": true,
+      "detail": "1 notes"
+    },
+    {
+      "name": "note: it is marked as coming from the assistant, with its source",
+      "passed": true,
+      "detail": "origin=assistant source=本地模拟（未连接在线模型）"
+    },
+    {
+      "name": "note: it is anchored to the same words the model was shown",
+      "passed": true,
+      "detail": "85 chars"
+    },
+    {
+      "name": "persistence: the saved note is still there after a reload, marked as AI-assisted",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "persistence: it is drawn as a highlight on the page as well",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "translate: the English shown is exactly what the reader selected",
+      "passed": true,
+      "detail": "21 of 26 chars"
+    },
+    {
+      "name": "translate: a Chinese translation is shown beside it",
+      "passed": true,
+      "detail": "151 chars"
+    },
+    {
+      "name": "translate: it can be folded away so it stops covering the page",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "failure: a provider error is reported, with a retry",
+      "passed": true,
+      "detail": "模型服务返回了错误，这次没有得到回答。\n\n重试"
+    },
+    {
+      "name": "failure: the reader’s notes and highlights are untouched",
+      "passed": true,
+      "detail": "1 notes still stored"
+    },
+    {
+      "name": "retry: retrying re-runs the same question and reports the same failure",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "cancel: stopping a stalled request clears the busy state and leaves the panel usable",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "replay: the saved live failure is shown as the answer it contains",
+      "passed": true,
+      "detail": "3644 chars on screen"
+    },
+    {
+      "name": "replay: no JSON, no protocol fields and no escape sequences reach the reader",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "replay: the formula the model wrote inside it is typeset",
+      "passed": true,
+      "detail": "73 formulas"
+    },
+    {
+      "name": "diagnostics: they are behind a disclosure, closed until the reader opens it",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "diagnostics: opening it names the parse status and the stop reason, in numbers",
+      "passed": true,
+      "detail": "技术细节 解析状态 已还原（按转义结构还原） 结束原因 正常结束 返回长度 3971 字符 引用 7 条，通过 0，丢弃"
+    },
+    {
+      "name": "malformed: a reply with no answer is reported, not printed",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "malformed: it offers a manual retry, and saves nothing",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "malformed: an unreadable reply does not touch the reader’s own work",
+      "passed": true,
+      "detail": "1 notes still stored"
+    },
+    {
+      "name": "incomplete: a cut-off reply is labelled as incomplete, not shown as whole",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "math: a formula in the answer is typeset rather than shown as LaTeX source",
+      "passed": true,
+      "detail": "first formula 16px tall"
+    },
+    {
+      "name": "math: the LaTeX source stays available, and is not silently rewritten",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "math: the answer says the formula is the model’s typesetting, not extracted text",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "math: a formula wider than the panel scrolls inside its own box instead of widening the panel",
+      "passed": true,
+      "detail": "panel overflow 0px, the formula scrolls: true"
+    },
+    {
+      "name": "leak: no credential appears anywhere in the rendered app",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "leak: the built application contains no key or key name",
+      "passed": true,
+      "detail": "1163 KB scanned"
+    },
+    {
+      "name": "service: there is no path through it to anywhere else",
+      "passed": true,
+      "detail": "got 404"
+    },
+    {
+      "name": "service: a foreign origin is refused",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "injection: the paper’s orders travel as a passage, never as an instruction",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "injection: the answer is the provider’s own, not the document’s demand",
+      "passed": true,
+      "detail": "278 chars of the provider’s usual frame"
+    },
+    {
+      "name": "injection: model output containing markup is shown, not executed",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "themes: every visible text run meets its contrast requirement in light",
+      "passed": true,
+      "detail": "61 runs, 0 below their requirement"
+    },
+    {
+      "name": "themes: every visible text run meets its contrast requirement in dark",
+      "passed": true,
+      "detail": "61 runs, 0 below their requirement"
+    },
+    {
+      "name": "log: every line is a structured record, not a dump",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "log: no key and no paper text is recorded",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "log: it does record what was asked, in numbers",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "regression: highlighting still works next to the assistant",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "fragmentation: this page really does store its formula one glyph per span",
+      "passed": true,
+      "detail": "8 single-character spans"
+    },
+    {
+      "name": "fragmentation: the panel says what the model is really being given, before it is sent",
+      "passed": true,
+      "detail": "选中的这段原文在 PDF 文字层里是碎的：10 个片段里有 8 个只有一个字符，公式或符号很可能被拆成了单字。模型拿到的就是这些碎片，不是排版好"
+    },
+    {
+      "name": "calls: exactly one request left the page for each question asked, with no retries",
+      "passed": true,
+      "detail": "13 requests for 13 questions"
+    },
+    {
+      "name": "console: nothing failed except the requests this run broke on purpose",
+      "passed": true,
+      "detail": "0 unexpected, 3 provoked"
+    }
+  ],
+  "consoleIssues": [
+    {
+      "text": "error: Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+      "url": "http://127.0.0.1:4177/api/ai/ask"
+    },
+    {
+      "text": "error: Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+      "url": "http://127.0.0.1:4177/api/ai/ask"
+    },
+    {
+      "text": "error: Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://127.0.0.1:4177/api/ai/not-a-real-endpoint"
+    }
+  ]
+}

@@ -1,0 +1,620 @@
+{
+  "generatedAt": "2026-10-19T11:19:33.889Z",
+  "baseUrl": "http://127.0.0.1:4178/",
+  "viewportMatrix": [
+    "1440x900",
+    "1024x689",
+    "720x820",
+    "800x800"
+  ],
+  "dataIsolation": "Fresh Playwright browser profile; sample state written to localStorage in that profile only; desktop webview data directory is never opened.",
+  "aiBackend": "Tauri IPC stubbed in the browser context; no sidecar, credential store or network call.",
+  "consoleIssues": [],
+  "contrast": [
+    {
+      "label": "home / dark 100",
+      "checked": 33,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 7.88,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @361,34",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"2\" @877,134",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"篇\" @883,134",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "home / dark 0",
+      "checked": 33,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 5.31,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @361,34",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"2\" @877,134",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"篇\" @883,134",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "home / dark 50",
+      "checked": 33,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 6.61,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @361,34",
+          "ratio": 6.93,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"2\" @877,134",
+          "ratio": 6.93,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"篇\" @883,134",
+          "ratio": 6.93,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "home / light",
+      "checked": 33,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 6.35,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @361,34",
+          "ratio": 6.46,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"2\" @877,134",
+          "ratio": 6.46,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"篇\" @883,134",
+          "ratio": 6.46,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "library / dark 100",
+      "checked": 39,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "p.paper-row-file \"没有本地 PDF\" @428,197",
+          "ratio": 7.61,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.paper-row-file \"没有本地 PDF\" @428,317",
+          "ratio": 7.61,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.paper-row-file \"没有本地 PDF\" @428,437",
+          "ratio": 7.61,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 7.88,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "reader / dark 100",
+      "checked": 30,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 7.81,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.notes-count \"0\" @1365,184",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.notes-empty \"在正文里选中文字，就能留下高亮和笔记。\" @1071,228",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "button.btn \"返回\" @320,87",
+          "ratio": 8.26,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "AI settings / dark 100",
+      "checked": 19,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @276,257",
+          "ratio": 8.06,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.settings-choice__text \"使用已配置的在线 API；回答可能产生费用。\" @276,320",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__state \"当前：离线模拟\" @235,360",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__hint \"Key 只通过一次受控 IPC 交给 Rust，\" @235,590",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 33,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "AI settings / dark 0",
+      "checked": 19,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @276,257",
+          "ratio": 5.02,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.settings-choice__text \"使用已配置的在线 API；回答可能产生费用。\" @276,320",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__state \"当前：离线模拟\" @235,360",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__hint \"Key 只通过一次受控 IPC 交给 Rust，\" @235,590",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 33,
+        "scrim": 0
+      }
+    }
+  ],
+  "results": [
+    {
+      "name": "theme: a fresh profile follows the system and defaults to light",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "theme: settings shows the dark level slider and the three theme choices",
+      "passed": true,
+      "detail": "{\"level\":\"100\",\"app\":\"#000000\",\"slider\":\"100\",\"segments\":[\"跟随系统\",\"浅色\",\"深色\"]}"
+    },
+    {
+      "name": "layout: theme controls are absent from the first-level home page",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "sidebar: the avatar sits at the bottom-left",
+      "passed": true,
+      "detail": "{\"inSidebar\":true,\"nearBottom\":true,\"nearLeft\":true}"
+    },
+    {
+      "name": "home: an empty workspace shows no invented rows",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "home: the empty state offers real entry points",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "home: real reading positions are listed, newest first",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "home: every project row is a real project",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "theme: the default dark app background is pure black",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(0, 0, 0)\",\"main\":\"rgb(13, 13, 13)\"}"
+    },
+    {
+      "name": "primary: dark mode uses a near-white button with near-black text",
+      "passed": true,
+      "detail": "{\"foreground\":\"rgb(10, 10, 10)\",\"background\":\"rgb(245, 245, 245)\",\"ratio\":18.16,\"backgroundChannels\":[245,245,245],\"foregroundChannels\":[10,10,10]}"
+    },
+    {
+      "name": "contrast: home / dark 100 — 33 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 7.88"
+    },
+    {
+      "name": "layout: the sidebar sits within the 240–260px target",
+      "passed": true,
+      "detail": "248px"
+    },
+    {
+      "name": "layout: the footer stays inside the sidebar",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: no document-level horizontal overflow",
+      "passed": true,
+      "detail": "1440 / 1440"
+    },
+    {
+      "name": "layout: the main panel has no horizontal overflow",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "dark level 0: app #24 stays neutral and the panels step up",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(36, 36, 36)\",\"main\":\"rgb(49, 49, 49)\",\"panel\":\"rgb(49, 49, 49)\",\"sidebar\":\"#2c2c2c\"}"
+    },
+    {
+      "name": "dark level 25: app #1b stays neutral and the panels step up",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(27, 27, 27)\",\"main\":\"rgb(40, 40, 40)\",\"panel\":\"rgb(40, 40, 40)\",\"sidebar\":\"#232323\"}"
+    },
+    {
+      "name": "dark level 50: app #12 stays neutral and the panels step up",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(18, 18, 18)\",\"main\":\"rgb(31, 31, 31)\",\"panel\":\"rgb(31, 31, 31)\",\"sidebar\":\"#1a1a1a\"}"
+    },
+    {
+      "name": "dark level 75: app #09 stays neutral and the panels step up",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(9, 9, 9)\",\"main\":\"rgb(22, 22, 22)\",\"panel\":\"rgb(22, 22, 22)\",\"sidebar\":\"#111111\"}"
+    },
+    {
+      "name": "dark level 100: app #00 stays neutral and the panels step up",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(0, 0, 0)\",\"main\":\"rgb(13, 13, 13)\",\"panel\":\"rgb(13, 13, 13)\",\"sidebar\":\"#080808\"}"
+    },
+    {
+      "name": "slider: 0 is the lightest dark grey and the value is announced",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "contrast: home / dark 0 — 33 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 5.31"
+    },
+    {
+      "name": "contrast: home / dark 50 — 33 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 6.61"
+    },
+    {
+      "name": "slider: a reload restores the saved level and colours",
+      "passed": true,
+      "detail": "{\"level\":\"50\",\"app\":\"rgb(18, 18, 18)\"}"
+    },
+    {
+      "name": "slider: the restored value is shown in Settings",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "primary: hover raises the button without changing its geometry",
+      "passed": true,
+      "detail": "rgb(255, 255, 255)"
+    },
+    {
+      "name": "primary: press scales to about 0.975 and release settles back",
+      "passed": true,
+      "detail": "matrix(0.975, 0, 0, 0.975, 0, 0) -> none"
+    },
+    {
+      "name": "primary: the disabled state is visibly distinct",
+      "passed": true,
+      "detail": "0.55"
+    },
+    {
+      "name": "theme: light keeps neutral surfaces",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(236, 236, 236)\",\"main\":\"rgb(251, 251, 251)\"}"
+    },
+    {
+      "name": "primary: light mode uses a near-black button with near-white text",
+      "passed": true,
+      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(18, 18, 18)\",\"ratio\":18.73,\"backgroundChannels\":[18,18,18],\"foregroundChannels\":[255,255,255]}"
+    },
+    {
+      "name": "contrast: home / light — 33 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 6.35"
+    },
+    {
+      "name": "system: a live switch to dark applies the saved level",
+      "passed": true,
+      "detail": "{\"theme\":\"dark\",\"level\":\"0\",\"app\":\"rgb(36, 36, 36)\"}"
+    },
+    {
+      "name": "system: switching back to light keeps the level for the next dark session",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "compatibility: a saved Graphite profile becomes level 36 neutral grey",
+      "passed": true,
+      "detail": "{\"level\":\"36\",\"app\":\"rgb(23, 23, 23)\"}"
+    },
+    {
+      "name": "compatibility: a saved Obsidian profile becomes pure black",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "compatibility: a stored level wins over the legacy palette name",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: 1024×689 keeps the footer inside the sidebar",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: 1024×689 has no horizontal overflow",
+      "passed": true,
+      "detail": "1024 / 1024"
+    },
+    {
+      "name": "layout: a 150%-scale equivalent (960×600 CSS) keeps the footer inside",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: a narrow window starts with the sidebar as an overlay",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: the narrow overlay opens and dims the page",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "library: all seeded papers are shown",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "contrast: library / dark 100 — 39 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 7.61"
+    },
+    {
+      "name": "reader: the generated PDF renders in the themed reader",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "contrast: reader / dark 100 — 30 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 7.81"
+    },
+    {
+      "name": "ai settings: the settings window shows both modes as compact rows",
+      "passed": true,
+      "detail": "{\"dialog\":true,\"choices\":2,\"heights\":[62.5,61.5]}"
+    },
+    {
+      "name": "ai settings: the two modes are stacked, not two large cards",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "ai settings: the stats grid keeps two columns",
+      "passed": true,
+      "detail": "2 columns"
+    },
+    {
+      "name": "ai settings: nothing overflows the settings window",
+      "passed": true,
+      "detail": "752 / 990"
+    },
+    {
+      "name": "ai settings: no vendor name is shown",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "ai settings: the mode is stated in neutral words",
+      "passed": true,
+      "detail": "当前：离线模拟"
+    },
+    {
+      "name": "contrast: AI settings / dark 100 — 19 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 8.06"
+    },
+    {
+      "name": "contrast: AI settings / dark 0 — 19 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 5.02"
+    },
+    {
+      "name": "ai settings: narrow windows keep the compact mode rows stacked",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "ai settings: narrow windows stack the budget fields",
+      "passed": true,
+      "detail": "1 columns"
+    },
+    {
+      "name": "ai settings: narrow windows have no horizontal overflow",
+      "passed": true,
+      "detail": "766 / 800"
+    },
+    {
+      "name": "keyboard: Tab reaches a control with a visible focus ring",
+      "passed": true,
+      "detail": "BUTTON 收起侧栏 2px"
+    },
+    {
+      "name": "keyboard: the dark-level slider is reachable and visibly focused",
+      "passed": true,
+      "detail": "{\"visible\":true,\"outlineStyle\":\"solid\",\"outlineWidth\":\"2px\"}"
+    },
+    {
+      "name": "rapid input: slider and theme clicks leave one coherent, persisted state",
+      "passed": true,
+      "detail": "{\"level\":\"100\",\"theme\":\"dark\",\"pref\":\"dark\",\"storedLevel\":\"100\",\"pressed\":1}"
+    },
+    {
+      "name": "rapid input: four sidebar toggles leave one coherent state",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "rapid input: repeated settings visits leave no overlay or stray page behind",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "reduced motion: transitions collapse to the instant end state",
+      "passed": true,
+      "detail": "1e-05s"
+    },
+    {
+      "name": "reduced motion: the ambient layer drops its blur",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "console: no unexpected errors or warnings",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "passed": 64,
+  "failed": 0,
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-19T11-19-06-ui\\"
+}

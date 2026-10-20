@@ -1,131 +1,8 @@
 /*
- * Desktop-only service status. It floats above the interface because the sidecar belongs to
- * the shell, not to any one view; the reader can be in the home, library or graph and still
- * needs to know whether questions can reach a service.
+ * AI service settings, rendered inside the Settings window. The page owns the layout; these
+ * styles only cover the key field, the compact mode list and the cost tables. The interface
+ * never names an upstream vendor — mode labels come from providerLabel.ts.
  */
-.ai-service-badge {
-  position: fixed;
-  right: auto;
-  bottom: 16px;
-  /* Beside the sidebar, not over the right-side reader panels: the assistant's submit button
-     lives at the bottom-right and a status pill there made it un-clickable. */
-  left: calc(var(--sidebar-w) + 16px);
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: min(420px, calc(100vw - var(--sidebar-w) - 32px));
-  padding: 8px 12px;
-  border: 1px solid var(--rim-mid);
-  border-radius: var(--r-sm);
-  color: var(--text-2);
-  font-size: 12px;
-  line-height: 1.4;
-  box-shadow: var(--elev-float);
-  /* The pill is information; only the restart control inside it takes clicks. */
-  pointer-events: none;
-}
-
-.app[data-sidebar='closed'] .ai-service-badge {
-  left: 16px;
-  max-width: min(420px, calc(100vw - 32px));
-}
-
-.ai-service-badge[data-state='ready'] {
-  color: var(--ok);
-}
-
-.ai-service-badge[data-state='failed'] {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
-}
-
-.ai-service-badge[data-state='starting'] {
-  color: var(--warn);
-}
-
-.ai-service-badge__label {
-  flex: none;
-  font-weight: 600;
-}
-
-.ai-service-badge__detail {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-service-badge__restart {
-  flex: none;
-  padding: 3px 8px;
-  font-size: 12px;
-  pointer-events: auto;
-}
-
-@media (max-width: 759px) {
-  .ai-service-badge,
-  .app[data-sidebar='closed'] .ai-service-badge {
-    right: auto;
-    bottom: 12px;
-    left: 12px;
-    max-width: calc(100vw - 24px);
-  }
-
-  .ai-service-badge__detail {
-    display: none;
-  }
-}
-
-/*
- * AI settings. The dialog has to hold two different kinds of statement: a write-only secret
- * field, and the numbers that explain what a session may spend. Sections are separated by a
- * hairline so the key never looks like part of the budget controls.
- *
- * The generic dialog is 440px wide, which is right for a confirmation but clips a two-column
- * mode selector and a stats grid. This dialog therefore widens itself and owns the vertical
- * scroll; the content below only lays out, so there is exactly one scroll container.
- */
-.dialog:has(.ai-settings) {
-  width: min(780px, calc(100vw - 32px));
-  max-height: min(88vh, 900px);
-  overflow-y: auto;
-  /* A dense settings panel, not a floating card: the page behind must not show through the
-     labels and values. The sheen keeps the material feel without a translucent base. */
-  background: linear-gradient(162deg, var(--sheen), transparent 42%), var(--bg-base);
-  backdrop-filter: blur(28px) saturate(1.2);
-}
-
-.ai-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  padding-right: 2px;
-}
-
-.ai-settings__section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.ai-settings__section:last-of-type {
-  border-bottom: 0;
-}
-
-.ai-settings h3 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .ai-settings__hint {
   margin: 0;
   color: var(--text-3);
@@ -141,49 +18,6 @@
   color: var(--text-2);
   font-size: 12.5px;
   line-height: 1.6;
-}
-
-.ai-mode-choices {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.ai-mode-card {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 4px 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--field-edge);
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--text-2);
-  text-align: left;
-  cursor: pointer;
-}
-
-.ai-mode-card[data-active='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--text);
-}
-
-.ai-mode-card:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.ai-mode-card__title {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.ai-mode-card__text {
-  grid-column: 1 / -1;
-  color: var(--text-3);
-  font-size: 11.5px;
-  line-height: 1.5;
 }
 
 .ai-settings__state {
@@ -245,7 +79,7 @@
   padding: 7px 9px;
   border: 1px solid var(--field-edge);
   border-radius: var(--r-sm);
-  background: var(--glass-fill);
+  background: var(--input-fill);
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
@@ -254,6 +88,10 @@
 .ai-settings__field input:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
+}
+
+.ai-settings__field input::placeholder {
+  color: var(--text-2);
 }
 
 .ai-settings__actions {
@@ -339,15 +177,6 @@
 }
 
 @media (max-width: 900px) {
-  .dialog:has(.ai-settings) {
-    width: calc(100vw - 16px);
-  }
-
-  .ai-settings {
-    width: 100%;
-  }
-
-  .ai-mode-choices,
   .ai-settings__stats,
   .ai-settings__budget {
     grid-template-columns: 1fr;

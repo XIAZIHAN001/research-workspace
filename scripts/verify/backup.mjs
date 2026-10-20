@@ -1,5 +1,6 @@
 /* global document, window */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -452,7 +453,7 @@ async function main() {
     await toProject(page, PROJECT_A);
 
     // ---- Theme, then export ------------------------------------------------
-    await page.getByRole('button', { name: '深色' }).click();
+    await setAppTheme(page, '深色');
     await page.waitForTimeout(300);
     const beforeExport = await page.evaluate(() =>
       JSON.stringify({

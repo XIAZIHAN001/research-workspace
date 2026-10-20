@@ -1,0 +1,200 @@
+{
+  "generatedAt": "2026-10-18T09:58:50.263Z",
+  "runStamp": "2026-10-18T09-58-41",
+  "passed": 1,
+  "failed": 1,
+  "details": {
+    "readerDebug": {
+      "jump": "5",
+      "pages": [
+        {
+          "page": "1",
+          "spans": 0
+        },
+        {
+          "page": "2",
+          "spans": 0
+        },
+        {
+          "page": "3",
+          "spans": 0
+        },
+        {
+          "page": "4",
+          "spans": 0
+        },
+        {
+          "page": "5",
+          "spans": 0
+        },
+        {
+          "page": "6",
+          "spans": 0
+        },
+        {
+          "page": "7",
+          "spans": 0
+        },
+        {
+          "page": "8",
+          "spans": 0
+        },
+        {
+          "page": "9",
+          "spans": 0
+        },
+        {
+          "page": "10",
+          "spans": 0
+        },
+        {
+          "page": "11",
+          "spans": 0
+        },
+        {
+          "page": "12",
+          "spans": 0
+        },
+        {
+          "page": "13",
+          "spans": 0
+        },
+        {
+          "page": "14",
+          "spans": 0
+        },
+        {
+          "page": "15",
+          "spans": 0
+        },
+        {
+          "page": "16",
+          "spans": 0
+        },
+        {
+          "page": "17",
+          "spans": 0
+        },
+        {
+          "page": "18",
+          "spans": 0
+        },
+        {
+          "page": "19",
+          "spans": 0
+        },
+        {
+          "page": "20",
+          "spans": 0
+        },
+        {
+          "page": "21",
+          "spans": 0
+        },
+        {
+          "page": "22",
+          "spans": 0
+        },
+        {
+          "page": "23",
+          "spans": 0
+        },
+        {
+          "page": "24",
+          "spans": 0
+        },
+        {
+          "page": "25",
+          "spans": 0
+        },
+        {
+          "page": "26",
+          "spans": 0
+        },
+        {
+          "page": "27",
+          "spans": 0
+        },
+        {
+          "page": "28",
+          "spans": 0
+        },
+        {
+          "page": "29",
+          "spans": 0
+        },
+        {
+          "page": "30",
+          "spans": 0
+        },
+        {
+          "page": "31",
+          "spans": 0
+        },
+        {
+          "page": "32",
+          "spans": 0
+        },
+        {
+          "page": "33",
+          "spans": 0
+        }
+      ]
+    },
+    "aiRequests": [
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-CJLTtrGn.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf-Bb557k4W.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min--Ao2iAXA.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "setup: the core paper is a real multi-page PDF, not a placeholder",
+        "passed": true,
+        "detail": "33 pages, 1452162 bytes"
+      },
+      {
+        "name": "run: the research workflow finished without an exception",
+        "passed": false,
+        "detail": "the page does not contain the quotation: Common strategies select positions by prediction confidence \n{\"miss\":true,\"length\":392,\"probe\":\"Common strategies select\",\"near\":\"Initial canvas Follow  the  examples: pig  eel  yak  ->  eel  pig  yak owl  ram  hen  ->  hen  owl  ram dog  bee  cat  -> [M] [M] [M] fox  cow  ant  -> [M] [M] [M] After round 1 Follow  the  examples: pig  eel  yak  ->  eel  pig  yak owl  r\"}"
+      }
+    ]
+  }
+}

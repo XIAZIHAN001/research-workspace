@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import type { AiHealth } from '../../services/ai/types';
+import { providerDisplayLabel } from '../ai/providerLabel';
 import type {
   KnowledgeAnalysis,
   KnowledgeConceptSuggestion,
@@ -538,8 +539,8 @@ function AnalysisSuggestions({
         模型补写的公式是模型解释，不是 PDF 原文。
       </p>
       <p className="knowledge-source">
-        来源：{analysis.providerLabel} · {analysis.model === '' ? '未知模型' : analysis.model} ·
-        规则 {analysis.rulesVersion === '' ? '未标注' : analysis.rulesVersion}
+        来源：{providerDisplayLabel(analysis.providerLabel)} · 规则{' '}
+        {analysis.rulesVersion === '' ? '未标注' : analysis.rulesVersion}
       </p>
 
       {report !== null && report.skipped.length > 0 && (

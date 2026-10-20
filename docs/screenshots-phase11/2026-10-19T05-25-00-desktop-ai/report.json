@@ -1,0 +1,196 @@
+{
+  "phase": 11,
+  "generatedAt": "2026-10-19T05:25:15.891Z",
+  "executable": "D:\\Research Workspace\\research-workspace.exe",
+  "version": "0.11.0",
+  "keyConfiguredBefore": false,
+  "results": [
+    {
+      "name": "找到桌面应用可执行文件",
+      "passed": true,
+      "detail": "D:\\Research Workspace\\research-workspace.exe"
+    },
+    {
+      "name": "安装版本为 0.11.0",
+      "passed": true,
+      "detail": "0.11.0"
+    },
+    {
+      "name": "启动后默认离线 Mock",
+      "passed": true,
+      "detail": "AI 就绪 · 离线 Mock"
+    },
+    {
+      "name": "正式应用数据可读",
+      "passed": true,
+      "detail": "项目 11、论文 21、笔记 12、概念 12"
+    },
+    {
+      "name": "应用数据目录存在",
+      "passed": true,
+      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop\\webview"
+    },
+    {
+      "name": "AI 设置可从侧栏打开",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "默认显示离线模式",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Key 输入框接收一次性输入",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Key 已显示为已配置（不回显明文）",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "设置界面不显示 Key 明文",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Windows 凭据管理器存在固定目标",
+      "passed": true,
+      "detail": "ResearchWorkspace/DeepSeekApiKey"
+    },
+    {
+      "name": "Key 不在 LocalStorage",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Key 不在普通 JSON 配置",
+      "passed": true,
+      "detail": "C:\\Users\\xiaziihan\\AppData\\Roaming\\com.researchworkspace.desktop\\ai-preferences.json"
+    },
+    {
+      "name": "Key 不在 WebView2 数据目录",
+      "passed": true,
+      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop\\webview"
+    },
+    {
+      "name": "Key 不在页面可见文本或标题",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "切换在线模式前有费用确认",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "在线模式已启动 DeepSeek Provider",
+      "passed": true,
+      "detail": "AI 就绪 · DeepSeek 在线 · deepseek-flash"
+    },
+    {
+      "name": "在线模式显示模型名称",
+      "passed": true,
+      "detail": "AI 就绪 · DeepSeek 在线 · deepseek-flash"
+    },
+    {
+      "name": "在线模式使用官方端点（健康状态由服务自报）",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "切换在线模式未自动发起模型请求",
+      "passed": true,
+      "detail": "0 / 50"
+    },
+    {
+      "name": "可切回离线 Mock",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "重启后仍默认离线 Mock",
+      "passed": true,
+      "detail": "AI 就绪 · 离线 Mock"
+    },
+    {
+      "name": "重启后系统凭据仍在",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "删除后状态为未配置",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "Windows 凭据目标已删除",
+      "passed": true,
+      "detail": "ResearchWorkspace/DeepSeekApiKey"
+    },
+    {
+      "name": "删除后模式回到离线 Mock",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "第二次启动的进程自行退出",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "只有一个应用进程",
+      "passed": true,
+      "detail": "1"
+    },
+    {
+      "name": "只有一个 sidecar",
+      "passed": true,
+      "detail": "pids=23660"
+    },
+    {
+      "name": "第二次启动把已有窗口带回前台",
+      "passed": true,
+      "detail": "focused"
+    },
+    {
+      "name": "主窗口句柄未变",
+      "passed": true,
+      "detail": "handle=22482044"
+    },
+    {
+      "name": "第二次启动后原窗口仍可交互",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "模式与凭据操作没有改动项目数据",
+      "passed": true,
+      "detail": "{\"schema\":5,\"projects\":11,\"papers\":21,\"annotations\":12,\"knowledgeVersion\":2,\"concepts\":12,\"relations\":3,\"rejections\":1}"
+    },
+    {
+      "name": "知识 schema 仍为 v2",
+      "passed": true,
+      "detail": "version=2"
+    },
+    {
+      "name": "控制台无错误",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "关闭重开后项目数据保持",
+      "passed": true,
+      "detail": "{\"schema\":5,\"projects\":11,\"papers\":21,\"annotations\":12,\"knowledgeVersion\":2,\"concepts\":12,\"relations\":3,\"rejections\":1}"
+    },
+    {
+      "name": "删除的凭据没有被重启恢复",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "failures": 0,
+  "consoleIssues": []
+}

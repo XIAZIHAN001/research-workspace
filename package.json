@@ -41,6 +41,8 @@
     "verify:desktop-phase11": "node scripts/verify/desktop-phase11.mjs",
     "verify:desktop-online-sim": "node scripts/verify/desktop-online-sim.mjs",
     "verify:desktop-isolated": "node scripts/verify/desktop-isolated.mjs",
+    "verify:ui-phase12": "node scripts/verify/ui-phase12.mjs",
+    "verify:ui-phase12-desktop": "node scripts/verify/ui-phase12-desktop.mjs",
     "verify:cleanup-list": "node scripts/verify/cleanup-inventory.mjs",
     "verify:export-backup": "node scripts/verify/export-backup.mjs",
     "desktop:prepare": "node scripts/desktop/prepare-sidecar.mjs",

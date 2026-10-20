@@ -1,0 +1,499 @@
+{
+  "generatedAt": "2026-10-18T10:22:40.715Z",
+  "runStamp": "2026-10-18T10-22-21",
+  "passed": 29,
+  "failed": 0,
+  "details": {
+    "replay11Header": "模型提出 6 个概念、10 条关系； 已作为建议加入 6 个概念、10 条关系。",
+    "quoteCounts11": [
+      1,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "after11": {
+      "concepts": 8,
+      "relations": 11,
+      "evidence": 4
+    },
+    "replay05Header": "模型提出 6 个概念、8 条关系； 已作为建议加入 3 个概念、6 条关系。",
+    "reuse05": {
+      "after05": {
+        "concepts": 11,
+        "relations": 17,
+        "evidence": 10
+      },
+      "names05": [
+        "Time Series Language Model",
+        "Language Model",
+        "Complementary Representations",
+        "Inductive Bias",
+        "Line Plot",
+        "Normalized Delay Embedding",
+        "Dual-Tower Architecture",
+        "Measurement Frame",
+        "折线图（line plots）",
+        "视觉 token 压缩与多级特征融合",
+        "单主表示局限（single primary representation）"
+      ]
+    },
+    "repeat": {
+      "beforeRepeat": {
+        "concepts": 11,
+        "relations": 16,
+        "evidence": 9
+      },
+      "afterRepeat": {
+        "concepts": 11,
+        "relations": 17,
+        "evidence": 10
+      }
+    },
+    "replay12Header": "模型提出 6 个概念、7 条关系； 已作为建议加入 6 个概念、7 条关系。",
+    "quoteCounts12": [
+      {
+        "text": "前置知识原文直接支持要理解 Diffusion language models (DLMs)，需要先理解 Shared canvas模型解释原文把“可在共享画布任意位置生成 token”作为 DLM 的定义性能力，理解 DLM 需先理解共享",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识原文直接支持要理解 Diffusion language models (DLMs)，需要先理解 In-place editing / infilling of masked regions模型解释原文称 DLM 为这类任务提供自然",
+        "quotes": 2
+      },
+      {
+        "text": "相关模型推断Multi-target few-shot prompting 与 Diffusion language models (DLMs) 相关（无方向）模型解释论文把多目标少样本提示与扩散语言模型结合为同一方法名，二者是组合使用关系",
+        "quotes": 0
+      },
+      {
+        "text": "前置知识原文直接支持要理解 Diffusion language models (DLMs)，需要先理解 Shared canvas模型解释原文把“可在共享画布任意位置生成 token”作为 DLM 的定义性能力，理解 DLM 需先理解共享",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断要理解 Shared canvas，需要先理解 Bidirectional context conditioning模型解释原文由“可在画布任意位置生成”推出每个 token 可同时以左右上下文为条件；这是推断出的因果链，原",
+        "quotes": 1
+      },
+      {
+        "text": "相关原文直接支持Autoregressive models 与 In-place editing / infilling of masked regions 相关（无方向）模型解释原文将自回归模型与就地编辑对照：前者受因果方向限制，现有引导",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断要理解 Shared canvas，需要先理解 Bidirectional context conditioning模型解释原文由“可在画布任意位置生成”推出每个 token 可同时以左右上下文为条件；这是推断出的因果链，原",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断要理解 Bidirectional context conditioning，需要先理解 In-place editing / infilling of masked regions模型解释原文指出编辑依赖左右上下文，而因果",
+        "quotes": 0
+      },
+      {
+        "text": "前置知识模型推断要理解 Bidirectional context conditioning，需要先理解 In-place editing / infilling of masked regions模型解释原文指出编辑依赖左右上下文，而因果",
+        "quotes": 0
+      },
+      {
+        "text": "前置知识原文直接支持要理解 Diffusion language models (DLMs)，需要先理解 In-place editing / infilling of masked regions模型解释原文称 DLM 为这类任务提供自然",
+        "quotes": 2
+      },
+      {
+        "text": "相关原文直接支持Autoregressive models 与 In-place editing / infilling of masked regions 相关（无方向）模型解释原文将自回归模型与就地编辑对照：前者受因果方向限制，现有引导",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断要理解 Multi-target few-shot prompting，需要先理解 In-place editing / infilling of masked regions模型解释该提示设定以示例引导多个掩码区域的填充，",
+        "quotes": 0
+      },
+      {
+        "text": "前置知识模型推断要理解 Multi-target few-shot prompting，需要先理解 In-place editing / infilling of masked regions模型解释该提示设定以示例引导多个掩码区域的填充，",
+        "quotes": 0
+      },
+      {
+        "text": "相关模型推断Multi-target few-shot prompting 与 Diffusion language models (DLMs) 相关（无方向）模型解释论文把多目标少样本提示与扩散语言模型结合为同一方法名，二者是组合使用关系",
+        "quotes": 0
+      },
+      {
+        "text": "Diffusion language models (DLMs)原文直接支持有逐字引文一类不局限于下一词预测、可在共享画布上任意位置生成 token 的语言模型；掩码扩散模型通过迭代解掩码位置实现灵活生成顺序与并行解码。第 2 页2610.",
+        "quotes": 1
+      },
+      {
+        "text": "Shared canvas原文直接支持有逐字引文DLM 中演示、上下文与待生成区域共处的同一序列空间；生成 token 可位于其中任意被掩码的位置。第 2 页2610.22294“can generate tokens anywhere o",
+        "quotes": 1
+      },
+      {
+        "text": "In-place editing / infilling of masked regions原文直接支持有逐字引文在原文中就地填补被掩码的输出区域，而非从头续写；是编辑示例任务的核心操作形式。第 2 页2610.22294“the miss",
+        "quotes": 1
+      },
+      {
+        "text": "Bidirectional context conditioning原文直接支持有逐字引文每个生成 token 可同时以左侧和右侧上下文为条件，这是就地编辑所依赖的性质。第 2 页2610.22294“Each generated toke",
+        "quotes": 1
+      },
+      {
+        "text": "Autoregressive models原文直接支持有逐字引文按下一词预测逐位生成的模型；受因果方向限制，处理依赖左右上下文的编辑较为别扭，且现有引导方法主要为其设计。第 2 页2610.22294“they are primarily ",
+        "quotes": 1
+      },
+      {
+        "text": "Multi-target few-shot prompting模型推断待验证：无逐字引文用示例引导多个被掩码区域同时填充的少样本提示设定，是论文提出的任务形式。确认概念忽略在知识视图中打开",
+        "quotes": 0
+      },
+      {
+        "text": "前置知识原文直接支持有逐字引文要理解 Diffusion language models (DLMs)，需要先理解 Shared canvas模型解释原文把“可在共享画布任意位置生成 token”作为 DLM 的定义性能力，理解 DLM 需",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断有逐字引文要理解 Shared canvas，需要先理解 Bidirectional context conditioning模型解释原文由“可在画布任意位置生成”推出每个 token 可同时以左右上下文为条件；这是推断出的",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断待验证：无逐字引文要理解 Bidirectional context conditioning，需要先理解 In-place editing / infilling of masked regions模型解释原文指出编辑依赖",
+        "quotes": 0
+      },
+      {
+        "text": "前置知识原文直接支持有逐字引文要理解 Diffusion language models (DLMs)，需要先理解 In-place editing / infilling of masked regions模型解释原文称 DLM 为这类任",
+        "quotes": 2
+      },
+      {
+        "text": "相关原文直接支持有逐字引文Autoregressive models 与 In-place editing / infilling of masked regions 相关（无方向）模型解释原文将自回归模型与就地编辑对照：前者受因果方向限制",
+        "quotes": 1
+      },
+      {
+        "text": "前置知识模型推断待验证：无逐字引文要理解 Multi-target few-shot prompting，需要先理解 In-place editing / infilling of masked regions模型解释该提示设定以示例引导多",
+        "quotes": 0
+      },
+      {
+        "text": "相关模型推断待验证：无逐字引文Multi-target few-shot prompting 与 Diffusion language models (DLMs) 相关（无方向）模型解释论文把多目标少样本提示与扩散语言模型结合为同一方法名，",
+        "quotes": 0
+      }
+    ],
+    "aiRequests": [
+      "http://127.0.0.1:4182/",
+      "http://127.0.0.1:4182/theme-init.js",
+      "http://127.0.0.1:4182/assets/index-CCYJ-Q6x.js",
+      "http://127.0.0.1:4182/assets/index-BKRhiwLk.css",
+      "http://127.0.0.1:4182/favicon.svg",
+      "http://127.0.0.1:4182/avatar/default.svg",
+      "http://127.0.0.1:4182/assets/pdf-CaDJ7vgu.js",
+      "http://127.0.0.1:4182/assets/pdf.worker.min--Ao2iAXA.js",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/",
+      "http://127.0.0.1:4182/theme-init.js",
+      "http://127.0.0.1:4182/assets/index-CCYJ-Q6x.js",
+      "http://127.0.0.1:4182/assets/index-BKRhiwLk.css",
+      "http://127.0.0.1:4182/favicon.svg",
+      "http://127.0.0.1:4182/avatar/default.svg",
+      "http://127.0.0.1:4182/assets/pdf-CaDJ7vgu.js",
+      "http://127.0.0.1:4182/assets/pdf.worker.min--Ao2iAXA.js",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/api/ai/health",
+      "http://127.0.0.1:4182/api/ai/knowledge",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/api/ai/health",
+      "http://127.0.0.1:4182/api/ai/knowledge",
+      "http://127.0.0.1:4182/api/ai/knowledge",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/assets/pdf.worker.min-CjEcRF4W.mjs",
+      "http://127.0.0.1:4182/api/ai/health",
+      "http://127.0.0.1:4182/api/ai/knowledge"
+    ],
+    "analysisResponses": [
+      {
+        "status": "valid",
+        "concepts": 6,
+        "relations": 10,
+        "rejected": 0,
+        "rejectedDetails": [],
+        "diagnostics": {
+          "rawChars": 3647,
+          "contextChars": 1785,
+          "smallContext": false,
+          "smallContextLimited": 0,
+          "conceptsKept": 6,
+          "relationsKept": 10,
+          "evidenceKept": 4,
+          "rejected": 0,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 4,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      {
+        "status": "valid",
+        "concepts": 6,
+        "relations": 8,
+        "rejected": 1,
+        "rejectedDetails": [
+          {
+            "code": "quote-shape",
+            "label": "s1",
+            "message": "引文为空、过短或过长。"
+          }
+        ],
+        "diagnostics": {
+          "rawChars": 4214,
+          "contextChars": 2348,
+          "smallContext": false,
+          "smallContextLimited": 0,
+          "conceptsKept": 6,
+          "relationsKept": 8,
+          "evidenceKept": 7,
+          "rejected": 1,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 2,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      {
+        "status": "valid",
+        "concepts": 6,
+        "relations": 8,
+        "rejected": 1,
+        "rejectedDetails": [
+          {
+            "code": "quote-shape",
+            "label": "s1",
+            "message": "引文为空、过短或过长。"
+          }
+        ],
+        "diagnostics": {
+          "rawChars": 4214,
+          "contextChars": 2819,
+          "smallContext": false,
+          "smallContextLimited": 0,
+          "conceptsKept": 6,
+          "relationsKept": 8,
+          "evidenceKept": 7,
+          "rejected": 1,
+          "matchedExisting": 3,
+          "nameNotVerbatim": 0,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      {
+        "status": "valid",
+        "concepts": 6,
+        "relations": 7,
+        "rejected": 0,
+        "rejectedDetails": [],
+        "diagnostics": {
+          "rawChars": 4038,
+          "contextChars": 2313,
+          "smallContext": false,
+          "smallContextLimited": 0,
+          "conceptsKept": 6,
+          "relationsKept": 7,
+          "evidenceKept": 10,
+          "rejected": 0,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "offline: the page is served by this run’s replay provider, which reports online=false",
+        "passed": true,
+        "detail": "replay · online=false"
+      },
+      {
+        "name": "replay 11: six concepts and ten relations arrive through the real service",
+        "passed": true,
+        "detail": "模型提出 6 个概念、10 条关系； 已作为建议加入 6 个概念、10 条关系。"
+      },
+      {
+        "name": "replay 11: the result is labelled as the offline replay, not as a mock",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 11: long English technical names survive",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 11: the quotations that fall inside this run’s context survive",
+        "passed": true,
+        "detail": "max 1 quotes"
+      },
+      {
+        "name": "replay 11: quotations outside this run’s context are left out, not given a placeholder id",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 11: the reader accepted one concept and one relation explicitly",
+        "passed": true,
+        "detail": "Complementary Representations · 要理解 Complementary Representations，需要先理解 "
+      },
+      {
+        "name": "replay 11: the existing concept was reused, so only the six proposed concepts were added",
+        "passed": true,
+        "detail": "8 concepts total"
+      },
+      {
+        "name": "replay 11: the accepted relation appears with its support and explanation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 11: the concept detail lists the verified quotations",
+        "passed": true,
+        "detail": "1 occurrence(s)"
+      },
+      {
+        "name": "replay 11: a quotation opens the paper with the quoted words marked",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 11: returning keeps the concept selected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "layout: the replay result does not overflow in dark mode",
+        "passed": true,
+        "detail": "1000px wide"
+      },
+      {
+        "name": "layout: the replay result reflows in a narrow window without sideways overflow",
+        "passed": true,
+        "detail": "526px wide, overflow 0px"
+      },
+      {
+        "name": "replay 05: six concepts and eight relations arrive through the real service",
+        "passed": true,
+        "detail": "模型提出 6 个概念、8 条关系； 已作为建议加入 3 个概念、6 条关系。"
+      },
+      {
+        "name": "replay 05: the long Chinese names are shown as the model wrote them",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 05: three concepts matched the existing English ones by alias; only three nodes were added",
+        "passed": true,
+        "detail": "11 concepts, 11 names"
+      },
+      {
+        "name": "replay 05: the invalid quotation is reported as dropped",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 05: the dropped quotation never becomes evidence",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 05: ignoring a relation removes that suggestion only",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "repeat: re-running the same reply adds no duplicate concept node",
+        "passed": true,
+        "detail": "11→11 concepts"
+      },
+      {
+        "name": "repeat: existing relations are skipped; only the one explicitly ignored may return",
+        "passed": true,
+        "detail": "16→17 relations"
+      },
+      {
+        "name": "repeat: the interface says the duplicates were skipped rather than silently dropped",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 12: six concepts and seven relations arrive through the real service",
+        "passed": true,
+        "detail": "模型提出 6 个概念、7 条关系； 已作为建议加入 6 个概念、7 条关系。"
+      },
+      {
+        "name": "replay 12: one relation shows two verified quotations from the selection",
+        "passed": true,
+        "detail": "2 quotes on one row"
+      },
+      {
+        "name": "replay 12: the multi-evidence relation is the DLM → in-place editing edge",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "replay 12: the relation keeps its support and explanation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "offline: every browser request went to the preview or the local replay service",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "console: no unexpected errors or warnings",
+        "passed": true,
+        "detail": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "generatedAt": "2026-10-19T11:23:16.241Z",
+  "passed": 26,
+  "failed": 0,
+  "results": [
+    {
+      "name": "selection: the toolbar appears over a multi-line selection",
+      "passed": true,
+      "detail": "LEFT-HEADING The left column starts here and con"
+    },
+    {
+      "name": "highlight: exactly one annotation was saved",
+      "passed": true,
+      "detail": "1"
+    },
+    {
+      "name": "highlight: it records the file hash, the page and the text",
+      "passed": true,
+      "detail": "page 1, 136 chars, hash matches, hasHead true, hasTail true, quote \"LEFT-HEADING The left column starts here… the same column without\""
+    },
+    {
+      "name": "highlight: it keeps context on both sides of the quote",
+      "passed": true,
+      "detail": "prefix \"A Two Column Layout \" suffix \" touching the other column at all. RIGHT\""
+    },
+    {
+      "name": "highlight: the boxes are stored as fractions of the page",
+      "passed": true,
+      "detail": "8 boxes"
+    },
+    {
+      "name": "highlight: what is drawn sits exactly on the selected text",
+      "passed": true,
+      "detail": "8 boxes, worst edge off by 0.0px"
+    },
+    {
+      "name": "highlight: selecting the same lines again reproduces the same box",
+      "passed": true,
+      "detail": "off by 0.0px"
+    },
+    {
+      "name": "note: the panel shows the note with its kind and page",
+      "passed": true,
+      "detail": "2 items"
+    },
+    {
+      "name": "notes: going back to a note marks the highlight it belongs to",
+      "passed": true,
+      "detail": "first note is about \"LEFT-HEADING The left column s…\""
+    },
+    {
+      "name": "notes: an edit is saved with the new kind",
+      "passed": true,
+      "detail": "question / 改成：疑问，为什么先左后右。"
+    },
+    {
+      "name": "reload: the highlight is drawn again in the same place on the page",
+      "passed": true,
+      "detail": "off by 0.0‰ of the page"
+    },
+    {
+      "name": "reload: the notes are still listed",
+      "passed": true,
+      "detail": "2 items"
+    },
+    {
+      "name": "zoom: the page grows and the highlight stays on the same words",
+      "passed": true,
+      "detail": "710px → 744px, box off by 0.0‰"
+    },
+    {
+      "name": "zoom: the drawn boxes still match a fresh selection of the same words",
+      "passed": true,
+      "detail": "off by 1.2px"
+    },
+    {
+      "name": "theme: the highlight is still painted in dark mode",
+      "passed": true,
+      "detail": "rgba(118, 190, 132, 0.34)"
+    },
+    {
+      "name": "library: the project picker takes the chosen project",
+      "passed": true,
+      "detail": "picker on 80c84168…"
+    },
+    {
+      "name": "reuse: opening the same paper from another project shows the same notes",
+      "passed": true,
+      "detail": "2 notes"
+    },
+    {
+      "name": "repeated text: the fixture really has the sentence twice",
+      "passed": true,
+      "detail": "spans 6 and 7"
+    },
+    {
+      "name": "repeated text: the stored context is enough to tell the two apart",
+      "passed": true,
+      "detail": "prefix \"试 REPEATED-SENTENCE-ALPHA on this page. \""
+    },
+    {
+      "name": "repeated text: the context resolves it, so no ambiguity is reported",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "repeated text: an anchor without context is reported, not guessed",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "replacement: the old notes are still stored",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "replacement: they are listed as belonging to another file, and not drawn",
+      "passed": true,
+      "detail": "0 highlights drawn"
+    },
+    {
+      "name": "delete: cancelling keeps the note",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "delete: confirming removes exactly that note",
+      "passed": true,
+      "detail": "3 → 2"
+    },
+    {
+      "name": "console: no errors, warnings or page exceptions",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "consoleIssues": []
+}

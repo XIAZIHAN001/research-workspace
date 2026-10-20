@@ -1,0 +1,394 @@
+{
+  "generatedAt": "2026-10-19T11:21:16.443Z",
+  "source": "Tauri development window over CDP on 127.0.0.1:9555",
+  "window": {
+    "cssViewport": "1024×689",
+    "devicePixelRatio": 1.875,
+    "note": "The real WebView2 window; outline widths are rounded to whole device pixels."
+  },
+  "dataIsolation": "Development identifier com.researchworkspace.desktop.dev; the installed application and its webview directory were not opened. The profile was restored to its starting theme.",
+  "aiBackend": "The running development app, which starts in offline Mock. No mode switch, key operation or model request was performed.",
+  "consoleIssues": [],
+  "contrast": [
+    {
+      "label": "desktop home / dark 0",
+      "checked": 32,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 5.39,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @299,34",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p \"还没有开始阅读的论文。去论文库挑一篇开始。\" @321,253",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"3\" @947,180",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "desktop home / dark 100",
+      "checked": 32,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 8,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @299,34",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p \"还没有开始阅读的论文。去论文库挑一篇开始。\" @321,253",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"3\" @947,180",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "desktop home / light",
+      "checked": 32,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 6.35,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.home-kicker \"Research Workspace\" @299,34",
+          "ratio": 6.46,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p \"还没有开始阅读的论文。去论文库挑一篇开始。\" @321,253",
+          "ratio": 6.46,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.home-panel-count \"3\" @947,180",
+          "ratio": 6.46,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "desktop AI settings / dark 100",
+      "checked": 16,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @276,256",
+          "ratio": 8.06,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__state \"当前：离线模拟\" @235,357",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__credential \"未配置 API Key。\" @255,449",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__hint \"Key 只通过一次受控 IPC 交给 Rust，\" @235,587",
+          "ratio": 8.17,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 33,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "desktop AI settings / dark 0",
+      "checked": 16,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @276,256",
+          "ratio": 5.02,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__state \"当前：离线模拟\" @235,357",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__credential \"未配置 API Key。\" @255,449",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.ai-settings__hint \"Key 只通过一次受控 IPC 交给 Rust，\" @235,587",
+          "ratio": 5.47,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 33,
+        "scrim": 0
+      }
+    },
+    {
+      "label": "desktop reader / dark 100",
+      "checked": 23,
+      "failures": [],
+      "lowest": [
+        {
+          "label": "span.rail-count \"1\" @988,411",
+          "ratio": 7.81,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "h2.group-title \"项目\" @28,155",
+          "ratio": 7.94,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "button.btn \"返回\" @320,34",
+          "ratio": 7.95,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "span.reader-page-total \"/\" @944,34",
+          "ratio": 7.95,
+          "need": 4.5,
+          "translucent": false
+        }
+      ],
+      "skipped": {
+        "modal": 0,
+        "scrim": 0
+      }
+    }
+  ],
+  "results": [
+    {
+      "name": "desktop: the window is running the development UI over the dev server",
+      "passed": true,
+      "detail": "http://127.0.0.1:1440/"
+    },
+    {
+      "name": "desktop: Settings › 外观 holds the three theme choices and the level slider",
+      "passed": true,
+      "detail": "{\"segments\":[\"跟随系统\",\"浅色\",\"深色\"],\"slider\":\"100\",\"sliderBlock\":269.9000244140625}"
+    },
+    {
+      "name": "desktop: the first-level home page has no theme controls",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: the avatar sits at the bottom-left of the sidebar",
+      "passed": true,
+      "detail": "{\"inSidebar\":true,\"nearBottom\":true,\"nearLeft\":true}"
+    },
+    {
+      "name": "desktop: the sidebar measures within 240–260px",
+      "passed": true,
+      "detail": "248.00001525878906px"
+    },
+    {
+      "name": "desktop: footer controls stay inside the sidebar",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop: no horizontal overflow in the window",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop theme: choosing dark keeps the control on dark",
+      "passed": true,
+      "detail": "{\"theme\":\"dark\",\"level\":\"100\"}"
+    },
+    {
+      "name": "desktop theme: level 0 paints a neutral app and panel",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(36, 36, 36)\",\"main\":\"rgb(49, 49, 49)\"}"
+    },
+    {
+      "name": "contrast: desktop home / dark 0 — 32 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 5.39"
+    },
+    {
+      "name": "desktop theme: level 50 paints a neutral app and panel",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(18, 18, 18)\",\"main\":\"rgb(31, 31, 31)\"}"
+    },
+    {
+      "name": "desktop theme: level 100 paints a neutral app and panel",
+      "passed": true,
+      "detail": "{\"app\":\"rgb(0, 0, 0)\",\"main\":\"rgb(13, 13, 13)\"}"
+    },
+    {
+      "name": "contrast: desktop home / dark 100 — 32 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 8"
+    },
+    {
+      "name": "desktop primary: white button, near-black label, AA contrast",
+      "passed": true,
+      "detail": "{\"foreground\":\"rgb(10, 10, 10)\",\"background\":\"rgb(245, 245, 245)\",\"backgroundChannels\":[245,245,245],\"foregroundChannels\":[10,10,10],\"ratio\":18.16}"
+    },
+    {
+      "name": "desktop theme: light stays neutral and inverts the primary button",
+      "passed": true,
+      "detail": "{\"light\":{\"theme\":\"light\",\"level\":\"100\",\"style\":\"obsidian\",\"app\":{\"css\":\"rgb(236, 236, 236)\",\"channels\":[236,236,236]},\"main\":{\"css\":\"rgb(251, 251, 251)\",\"channels\":[251,251,251]},\"panel\":{\"css\":\"rgb(251, 251, 251)\",\"channels\":[251,251,251]},\"sidebar\":\"#080808\"},\"primaryLight\":{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(18, 18, 18)\",\"backgroundChannels\":[18,18,18],\"foregroundChannels\":[255,255,255],\"ratio\":18.73}}"
+    },
+    {
+      "name": "contrast: desktop home / light — 32 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 6.35"
+    },
+    {
+      "name": "desktop ai: the settings window shows both modes as compact rows",
+      "passed": true,
+      "detail": "{\"dialog\":true,\"choices\":2,\"heights\":[62.0333366394043,61.500003814697266]}"
+    },
+    {
+      "name": "desktop ai: the two modes are stacked, not large cards",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop ai: the stats grid keeps two columns",
+      "passed": true,
+      "detail": "2 columns"
+    },
+    {
+      "name": "desktop ai: nothing overflows the settings window",
+      "passed": true,
+      "detail": "741.86669921875 / 990.0000610351562"
+    },
+    {
+      "name": "desktop ai: no vendor name is shown",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop ai: the mode is stated in neutral words",
+      "passed": true,
+      "detail": "当前：离线模拟"
+    },
+    {
+      "name": "contrast: desktop AI settings / dark 100 — 16 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 8.06"
+    },
+    {
+      "name": "contrast: desktop AI settings / dark 0 — 16 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 5.02"
+    },
+    {
+      "name": "desktop reader: the PDF page has no theme filter or blur",
+      "passed": true,
+      "detail": "{\"filter\":\"none\",\"backdrop\":\"none\",\"scrollFilter\":\"none\",\"text\":\"返回desktop rich text跳转到页码/ 1112%适应宽度跟随外观原始暖纸深灰\"}"
+    },
+    {
+      "name": "desktop reader: the reading toolbar is present",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "contrast: desktop reader / dark 100 — 23 text runs meet WCAG AA",
+      "passed": true,
+      "detail": "lowest 7.81"
+    },
+    {
+      "name": "desktop keyboard: a visible focus ring appears",
+      "passed": true,
+      "detail": "收起侧栏 1.6px"
+    },
+    {
+      "name": "desktop keyboard: the dark-level slider is reachable and visibly focused",
+      "passed": true,
+      "detail": "{\"visible\":true,\"width\":1.6,\"style\":\"solid\"}"
+    },
+    {
+      "name": "desktop reduced motion: transitions collapse",
+      "passed": true,
+      "detail": "1e-05s"
+    },
+    {
+      "name": "desktop reduced motion: the ambient blur is removed",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop rapid input: the slider and theme clicks settle on one persisted state",
+      "passed": true,
+      "detail": "{\"level\":\"100\",\"theme\":\"dark\",\"storedLevel\":\"100\",\"pressed\":1}"
+    },
+    {
+      "name": "desktop console: no unexpected errors or warnings",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "passed": 33,
+  "failed": 0,
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-19T11-21-01-desktop"
+}

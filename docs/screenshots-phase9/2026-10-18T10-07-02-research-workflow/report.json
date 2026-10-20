@@ -1,0 +1,277 @@
+{
+  "generatedAt": "2026-10-18T10:07:32.777Z",
+  "runStamp": "2026-10-18T10-07-02",
+  "passed": 10,
+  "failed": 1,
+  "details": {
+    "annotationsAfterDlm": 4,
+    "afterManual": {
+      "concepts": 3,
+      "relations": 2,
+      "evidence": 4
+    },
+    "readerDebug": {
+      "jump": "2",
+      "toolbar": 0,
+      "selection": "",
+      "pages": [
+        {
+          "page": "1",
+          "spans": 118
+        },
+        {
+          "page": "2",
+          "spans": 49
+        },
+        {
+          "page": "3",
+          "spans": 55
+        },
+        {
+          "page": "4",
+          "spans": 0
+        },
+        {
+          "page": "5",
+          "spans": 0
+        },
+        {
+          "page": "6",
+          "spans": 0
+        },
+        {
+          "page": "7",
+          "spans": 0
+        },
+        {
+          "page": "8",
+          "spans": 0
+        },
+        {
+          "page": "9",
+          "spans": 0
+        },
+        {
+          "page": "10",
+          "spans": 0
+        },
+        {
+          "page": "11",
+          "spans": 0
+        },
+        {
+          "page": "12",
+          "spans": 0
+        },
+        {
+          "page": "13",
+          "spans": 0
+        },
+        {
+          "page": "14",
+          "spans": 0
+        },
+        {
+          "page": "15",
+          "spans": 0
+        },
+        {
+          "page": "16",
+          "spans": 0
+        },
+        {
+          "page": "17",
+          "spans": 0
+        },
+        {
+          "page": "18",
+          "spans": 0
+        },
+        {
+          "page": "19",
+          "spans": 0
+        },
+        {
+          "page": "20",
+          "spans": 0
+        },
+        {
+          "page": "21",
+          "spans": 0
+        },
+        {
+          "page": "22",
+          "spans": 0
+        },
+        {
+          "page": "23",
+          "spans": 0
+        },
+        {
+          "page": "24",
+          "spans": 0
+        },
+        {
+          "page": "25",
+          "spans": 0
+        },
+        {
+          "page": "26",
+          "spans": 0
+        },
+        {
+          "page": "27",
+          "spans": 0
+        },
+        {
+          "page": "28",
+          "spans": 0
+        },
+        {
+          "page": "29",
+          "spans": 0
+        },
+        {
+          "page": "30",
+          "spans": 0
+        },
+        {
+          "page": "31",
+          "spans": 0
+        },
+        {
+          "page": "32",
+          "spans": 0
+        },
+        {
+          "page": "33",
+          "spans": 0
+        }
+      ]
+    },
+    "aiRequests": [
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-CJLTtrGn.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf-Bb557k4W.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min--Ao2iAXA.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/health"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/api/ai/knowledge"
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "setup: the core paper is a real multi-page PDF, not a placeholder",
+        "passed": true,
+        "detail": "33 pages, 1452162 bytes"
+      },
+      {
+        "name": "reading: a highlight, a question and an insight were saved on real paper text",
+        "passed": true,
+        "detail": "4 annotation(s)"
+      },
+      {
+        "name": "reading position: zoom and sidebar changes keep the same page",
+        "passed": true,
+        "detail": "4 / 4 / 4"
+      },
+      {
+        "name": "cross-paper: the second paper has its own real annotation",
+        "passed": true,
+        "detail": "5 annotation(s) across both papers"
+      },
+      {
+        "name": "knowledge: one concept carries occurrences from both real papers",
+        "passed": true,
+        "detail": "2 occurrence(s)"
+      },
+      {
+        "name": "knowledge: two manually verified dependencies were created from the reader’s notes",
+        "passed": true,
+        "detail": "2 relation(s), all user-origin"
+      },
+      {
+        "name": "knowledge: AI suggestions and reader-made relations are distinguishable",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "navigation: the evidence opens the real paper and marks the quotation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "navigation: returning keeps the selected concept",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "AI (mock): the suggestions are labelled as an offline simulation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "run: the research workflow finished without an exception",
+        "passed": false,
+        "detail": "the page does not contain the quotation: The task is to fill these regions while preserving the visib\n{\"miss\":true,\"length\":0,\"probe\":\"The task is to fill thes\",\"near\":\"\"}"
+      }
+    ]
+  }
+}

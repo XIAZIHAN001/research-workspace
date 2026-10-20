@@ -1,7 +1,7 @@
 /*
  * Glass is a stack, not a blur: a tinted fill, one soft sheen falling from the top-left, a
  * 1px rim whose light travels in from the same corner, and a hot spot that follows the
- * pointer along the rim (see ui/glow.ts). Only navigation and floating parts use it.
+ * pointer along the rim (see ui/glow.ts). Only navigation, floating parts and controls use it.
  *
  * Depth is carried by the rim and the sheen. The drop shadow is a single tight lift:
  * --elev-rest by default, --lift on the element to ask for another one.
@@ -10,12 +10,19 @@
   position: relative;
   isolation: isolate;
   background: linear-gradient(162deg, var(--sheen), transparent 42%), var(--glass-fill);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
   box-shadow:
     0 0 0 0.5px var(--hairline),
     inset 0 1px 0 var(--inner-hi),
     var(--lift, var(--elev-rest));
+}
+
+/* Where the compositor cannot blur, the fill alone still has to be readable. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: linear-gradient(162deg, var(--sheen), transparent 42%), var(--glass-fill-strong);
+  }
 }
 
 .glass::before {
@@ -31,7 +38,7 @@
   background:
     radial-gradient(
       170px circle at var(--mx, 50%) var(--my, 50%),
-      rgb(255 255 255 / calc(var(--glow) * 0.95)),
+      rgb(255 255 255 / calc(var(--glow) * 0.8)),
       transparent 70%
     ),
     linear-gradient(150deg, var(--rim-top), var(--rim-mid) 28%, var(--rim-low) 62%, var(--rim-mid));

@@ -11,7 +11,9 @@ import {
   AVATAR_STORAGE_KEY,
   PROJECTS_STORAGE_KEY,
   SIDEBAR_STORAGE_KEY,
+  THEME_LEVEL_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  THEME_STYLE_STORAGE_KEY,
 } from './config';
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -21,6 +23,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.themePref;
+  delete document.documentElement.dataset.themeStyle;
+  delete document.documentElement.dataset.darkLevel;
+  document.documentElement.removeAttribute('style');
 });
 
 function setup(options: { store?: ProjectsStore; welcomeProvider?: WelcomeProvider } = {}) {
@@ -403,31 +408,143 @@ describe('deleting projects', () => {
 });
 
 describe('theme', () => {
+  const levelSlider = () => screen.getByRole('slider', { name: '深色程度' });
+
+  /** The theme controls live in Settings › Appearance, not on the first-level page. */
+  async function openSettings() {
+    const result = setup();
+    await result.user.click(screen.getByRole('button', { name: '设置' }));
+    await screen.findByRole('dialog', { name: '设置' });
+    return result;
+  }
+
   it('applies and persists an explicit choice', async () => {
-    const { user } = setup();
+    const { user } = await openSettings();
     await user.click(screen.getByRole('button', { name: '深色' }));
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
     expect(document.documentElement).toHaveAttribute('data-theme-pref', 'dark');
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '100');
+    expect(document.documentElement).toHaveAttribute('data-theme-style', 'obsidian');
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+    expect(window.localStorage.getItem(THEME_LEVEL_STORAGE_KEY)).toBe('100');
     expect(screen.getByRole('button', { name: '深色' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: '浅色' })).toHaveAttribute('aria-pressed', 'false');
 
     await user.click(screen.getByRole('button', { name: '浅色' }));
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '100');
   });
 
-  it('restores the stored choice on the next start', () => {
+  it('starts at pure black and lets the level change the whole dark ladder', async () => {
+    await openSettings();
+    expect(levelSlider()).toHaveValue('100');
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#000000');
+
+    fireEvent.change(levelSlider(), { target: { value: '50' } });
+    expect(levelSlider()).toHaveValue('50');
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '50');
+    expect(document.documentElement).toHaveAttribute('data-theme-style', 'graphite');
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#121212');
+    expect(document.documentElement.style.getPropertyValue('--dark-panel')).toBe('#1f1f1f');
+    expect(window.localStorage.getItem(THEME_LEVEL_STORAGE_KEY)).toBe('50');
+
+    fireEvent.change(levelSlider(), { target: { value: '0' } });
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#242424');
+    expect(window.localStorage.getItem(THEME_LEVEL_STORAGE_KEY)).toBe('0');
+
+    fireEvent.change(levelSlider(), { target: { value: '100' } });
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#000000');
+    expect(document.documentElement).toHaveAttribute('data-theme-style', 'obsidian');
+  });
+
+  it('keeps exactly the last level after rapid changes', async () => {
+    await openSettings();
+    for (const level of ['10', '90', '0', '75', '100']) {
+      fireEvent.change(levelSlider(), { target: { value: level } });
+    }
+    expect(levelSlider()).toHaveValue('100');
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '100');
+    expect(window.localStorage.getItem(THEME_LEVEL_STORAGE_KEY)).toBe('100');
+  });
+
+  it('restores the stored level on the next start', async () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
-    setup();
+    window.localStorage.setItem(THEME_LEVEL_STORAGE_KEY, '25');
+    await openSettings();
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '25');
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#1b1b1b');
+    expect(levelSlider()).toHaveValue('25');
     expect(screen.getByRole('button', { name: '深色' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('follows the system scheme when set to system', () => {
+  it('restores a saved OLED palette from a Phase 12 profile as pure black', async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    window.localStorage.setItem(THEME_STYLE_STORAGE_KEY, 'obsidian');
+    await openSettings();
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '100');
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#000000');
+    expect(levelSlider()).toHaveValue('100');
+  });
+
+  it('maps a saved Graphite profile to the equivalent neutral grey', async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    window.localStorage.setItem(THEME_STYLE_STORAGE_KEY, 'graphite');
+    await openSettings();
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '36');
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#171717');
+    expect(levelSlider()).toHaveValue('36');
+  });
+
+  it('a stored level wins over a legacy palette name', async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    window.localStorage.setItem(THEME_STYLE_STORAGE_KEY, 'obsidian');
+    window.localStorage.setItem(THEME_LEVEL_STORAGE_KEY, '40');
+    await openSettings();
+    expect(document.documentElement).toHaveAttribute('data-dark-level', '40');
+    expect(document.documentElement).toHaveAttribute('data-theme-style', 'graphite');
+    expect(levelSlider()).toHaveValue('40');
+  });
+
+  it('follows the system scheme and applies the saved level when it turns dark', async () => {
+    window.localStorage.setItem(THEME_LEVEL_STORAGE_KEY, '0');
     stubMatchMedia((query) => query.includes('prefers-color-scheme: dark'));
-    setup();
+    await openSettings();
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
     expect(document.documentElement).toHaveAttribute('data-theme-pref', 'system');
+    expect(document.documentElement.style.getPropertyValue('--dark-app')).toBe('#242424');
+    expect(levelSlider()).toHaveValue('0');
+    expect(screen.getByRole('button', { name: '跟随系统' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+});
+
+describe('settings', () => {
+  it('keeps theme controls out of the first-level page and the avatar in the sidebar', async () => {
+    const { user, container } = setup();
+    expect(sidebar().querySelector('.avatar-img')).toBeInTheDocument();
+    expect(container.querySelector('.home .avatar-img')).toBeNull();
+    expect(screen.queryByRole('slider', { name: '深色程度' })).toBeNull();
+
+    await user.click(within(sidebar()).getByRole('button', { name: '设置' }));
+    const dialog = await screen.findByRole('dialog', { name: '设置' });
+    const settings = within(dialog).getByRole('region', { name: '设置' });
+    expect(within(settings).getByRole('group', { name: '主题' })).toBeInTheDocument();
+    expect(within(settings).getByRole('slider', { name: '深色程度' })).toBeInTheDocument();
+  });
+
+  it('shows the AI service inside settings without a provider name', async () => {
+    const { user } = setup();
+    await user.click(within(sidebar()).getByRole('button', { name: '设置' }));
+    const dialog = await screen.findByRole('dialog', { name: '设置' });
+    const settings = within(dialog).getByRole('region', { name: '设置' });
+    await user.click(within(settings).getByRole('button', { name: 'AI 服务' }));
+    expect(within(settings).getByText(/这些设置只在桌面应用中可用/)).toBeInTheDocument();
+    expect(within(settings).queryByText(/deepseek/i)).not.toBeInTheDocument();
+    // It is a settings window, not a first-level page or the old AI-only dialog.
+    expect(dialog).toHaveAttribute('open');
   });
 });
 

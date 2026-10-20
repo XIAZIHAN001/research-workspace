@@ -17,7 +17,11 @@
   padding: 6px 10px;
   border: 1px solid var(--hairline);
   border-radius: var(--r-md);
-  background: var(--glass-fill);
+  background-color: var(--control-fill);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 72%);
+  box-shadow:
+    inset 0 1px 0 var(--inner-hi),
+    var(--control-lift);
 }
 
 .reader-title {
@@ -43,7 +47,7 @@
   padding: 4px 6px;
   border: 1px solid var(--field-edge);
   border-radius: var(--r-sm);
-  background: var(--glass-fill-strong);
+  background: var(--input-fill);
   color: var(--text);
   font: inherit;
   font-size: 13px;
@@ -326,19 +330,35 @@
 
 .chip {
   padding: 3px 10px;
-  border: 1px solid var(--hairline);
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--glass-fill);
-  color: var(--text-2);
+  background-color: var(--control-fill);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 66%);
+  box-shadow: inset 0 0 0 0.5px var(--control-edge);
+  color: var(--text);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+
+.chip:hover {
+  background-color: var(--control-fill-hover);
+  color: var(--text);
+}
+
+.chip:active {
+  transform: scale(0.97);
 }
 
 .chip[aria-pressed='true'] {
   border-color: var(--select-edge);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background-color: var(--accent-soft);
+  color: var(--accent-hi);
+  font-weight: 600;
 }
 
 .annotation-input {
@@ -362,7 +382,7 @@
   min-height: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
-  background: var(--glass-fill);
+  background: var(--color-bg-panel);
 }
 
 /* --- The side panel shell -------------------------------------------------- */
@@ -392,7 +412,11 @@
   padding: 4px;
   border: 1px solid var(--hairline);
   border-radius: var(--r-md);
-  background: var(--glass-fill);
+  background-color: var(--control-fill);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 72%);
+  box-shadow:
+    inset 0 1px 0 var(--inner-hi),
+    var(--control-lift);
 }
 
 /* Collapsed, the panel leaves a rail: the assistant is always one click away. */
@@ -616,7 +640,7 @@
   min-height: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
-  background: var(--glass-fill);
+  background: var(--color-bg-panel);
 }
 
 .ai-head {
@@ -1166,7 +1190,7 @@
   overflow: hidden;
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
-  background: var(--glass-fill);
+  background: var(--color-bg-panel);
 }
 
 .difficulty-intro {

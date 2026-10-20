@@ -1,5 +1,16 @@
-/** Storage keys and shared constants. Keep THEME_STORAGE_KEY in sync with public/theme-init.js. */
 export const THEME_STORAGE_KEY = 'rw.theme';
+/**
+ * How dark the dark theme is: 0 (deep grey) to 100 (pure black). Absent in profiles written
+ * before Phase 12.1; those fall back to `rw.themeStyle`, then to pure black.
+ * Keep this key in sync with public/theme-init.js too.
+ */
+export const THEME_LEVEL_STORAGE_KEY = 'rw.themeLevel';
+/**
+ * The Phase 12 palette name. Phase 12.1 derives the palette from `rw.themeLevel`; this key is
+ * still read for migration and written as a derived value so an older build sees a sane preset.
+ * Keep this key in sync with public/theme-init.js too.
+ */
+export const THEME_STYLE_STORAGE_KEY = 'rw.themeStyle';
 export const PAPER_STORAGE_KEY = 'rw.paper';
 export const SIDEBAR_STORAGE_KEY = 'rw.sidebar';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';

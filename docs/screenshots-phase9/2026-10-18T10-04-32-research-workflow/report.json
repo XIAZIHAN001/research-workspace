@@ -1,0 +1,113 @@
+{
+  "generatedAt": "2026-10-18T10:05:22.719Z",
+  "runStamp": "2026-10-18T10-04-32",
+  "passed": 7,
+  "failed": 1,
+  "details": {
+    "annotationsAfterDlm": 4,
+    "afterManual": {
+      "concepts": 3,
+      "relations": 2,
+      "evidence": 4
+    },
+    "readerDebug": {
+      "jump": null,
+      "toolbar": 0,
+      "selection": "",
+      "pages": []
+    },
+    "aiRequests": [
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/theme-init.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-CJLTtrGn.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/index-BKRhiwLk.css"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/favicon.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/avatar/default.svg"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf-Bb557k4W.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min--Ao2iAXA.js"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      },
+      {
+        "label": "A",
+        "url": "http://127.0.0.1:4184/assets/pdf.worker.min-CjEcRF4W.mjs"
+      }
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "setup: the core paper is a real multi-page PDF, not a placeholder",
+        "passed": true,
+        "detail": "33 pages, 1452162 bytes"
+      },
+      {
+        "name": "reading: a highlight, a question and an insight were saved on real paper text",
+        "passed": true,
+        "detail": "4 annotation(s)"
+      },
+      {
+        "name": "reading position: zoom and sidebar changes keep the same page",
+        "passed": true,
+        "detail": "4 / 4 / 4"
+      },
+      {
+        "name": "cross-paper: the second paper has its own real annotation",
+        "passed": true,
+        "detail": "5 annotation(s) across both papers"
+      },
+      {
+        "name": "knowledge: one concept carries occurrences from both real papers",
+        "passed": true,
+        "detail": "2 occurrence(s)"
+      },
+      {
+        "name": "knowledge: two manually verified dependencies were created from the reader’s notes",
+        "passed": true,
+        "detail": "2 relation(s), all user-origin"
+      },
+      {
+        "name": "knowledge: AI suggestions and reader-made relations are distinguishable",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "run: the research workflow finished without an exception",
+        "passed": false,
+        "detail": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('region', { name: '概念：shared canvas' }).locator('.evidence-row').first().getByRole('button', { name: '打开原文' })\u001b[22m\n"
+      }
+    ]
+  }
+}

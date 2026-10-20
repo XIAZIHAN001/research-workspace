@@ -12,6 +12,7 @@
 
 /* global document, getComputedStyle, window */
 import { execFileSync, spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -241,11 +242,11 @@ async function main() {
         : `switch ${themeBox.x.toFixed(0)}+${themeBox.width.toFixed(0)} in footer ${footBox.x.toFixed(0)}+${footBox.width.toFixed(0)}`,
     );
     await screenshot(page, '00-sidebar-footer.png');
-    await page.getByRole('button', { name: '深色' }).click();
+    await setAppTheme(page, '深色');
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
     await screenshot(page, '01b-dark.png');
     check('桌面深色主题可切换', true);
-    await page.getByRole('button', { name: '浅色' }).click();
+    await setAppTheme(page, '浅色');
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
     check('桌面浅色主题可切换', true);
 

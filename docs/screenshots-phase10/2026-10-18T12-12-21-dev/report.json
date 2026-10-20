@@ -1,0 +1,93 @@
+{
+  "stamp": "2026-10-18T12-12-21",
+  "passed": 16,
+  "total": 17,
+  "results": [
+    {
+      "name": "开发模式加载的是 Vite 开发地址",
+      "passed": true,
+      "detail": "http://127.0.0.1:1440/"
+    },
+    {
+      "name": "开发模式 React 界面已渲染",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "开发模式使用独立的 WebView 数据目录",
+      "passed": true,
+      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop.dev\\webview"
+    },
+    {
+      "name": "开发数据目录与安装版分离",
+      "passed": true,
+      "detail": "dev=C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop.dev\\webview"
+    },
+    {
+      "name": "开发模式启动了自带的 sidecar",
+      "passed": true,
+      "detail": "app=23608 sidecar=45724"
+    },
+    {
+      "name": "开发模式 AI 服务就绪且离线 Mock",
+      "passed": true,
+      "detail": "AI 服务就绪 · 离线 Mock"
+    },
+    {
+      "name": "开发模式主题切换完整可见",
+      "passed": true,
+      "detail": "172+92"
+    },
+    {
+      "name": "开发模式 PDF 文字层渲染",
+      "passed": true,
+      "detail": "Characters, Scripts and Figures\n\n\nUnits: -10 °C, ± 0.5, 3 × 4 ÷ 2, § 12\n\n\nDashes"
+    },
+    {
+      "name": "PDF 中的中文文字层提取正确",
+      "passed": true,
+      "detail": "Characters, Scripts and Figures\n\n\nUnits: -10 °C, ± 0.5, 3 × 4 ÷ 2, § 12\n\n\nDashes: en–dash, em—dash, ellipsis… and “quotes”\n\n\nSymbols: © ® ™ μm and 15 %\n\n\nαβγδ\n\n"
+    },
+    {
+      "name": "PDF 特殊字符文字层提取正确",
+      "passed": true,
+      "detail": "Characters, Scripts and Figures\n\n\nUnits: -10 °C, ± 0.5, 3 × 4 ÷ 2, § 12\n\n\nDashes: en–dash, em—dash, ellipsis… and “quotes”\n\n\nSymbols: © ® ™ μm and 15 %\n\n\nαβγδ\n\n\n中文测试\n\n\nREPEATED-SENTENCE-ALPHA on this "
+    },
+    {
+      "name": "开发模式 PDF 画布具有实际尺寸",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "开发模式 AI Mock 返回回答",
+      "passed": true,
+      "detail": "（本地模拟回答：当前没有连接在线模型，以下内容由 mock provider 生成，仅用于验证流程。）\n\n你选中的是第 "
+    },
+    {
+      "name": "开发模式可选中 PDF 文字",
+      "passed": true,
+      "detail": "Units: -10 °C, ± 0.5, 3 × 4 ÷ 2, § 12\nDa"
+    },
+    {
+      "name": "开发模式高亮已绘制",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "开发模式笔记已保存并显示",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "开发页面未加载远程第三方脚本",
+      "passed": false,
+      "detail": "http://ipc.localhost/ai_service_info,http://ipc.localhost/ai_service_info,http://ipc.localhost/plugin%3Aevent%7Clisten"
+    },
+    {
+      "name": "开发模式无控制台错误",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "consoleIssues": []
+}

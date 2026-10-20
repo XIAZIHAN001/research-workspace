@@ -1,5 +1,6 @@
 /* global document, getComputedStyle */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -137,8 +138,6 @@ async function createProject(page, title) {
   await dialog.locator('button[type="submit"]').click();
   await dialog.waitFor({ state: 'detached' });
 }
-
-const themeButton = (page, index) => page.locator('.segmented button').nth(index);
 
 async function wideFlow(browser) {
   const page = await openPage(browser, { colorScheme: 'light' });
@@ -294,7 +293,9 @@ async function wideFlow(browser) {
     // Self-contained: the collapsed-sidebar scenario above ends on the home page.
     await page.locator('.rows button.row-main').first().click();
     await settle(page);
-    await themeButton(page, 2).click();
+    // Theme controls live in Settings › Appearance since Phase 12.1; the window closes back
+    // onto the project it was opened from.
+    await setAppTheme(page, '深色');
     await settle(page);
     const state = await readAppState(page);
     check(

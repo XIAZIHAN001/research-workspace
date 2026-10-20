@@ -1,0 +1,615 @@
+{
+  "generatedAt": "2026-10-18T10:20:24.966Z",
+  "runStamp": "2026-10-18T10-20-04",
+  "passed": 48,
+  "failed": 0,
+  "details": {
+    "service": {
+      "provider": "mock",
+      "instanceId": "b0298c7f-4072-442c-a99f-9c0091683136",
+      "online": false,
+      "limits": {
+        "passages": 8,
+        "passageChars": 2000,
+        "totalContextChars": 6000,
+        "questionChars": 1000,
+        "requestsPerMinute": 30,
+        "answerTokens": 8192,
+        "knowledgePassages": 8,
+        "knowledgeContextChars": 9000,
+        "knowledgePages": 6
+      }
+    },
+    "serviceCases": {
+      "broken": {
+        "status": 200,
+        "output": "malformed",
+        "online": false,
+        "concepts": 0,
+        "relations": 0,
+        "rejected": 0,
+        "codes": [],
+        "countsDescribed": {
+          "rawChars": 29,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 0,
+          "relationsKept": 0,
+          "evidenceKept": 0,
+          "rejected": 0,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 0,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "truncated": {
+        "status": 200,
+        "output": "incomplete",
+        "online": false,
+        "concepts": 0,
+        "relations": 0,
+        "rejected": 0,
+        "codes": [],
+        "countsDescribed": {
+          "rawChars": 934,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 0,
+          "relationsKept": 0,
+          "evidenceKept": 0,
+          "rejected": 0,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 0,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": true,
+          "finishReason": "length"
+        }
+      },
+      "empty": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 0,
+        "relations": 0,
+        "rejected": 0,
+        "codes": [],
+        "countsDescribed": {
+          "rawChars": 53,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 0,
+          "relationsKept": 0,
+          "evidenceKept": 0,
+          "rejected": 0,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 0,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "badQuote": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 2,
+        "rejected": 2,
+        "codes": [
+          "quote-not-in-passage",
+          "quote-not-in-passage"
+        ],
+        "countsDescribed": {
+          "rawChars": 842,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 2,
+          "evidenceKept": 1,
+          "rejected": 2,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "wrongPage": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 2,
+        "rejected": 2,
+        "codes": [
+          "wrong-page",
+          "wrong-page"
+        ],
+        "countsDescribed": {
+          "rawChars": 977,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 2,
+          "evidenceKept": 1,
+          "rejected": 2,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 2,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "wrongDirection": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 1,
+        "rejected": 1,
+        "codes": [
+          "relation-direction"
+        ],
+        "countsDescribed": {
+          "rawChars": 956,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 1,
+          "evidenceKept": 2,
+          "rejected": 1,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "duplicate": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 1,
+        "rejected": 2,
+        "codes": [
+          "concept-duplicate",
+          "relation-duplicate"
+        ],
+        "countsDescribed": {
+          "rawChars": 1213,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 1,
+          "evidenceKept": 3,
+          "rejected": 2,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "cycle": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 1,
+        "rejected": 1,
+        "codes": [
+          "relation-cycle"
+        ],
+        "countsDescribed": {
+          "rawChars": 1016,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 1,
+          "evidenceKept": 2,
+          "rejected": 1,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "bypass": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 1,
+        "rejected": 0,
+        "codes": [],
+        "countsDescribed": {
+          "rawChars": 903,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 1,
+          "evidenceKept": 2,
+          "rejected": 0,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 3,
+          "ignoredProvenanceFields": 4,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      },
+      "invalidKind": {
+        "status": 200,
+        "output": "valid",
+        "online": false,
+        "concepts": 2,
+        "relations": 1,
+        "rejected": 1,
+        "codes": [
+          "relation-kind"
+        ],
+        "countsDescribed": {
+          "rawChars": 956,
+          "contextChars": 117,
+          "smallContext": true,
+          "smallContextLimited": 0,
+          "conceptsKept": 2,
+          "relationsKept": 1,
+          "evidenceKept": 2,
+          "rejected": 1,
+          "matchedExisting": 0,
+          "nameNotVerbatim": 1,
+          "ambiguousExistingNames": 0,
+          "ambiguousConceptsSkipped": 0,
+          "ambiguousRelationsSkipped": 0,
+          "directionDefaulted": 0,
+          "supportDefaulted": 0,
+          "ignoredIdentityFields": 0,
+          "ignoredProvenanceFields": 0,
+          "pageMismatches": 0,
+          "truncated": false,
+          "finishReason": "stop"
+        }
+      }
+    },
+    "plan": {
+      "summary": "使用第 2、3、14、16 页 · 4 段 · 1834 字 · 未截断",
+      "rows": 4,
+      "cost": "将把以上 1834 字发送到 本地模拟（未连接在线模型），不会发起在线调用，也不产生费用。"
+    },
+    "newBackupCounts": {
+      "projects": 1,
+      "papers": 3,
+      "annotations": 0,
+      "concepts": 3,
+      "evidence": 4,
+      "relations": 2,
+      "rejections": 0,
+      "difficultyPages": 0
+    },
+    "aiRequests": [
+      "http://127.0.0.1:4180/api/ai/health",
+      "http://127.0.0.1:4180/api/ai/knowledge",
+      "http://127.0.0.1:4180/api/ai/health",
+      "http://127.0.0.1:4180/api/ai/knowledge"
+    ],
+    "consoleIssues": [],
+    "results": [
+      {
+        "name": "service: every boundary case is answered by the offline mock",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: broken JSON is reported as malformed, with no suggestions",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: a truncated reply is reported as incomplete",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: an empty reply is valid but groundedInText is false",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: a quotation absent from the paper is rejected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: a contradictory page number is rejected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: a relation direction that contradicts its kind is rejected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: repeated concepts and relations are deduplicated",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: a prerequisite loop is rejected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: model-supplied status, ids and identifiers are ignored",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "service: an unknown relation kind is rejected",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "old backup: it is a Phase 7-shaped file with no Phase 8 fields",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "old backup: it carries the project, paper and hand-made concept",
+        "passed": true,
+        "detail": "{\"projects\":1,\"papers\":2,\"annotations\":0,\"concepts\":1,\"evidence\":0,\"relations\":0,\"rejections\":0,\"difficultyPages\":0}"
+      },
+      {
+        "name": "old backup: making it did not call any model",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore old: the Phase 7 workspace opens in the Phase 8 build",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore old: no AI call happened during the restore",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "real paper: the quotation was selected from the rendered page",
+        "passed": true,
+        "detail": "193 characters"
+      },
+      {
+        "name": "local panel: it opens without a model call",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "local panel: it says when nothing local is related yet",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "context plan: it names the pages, segments and characters before sending",
+        "passed": true,
+        "detail": "使用第 2、3、14、16 页 · 4 段 · 1834 字 · 未截断"
+      },
+      {
+        "name": "context plan: it says the mock is offline and free",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "context plan: building it made no model call",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "explicit analysis: exactly one knowledge request was made after the second click",
+        "passed": true,
+        "detail": "1 request(s)"
+      },
+      {
+        "name": "explicit analysis: no question or difficulty request was made",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "mock boundary: the result is labelled as a simulation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "support: the reply shows direct, inferred and external classifications",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "evidence: the suggestions carry quotations from the real page",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "confirmation: the reader accepted a concept and a relation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "manual type: changing a suggested relation keeps it visible as 扩展",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "rejection: the ignored relation is gone",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "learning path: the panel shows the accepted prerequisite order",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "knowledge view: the confirmed relation is part of the concept detail",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "knowledge view: the AI relation shows its support and explanation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "second paper: its quotation was selected from its own rendered page",
+        "passed": true,
+        "detail": "150 characters"
+      },
+      {
+        "name": "cross-paper: the existing concept receives a new occurrence instead of a duplicate",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cross-paper: the concept lists both papers and both occurrences",
+        "passed": true,
+        "detail": "3 paper(s) in the workspace"
+      },
+      {
+        "name": "cross-paper jump: the evidence opens the other paper and marks the quoted text",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "return: the knowledge view keeps the selected concept",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "new backup: concepts, relations and evidence travel together",
+        "passed": true,
+        "detail": "{\"projects\":1,\"papers\":3,\"annotations\":0,\"concepts\":3,\"evidence\":4,\"relations\":2,\"rejections\":0,\"difficultyPages\":0}"
+      },
+      {
+        "name": "new backup: Phase 8 support, explanation and evidence links are present",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "new backup: the format version stayed readable",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore new: the confirmed AI relation survives with its support and explanation",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore new: its evidence link survives",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore new: the learning path is still navigable",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore new: both papers and occurrences are still listed",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "restore new: evidence from the second paper still jumps to its text",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "offline: every browser request went to the offline mock",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "console: no unexpected errors or warnings",
+        "passed": true,
+        "detail": ""
+      }
+    ]
+  }
+}

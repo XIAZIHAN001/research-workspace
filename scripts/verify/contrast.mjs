@@ -37,6 +37,9 @@ function collectTargets() {
     const element = node.parentElement;
     if (!text || !element) continue;
     if (element.closest('[inert], .sr-only, script, style, dialog:not([open])')) continue;
+    // WCAG does not require contrast for inactive components. A disabled button is often drawn
+    // at reduced opacity, which would otherwise report the blend as if it were live text.
+    if (element.closest('[disabled], [aria-disabled="true"]')) continue;
     const overlay = covered(element);
     if (overlay !== null) {
       skipped[overlay] += 1;
@@ -88,6 +91,7 @@ function collectTargets() {
   }
   for (const input of document.querySelectorAll('input[placeholder]')) {
     if (input.value !== '' || input.closest('[inert], dialog:not([open])')) continue;
+    if (input.closest('[disabled], [aria-disabled="true"]') || input.disabled) continue;
     const overlay = covered(input);
     if (overlay !== null) {
       skipped[overlay] += 1;

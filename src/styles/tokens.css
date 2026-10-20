@@ -15,115 +15,192 @@
   --r-md: 12px;
   --r-lg: 18px;
 
+  /* Motion tokens. One scale for the whole interface so no two pages disagree. */
   --dur-fast: 120ms;
   --dur: 200ms;
   --dur-slow: 320ms;
+  --dur-hover: 150ms;
+  --dur-press: 120ms;
+  --dur-tab: 210ms;
+  --dur-dialog: 220ms;
+  --dur-sidebar: 260ms;
+  --press-scale: 0.975;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* spring.css replaces this with a sampled damped spring where linear() exists. */
   --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
 
-  --sidebar-w: 264px;
-  --glass-blur: 22px;
+  --sidebar-w: 248px;
+  --glass-blur: 20px;
   /* Fade for the pointer light; append it to any transition list on a glowing element. */
   --glow-t: --glow var(--dur) var(--ease-out);
 }
 
 /*
- * Depth comes from light, not from shadow: a rim, one surface sheen, one tight lift.
- * --elev-rest is for panels that sit in the layout; --elev-float is only for what floats.
+ * Semantic palette. The `--color-*` names are the source of truth; the older short names below
+ * are aliases kept because the reader, knowledge and PDF styles already speak them.
+ *
+ * Phase 12.1 makes both themes monochrome. The dark surfaces come from seven custom properties
+ * written by theme.ts (before first paint by public/theme-init.js), so the sidebar, panels and
+ * floating layers are recalculated from the one "dark level" instead of being fixed presets.
  */
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg-base: #e8edf1;
-  --pool-a: rgb(52 152 168 / 0.3);
-  --pool-b: rgb(222 176 98 / 0.26);
-  --pool-c: rgb(96 128 214 / 0.16);
-  --sheet: rgb(255 255 255 / 0.76);
-  --sheet-edge: rgb(255 255 255 / 0.95);
-  --sheet-shadow: 0 6px 20px -14px rgb(20 40 60 / 0.2);
 
-  --text: #0f1b25;
-  --text-2: #3f4e5b;
-  --text-3: #4f5e6b;
-  --accent: #1d6b91;
-  --accent-hi: #165777;
+  --color-bg-app: #ececec;
+  --color-bg-sidebar: #f5f5f5;
+  --color-bg-panel: #fbfbfb;
+  --color-bg-elevated: #ffffff;
+  --color-border-subtle: #d9d9d9;
+  --color-text-primary: #141414;
+  --color-text-secondary: #454545;
+  --color-text-tertiary: #5c5c5c;
+  --color-accent: #1a1a1a;
+  --color-accent-strong: #000000;
+  --color-danger: #b3322b;
+  --color-ok: #1f6b3a;
+  --color-warn: #7a5300;
+  --color-primary-bg: #121212;
+  --color-primary-bg-hover: #000000;
+  --color-primary-fg: #ffffff;
+
+  --bg-base: var(--color-bg-app);
+  --ambient-top: rgb(255 255 255 / 0.55);
+  --ambient-bottom: rgb(0 0 0 / 0.035);
+  --sheet: var(--color-bg-panel);
+  --sheet-edge: var(--color-border-subtle);
+  --sheet-shadow: 0 10px 30px -24px rgb(0 0 0 / 0.18);
+
+  --text: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-tertiary);
+  --accent: var(--color-accent);
+  --accent-hi: var(--color-accent-strong);
   --accent-ink: #ffffff;
-  --accent-soft: rgb(29 107 145 / 0.12);
-  --danger: #b3322b;
+  --accent-soft: rgb(0 0 0 / 0.08);
+  --danger: var(--color-danger);
   --danger-ink: #ffffff;
-  --ok: #1f6b3a;
-  --warn: #8a5a00;
-  --field-edge: rgb(15 27 37 / 0.5);
-  --focus: #1d6b91;
+  --ok: var(--color-ok);
+  --warn: var(--color-warn);
+  --field-edge: rgb(0 0 0 / 0.45);
+  --focus: #1a1a1a;
 
-  --hairline: rgb(15 27 37 / 0.1);
-  --glass-fill: rgb(255 255 255 / 0.5);
-  --glass-fill-strong: rgb(255 255 255 / 0.8);
-  --sheen: rgb(255 255 255 / 0.5);
+  --hairline: rgb(0 0 0 / 0.1);
+  --glass-fill: rgb(255 255 255 / 0.62);
+  --glass-fill-strong: rgb(255 255 255 / 0.94);
+  --sheen: rgb(255 255 255 / 0.55);
   --rim-top: rgb(255 255 255 / 0.98);
   --rim-mid: rgb(255 255 255 / 0.42);
   --rim-low: rgb(255 255 255 / 0.2);
   --inner-hi: rgb(255 255 255 / 0.8);
-  --elev-rest: 0 8px 24px -16px rgb(20 40 60 / 0.3);
-  --elev-float: 0 18px 40px -22px rgb(20 40 60 / 0.38);
-  --foot-tint: rgb(255 255 255 / 0.24);
-  --row-hover: rgb(15 27 37 / 0.05);
-  --row-active: rgb(29 107 145 / 0.12);
-  --select-edge: rgb(29 107 145 / 0.2);
-  --select-glow: rgb(29 107 145 / 0.5);
-  --halo: rgb(52 152 168 / 0.24);
+  --elev-rest: 0 8px 24px -18px rgb(0 0 0 / 0.18);
+  --elev-float: 0 18px 40px -22px rgb(0 0 0 / 0.26);
+  --foot-tint: rgb(0 0 0 / 0.025);
+  --row-hover: rgb(0 0 0 / 0.055);
+  --row-active: rgb(0 0 0 / 0.08);
+  --select-edge: rgb(0 0 0 / 0.22);
+  --select-glow: rgb(0 0 0 / 0.16);
+  --halo: rgb(0 0 0 / 0.06);
   --avatar-edge: rgb(255 255 255 / 0.6);
-  --spot-color: #1d6b91;
-  --spot-strength: 16%;
-  --pill-fill: rgb(255 255 255 / 0.86);
-  --ring: rgb(15 27 37 / 0.09);
-  --scrim: rgb(10 20 30 / 0.3);
+  --spot-color: #000000;
+  --spot-strength: 8%;
+  --pill-fill: rgb(255 255 255 / 0.92);
+  --ring: rgb(0 0 0 / 0.08);
+  --scrim: rgb(10 10 10 / 0.32);
+
+  /* Liquid-glass control material: a translucent fill, a top sheen and a hairline edge. */
+  --control-fill: rgb(255 255 255 / 0.7);
+  --control-fill-hover: rgb(255 255 255 / 0.94);
+  --control-sheen: rgb(255 255 255 / 0.72);
+  --control-edge: rgb(0 0 0 / 0.14);
+  --control-lift: 0 1px 1px rgb(0 0 0 / 0.06);
+  --input-fill: rgb(255 255 255 / 0.92);
+
+  /* Primary actions are the inverse of the page in light mode: near-black on white. */
+  --primary-sheen: rgb(255 255 255 / 0.12);
+  --primary-rim: rgb(255 255 255 / 0.14);
+  --primary-shadow: rgb(0 0 0 / 0.24);
+  --primary-glow: rgb(0 0 0 / 0.18);
 }
 
+/*
+ * The dark surfaces are neutral by construction: every channel of every surface comes from the
+ * same level. `--dark-*` is written by theme.ts (and theme-init.js before first paint); the
+ * fallbacks are pure black so a missing script cannot produce a blue-tinted default.
+ */
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg-base: #0a1118;
-  --pool-a: rgb(36 128 142 / 0.34);
-  --pool-b: rgb(92 98 210 / 0.26);
-  --pool-c: rgb(190 140 80 / 0.12);
-  --sheet: rgb(16 25 34 / 0.78);
-  --sheet-edge: rgb(255 255 255 / 0.08);
-  --sheet-shadow: 0 0 0 transparent;
 
-  --text: #eef3f7;
-  --text-2: #c3cdd7;
-  --text-3: #adb9c5;
-  --accent: #86c3e6;
-  --accent-hi: #a8d6f0;
-  --accent-ink: #06202f;
-  --accent-soft: rgb(134 195 230 / 0.16);
-  --danger: #f29b93;
+  --color-bg-app: var(--dark-app, #000000);
+  --color-bg-sidebar: var(--dark-sidebar, #080808);
+  --color-bg-panel: var(--dark-panel, #0d0d0d);
+  --color-bg-elevated: var(--dark-elevated, #181818);
+  --color-border-subtle: var(--dark-border, #262626);
+  --color-text-primary: #f2f2f2;
+  --color-text-secondary: #bdbdbd;
+  --color-text-tertiary: #a8a8a8;
+  --color-accent: #f2f2f2;
+  --color-accent-strong: #ffffff;
+  --color-danger: #f2a29a;
+  --color-ok: #86d6a6;
+  --color-warn: #e8c27a;
+  --color-primary-bg: #f5f5f5;
+  --color-primary-bg-hover: #ffffff;
+  --color-primary-fg: #0a0a0a;
+
+  --bg-base: var(--color-bg-app);
+  --ambient-top: rgb(255 255 255 / 0.04);
+  --ambient-bottom: rgb(255 255 255 / 0.025);
+  --sheet: var(--color-bg-panel);
+  --sheet-edge: var(--color-border-subtle);
+  --sheet-shadow: 0 12px 34px -22px rgb(0 0 0 / 0.8);
+
+  --text: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-tertiary);
+  --accent: var(--color-accent);
+  --accent-hi: var(--color-accent-strong);
+  --accent-ink: #0a0a0a;
+  --accent-soft: rgb(255 255 255 / 0.12);
+  --danger: var(--color-danger);
   --danger-ink: #2a0d0b;
-  --ok: #7ed0a0;
-  --warn: #e8c27a;
-  --field-edge: rgb(255 255 255 / 0.42);
-  --focus: #86c3e6;
+  --ok: var(--color-ok);
+  --warn: var(--color-warn);
+  --field-edge: rgb(255 255 255 / 0.34);
+  --focus: #f2f2f2;
 
-  --hairline: rgb(0 0 0 / 0.45);
-  --glass-fill: rgb(255 255 255 / 0.065);
-  --glass-fill-strong: rgb(28 40 52 / 0.84);
+  --hairline: var(--dark-hairline, #1a1a1a);
+  --glass-fill: rgb(255 255 255 / 0.04);
+  --glass-fill-strong: rgb(255 255 255 / 0.08);
   --sheen: rgb(255 255 255 / 0.05);
-  --rim-top: rgb(255 255 255 / 0.36);
-  --rim-mid: rgb(255 255 255 / 0.1);
-  --rim-low: rgb(255 255 255 / 0.05);
-  --inner-hi: rgb(255 255 255 / 0.16);
-  --elev-rest: 0 10px 28px -18px rgb(0 0 0 / 0.6);
-  --elev-float: 0 20px 44px -22px rgb(0 0 0 / 0.75);
-  --foot-tint: rgb(0 0 0 / 0.14);
+  --rim-top: rgb(255 255 255 / 0.22);
+  --rim-mid: rgb(255 255 255 / 0.08);
+  --rim-low: rgb(255 255 255 / 0.035);
+  --inner-hi: rgb(255 255 255 / 0.11);
+  --elev-rest: 0 8px 22px -16px rgb(0 0 0 / 0.7);
+  --elev-float: 0 22px 48px -24px rgb(0 0 0 / 0.9);
+  --foot-tint: rgb(0 0 0 / 0.18);
   --row-hover: rgb(255 255 255 / 0.06);
-  --row-active: rgb(134 195 230 / 0.16);
-  --select-edge: rgb(134 195 230 / 0.28);
-  --select-glow: rgb(134 195 230 / 0.4);
-  --halo: rgb(104 168 230 / 0.2);
-  --avatar-edge: rgb(255 255 255 / 0.2);
+  --row-active: rgb(255 255 255 / 0.1);
+  --select-edge: rgb(255 255 255 / 0.26);
+  --select-glow: rgb(255 255 255 / 0.18);
+  --halo: rgb(255 255 255 / 0.06);
+  --avatar-edge: rgb(255 255 255 / 0.18);
   --spot-color: #ffffff;
-  --spot-strength: 14%;
-  --pill-fill: rgb(255 255 255 / 0.1);
-  --ring: rgb(255 255 255 / 0.08);
-  --scrim: rgb(0 0 0 / 0.5);
+  --spot-strength: 8%;
+  --pill-fill: rgb(255 255 255 / 0.06);
+  --ring: rgb(255 255 255 / 0.1);
+  --scrim: rgb(0 0 0 / 0.72);
+
+  --control-fill: rgb(255 255 255 / 0.055);
+  --control-fill-hover: rgb(255 255 255 / 0.095);
+  --control-sheen: rgb(255 255 255 / 0.07);
+  --control-edge: rgb(255 255 255 / 0.11);
+  --control-lift: 0 1px 2px rgb(0 0 0 / 0.4);
+  --input-fill: rgb(255 255 255 / 0.06);
+
+  /* Primary actions are the inverse of the page in dark mode: near-white on black. */
+  --primary-sheen: rgb(255 255 255 / 0.5);
+  --primary-rim: rgb(255 255 255 / 0.9);
+  --primary-shadow: rgb(0 0 0 / 0.45);
+  --primary-glow: rgb(255 255 255 / 0.16);
 }

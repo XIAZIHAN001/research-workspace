@@ -1,5 +1,6 @@
 /* global document, window */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -807,7 +808,7 @@ async function main() {
       ['浅色', 'light', 6],
       ['深色', 'dark', 7],
     ]) {
-      await page.getByRole('button', { name: theme }).click();
+      await setAppTheme(page, theme);
       await page.waitForTimeout(350);
       await page.screenshot({
         path: fileURLToPath(new URL(`0${String(index)}-ai-${slug}.png`, SHOT_DIR)),

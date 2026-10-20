@@ -17,6 +17,7 @@ import {
   type AiCitation,
   type AiHealth,
 } from '../../services/ai/types';
+import { providerDisplayLabel } from '../ai/providerLabel';
 import { AiMath } from './AiMath';
 import type { AiSession, AiTurn } from './useAiReading';
 
@@ -302,8 +303,8 @@ export function AiPanel({
     health === null
       ? '还没有连上本地 AI 服务（npm run ai:serve）。'
       : health.online
-        ? `回答来自 ${health.label}${health.reasoning === null ? '' : ` · ${health.reasoning}`}：会调用在线模型，可能产生费用。`
-        : `回答来自 ${health.label}：不会发起任何在线调用。`;
+        ? `在线模式：会调用在线模型，可能产生费用。${health.reasoning === null ? '' : ` ${health.reasoning}`}`
+        : '本地模拟：不会发起任何在线调用。';
 
   return (
     <aside className="ai-panel" aria-label="AI 精读助手">
@@ -471,7 +472,8 @@ export function AiPanel({
                   ))}
                   <Diagnostics answer={turn.answer} />
                   <p className="ai-foot">
-                    出处：第 {session.source.page} 页 · {turn.answer.providerLabel}
+                    出处：第 {session.source.page} 页 ·{' '}
+                    {providerDisplayLabel(turn.answer.providerLabel)}
                     {turn.answer.usage?.completionTokens != null &&
                       ` · 输出 ${String(turn.answer.usage.completionTokens)} tokens`}
                     {turn.answer.usage?.reasoningTokens != null &&

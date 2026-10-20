@@ -80,4 +80,26 @@ button {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* A press must not move anything when motion is unwelcome; the colour change still reports it. */
+  .btn:active,
+  .icon-btn:active,
+  .chip:active,
+  .nav-item:active,
+  button.row-main:active,
+  .ai-mode-card:active {
+    transform: none;
+  }
+
+  /* The ambient light is static anyway; dropping the blur avoids a large filter surface. */
+  .app::before,
+  .app::after {
+    filter: none;
+  }
+
+  .dialog[open],
+  .avatar-ring,
+  .welcome {
+    animation: none;
+  }
 }

@@ -1,4 +1,4 @@
-/* Soft color pools sit behind everything so the glass has something to pick up. */
+/* A quiet neutral wash sits behind everything so the glass has something to pick up. */
 .app {
   position: relative;
   display: grid;
@@ -6,13 +6,44 @@
   gap: 10px;
   height: 100%;
   padding: 10px;
-  background:
-    radial-gradient(60% 55% at 12% 8%, var(--pool-a), transparent 70%),
-    radial-gradient(55% 60% at 92% 20%, var(--pool-b), transparent 70%),
-    radial-gradient(70% 60% at 60% 105%, var(--pool-c), transparent 70%), var(--bg-base);
+  overflow: hidden;
+  background: var(--bg-base);
   transition:
-    grid-template-columns var(--dur-slow) var(--ease-out),
-    gap var(--dur-slow) var(--ease-out);
+    grid-template-columns var(--dur-sidebar) var(--ease-out),
+    gap var(--dur-sidebar) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+
+/*
+ * The ambient layer is two decorative pseudo-elements, never a filter over the interface.
+ * They sit behind the panels, take no pointer events and contribute no scroll size. Blur is
+ * applied to these gradients alone, so a PDF or a text layer is never rasterised through it.
+ */
+.app::before,
+.app::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(56px);
+}
+
+/* The top light is a little stronger than the foot; both are neutral white-grey. */
+.app::before {
+  top: -20%;
+  left: 12%;
+  width: 74%;
+  height: 48%;
+  background: radial-gradient(closest-side, var(--ambient-top), transparent 72%);
+}
+
+.app::after {
+  right: 4%;
+  bottom: -28%;
+  width: 70%;
+  height: 44%;
+  background: radial-gradient(closest-side, var(--ambient-bottom), transparent 74%);
 }
 
 .app[data-sidebar='closed'] {
@@ -21,6 +52,8 @@
 }
 
 .sidebar {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -30,6 +63,7 @@
   transition:
     opacity var(--dur) var(--ease-out),
     visibility 0s,
+    background-color var(--dur-hover) var(--ease-out),
     var(--glow-t);
 }
 
@@ -48,6 +82,7 @@
 /* The reading surface stays calm: one quiet sheet, no glass, no glow, a very short lift. */
 .main {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -58,6 +93,35 @@
   box-shadow:
     0 0 0 1px var(--sheet-edge),
     var(--sheet-shadow);
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+/*
+ * Content surfaces follow the dark-level slider with the same short colour transition. They
+ * are not animated for any other reason, so the wash stays smooth without a continuous layer.
+ */
+.home-panel,
+.paper-row,
+.ai-panel,
+.notes-panel,
+.difficulty-panel,
+.reader-bar,
+.reader-side-tabs,
+.dialog {
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+
+/*
+ * The reopen control floats over the top-left of the main panel. When the sidebar is closed
+ * that corner belongs to the page content (the workbench header, the reader toolbar), so the
+ * main panel keeps a reserved strip instead of letting the control sit on top of a title.
+ */
+.app[data-sidebar='closed'] .main {
+  padding-top: 44px;
 }
 
 .main > .reopen {
@@ -84,6 +148,13 @@
 .main > .banner.banner-warning {
   border-color: color-mix(in srgb, var(--warn) 42%, transparent);
   background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+/* A completed action is information, not an error: neutral glass instead of the danger tint. */
+.main > .banner.banner-notice {
+  border-color: var(--hairline);
+  background: var(--control-fill);
+  color: var(--text-2);
 }
 
 .scrim {
@@ -127,7 +198,7 @@
   width: min(var(--sidebar-w), calc(100% - 20px));
   transform: translateX(0);
   transition:
-    transform var(--dur-slow) var(--ease-spring),
+    transform var(--dur-sidebar) var(--ease-spring),
     opacity var(--dur) var(--ease-out),
     visibility 0s;
 }
@@ -135,7 +206,15 @@
 .app[data-narrow='true'][data-sidebar='closed'] .sidebar {
   transform: translateX(calc(-100% - 24px));
   transition:
-    transform var(--dur-slow) var(--ease-out),
+    transform var(--dur-sidebar) var(--ease-out),
     opacity var(--dur) var(--ease-out),
-    visibility 0s linear var(--dur-slow);
+    visibility 0s linear var(--dur-sidebar);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The gradients stay as a static wash; only the large blur surface is removed. */
+  .app::before,
+  .app::after {
+    filter: none;
+  }
 }

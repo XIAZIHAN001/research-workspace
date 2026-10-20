@@ -13,3 +13,6 @@ docs/*report.json
 # — not even to re-align a markdown table. New reports are formatted before they are committed.
 docs/Phase*.md
 docs/screenshots-*/
+# The Phase 12 task brief is supplied verbatim by the user; it is not application source and
+# must not be reformatted by the project's formatter.
+Research_Workspace_Phase12_Codex_%E6%89%A7%E8%A1%8C%E6%8F%90%E7%A4%BA%E8%AF%8D.md

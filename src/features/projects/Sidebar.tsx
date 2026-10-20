@@ -1,16 +1,16 @@
 import {
   HardDriveDownload,
   House,
-  KeyRound,
   Library,
   PanelLeftClose,
   Plus,
   Settings2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Project } from '../../domain/project';
-import { ThemeSwitch } from '../theme/ThemeSwitch';
-import type { ThemePref } from '../theme/theme';
+import { AvatarPicker } from '../home/AvatarPicker';
+import type { useAvatar } from '../home/useAvatar';
 import { formatRelativeDay } from '../../ui/format';
 import { glowProps } from '../../ui/glow';
 import { ProjectRow } from './ProjectRow';
@@ -28,7 +28,8 @@ interface SidebarProps {
   now: number;
   managing: boolean;
   renamingId: string | null;
-  themePref: ThemePref;
+  /** The local figure, shown at the bottom-left like a desktop profile chip. */
+  avatar: ReturnType<typeof useAvatar>;
   onHome: () => void;
   onLibrary: () => void;
   onCollapse: () => void;
@@ -39,11 +40,9 @@ interface SidebarProps {
   onCommitRename: (id: string, name: string) => void;
   onCancelRename: () => void;
   onRequestDelete: (project: Project) => void;
-  onThemeChange: (pref: ThemePref) => void;
   /** Opens the export/restore dialog. */
   onBackup: () => void;
-  /** Desktop only: opens the AI mode, key and budget dialog. */
-  onAiSettings?: () => void;
+  onSettings: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -152,7 +151,7 @@ export function Sidebar(props: SidebarProps) {
                 <ProjectRow
                   key={project.id}
                   project={project}
-                  selected={project.id === selectedId && !homeActive}
+                  selected={project.id === selectedId && !homeActive && !libraryActive}
                   renaming={project.id === renamingId}
                   onSelect={props.onSelect}
                   onStartRename={props.onStartRename}
@@ -167,12 +166,6 @@ export function Sidebar(props: SidebarProps) {
       </nav>
 
       <div className="sidebar-foot">
-        {props.onAiSettings !== undefined && (
-          <button type="button" className="btn btn-quiet" onClick={props.onAiSettings}>
-            <KeyRound size={14} aria-hidden="true" />
-            AI 设置
-          </button>
-        )}
         <button type="button" className="btn btn-quiet" onClick={props.onBackup}>
           <HardDriveDownload size={14} aria-hidden="true" />
           备份与恢复
@@ -186,7 +179,28 @@ export function Sidebar(props: SidebarProps) {
           <Settings2 size={14} aria-hidden="true" />
           管理项目
         </button>
-        <ThemeSwitch pref={props.themePref} onChange={props.onThemeChange} />
+        <button
+          type="button"
+          className="btn btn-quiet"
+          aria-haspopup="dialog"
+          onClick={props.onSettings}
+        >
+          <SlidersHorizontal size={14} aria-hidden="true" />
+          设置
+        </button>
+      </div>
+
+      <div className="sidebar-user">
+        <AvatarPicker
+          compact
+          src={props.avatar.src}
+          isCustom={props.avatar.isCustom}
+          problem={props.avatar.problem}
+          onUpload={props.avatar.upload}
+          onReset={props.avatar.reset}
+          onDismissProblem={props.avatar.dismiss}
+        />
+        <span className="sidebar-user__label">本地工作区</span>
       </div>
     </aside>
   );

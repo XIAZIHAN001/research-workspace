@@ -1,4 +1,10 @@
 /* ---------- buttons ---------- */
+
+/*
+ * The restrained liquid-glass control: a translucent fill, a sheen falling from the top edge,
+ * a hairline rim and one tight lift. No backdrop blur here — lists can hold many buttons, and
+ * blurring each one would cost more than it shows. Only the sidebar and floating shells blur.
+ */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -6,63 +12,88 @@
   gap: 6px;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--ring);
+  border: 0;
   border-radius: var(--r-sm);
-  background: var(--pill-fill);
+  background-color: var(--control-fill);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 58%);
+  box-shadow:
+    inset 0 1px 0 var(--inner-hi),
+    0 0 0 0.5px var(--control-edge),
+    var(--control-lift);
   color: var(--text);
   white-space: nowrap;
   transition:
-    background-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
+    background-color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
 }
 
-.btn:hover {
-  background: var(--glass-fill-strong);
+.btn:hover:not(:disabled) {
+  background-color: var(--control-fill-hover);
 }
 
-.btn:active {
-  transform: scale(0.98);
+.btn:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press);
 }
 
+.btn:disabled {
+  opacity: 0.55;
+}
+
+/*
+ * Primary actions are the inverse of the page: white on black in dark mode, near-black on
+ * white in light mode. The sheen, rim and hover halo stay monochrome; no accent hue is used.
+ */
 .btn-primary {
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background-color: var(--color-primary-bg);
+  background-image: linear-gradient(180deg, var(--primary-sheen), transparent 62%);
+  box-shadow:
+    inset 0 1px 0 var(--primary-rim),
+    0 0 0 0.5px color-mix(in srgb, var(--color-primary-fg) 12%, transparent),
+    0 1px 2px var(--primary-shadow);
+  color: var(--color-primary-fg);
   font-weight: 600;
 }
 
-.btn-primary:hover {
-  background: var(--accent-hi);
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-primary-bg-hover);
+  box-shadow:
+    inset 0 1px 0 var(--primary-rim),
+    0 0 18px -8px var(--primary-glow),
+    0 1px 2px var(--primary-shadow);
 }
 
 .btn-danger {
-  border-color: transparent;
-  background: var(--danger);
+  background-color: var(--danger);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.14), transparent 62%);
   color: var(--danger-ink);
   font-weight: 600;
 }
 
 .btn-danger:hover {
-  background: color-mix(in srgb, var(--danger) 88%, black);
+  background-color: color-mix(in srgb, var(--danger) 88%, black);
 }
 
 .btn-quiet {
   height: 28px;
   padding: 0 8px;
-  border-color: transparent;
   background: transparent;
+  box-shadow: none;
   color: var(--text-2);
   font-size: 13px;
 }
 
 .btn-quiet:hover,
 .btn-quiet[aria-pressed='true'] {
-  background: var(--row-hover);
+  background-color: var(--row-hover);
+  box-shadow: none;
   color: var(--text);
 }
 
 .btn-quiet[aria-pressed='true'] {
-  background: var(--row-active);
+  background-color: var(--row-active);
 }
 
 .icon-btn {
@@ -76,12 +107,19 @@
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--text-2);
-  transition: background-color var(--dur-fast) var(--ease-out);
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
 }
 
 .icon-btn:hover {
   background: var(--row-hover);
   color: var(--text);
+}
+
+.icon-btn:active {
+  transform: scale(0.94);
 }
 
 /* ---------- sidebar ---------- */
@@ -153,11 +191,11 @@
   color: var(--text-2);
   text-align: left;
   transition:
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
     padding var(--dur) var(--ease-out),
     box-shadow var(--dur) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out),
+    transform var(--dur-press) var(--ease-out),
     var(--glow-t);
 }
 
@@ -173,13 +211,14 @@ button.row-main:active {
   transform: scale(0.985);
 }
 
-/* Selected: a tinted lens with a thin lit edge and a soft glow, plus a light bar at its left. */
+/* Selected: a tinted glass lens with a thin lit edge and a soft glow, plus a light bar. */
 .nav-item[aria-current],
 .row[data-selected='true'] .row-main {
   background-color: var(--row-active);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 76%);
   box-shadow:
-    inset 0 0 0 1px var(--select-edge),
-    0 0 16px -7px var(--select-glow);
+    inset 0 0 0 0.5px var(--select-edge),
+    0 0 18px -8px var(--select-glow);
   color: var(--text);
   font-weight: 600;
 }
@@ -263,46 +302,213 @@ button.row-main:active {
 /* The base plate: a slightly denser tier under the list, so the sidebar reads as layers. */
 .sidebar-foot {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-top: 1px solid var(--ring);
+  background: var(--foot-tint);
+}
+
+.sidebar-foot .btn-quiet {
+  justify-content: flex-start;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The profile chip sits at the bottom-left, as in the desktop shells this app lives beside. */
+.sidebar-user {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 8px 10px 10px;
   border-top: 1px solid var(--ring);
   background: var(--foot-tint);
 }
 
-/*
- * The footer holds two labelled buttons and a three-way theme switch. At the narrow sidebar
- * width they do not fit on one line; without wrapping the switch was clipped by the sidebar
- * edge. Wrapping puts it on its own line, and margin-left keeps it on the right edge as the
- * segmented control it is.
- */
-.sidebar-foot .segmented {
-  margin-left: auto;
+.sidebar-user .avatar-block[data-compact='true'] {
+  flex-wrap: wrap;
+  gap: 2px;
 }
 
-.segmented {
-  display: inline-flex;
-  gap: 2px;
+.sidebar-user .avatar-block[data-compact='true'] .avatar-ring {
+  width: 34px;
+  height: 34px;
   padding: 2px;
-  border-radius: 10px;
+}
+
+.sidebar-user .avatar-block[data-compact='true']::before {
+  top: -8px;
+  width: 56px;
+  height: 56px;
+}
+
+.sidebar-user .avatar-block[data-compact='true'] .avatar-hint {
+  display: none;
+}
+
+.sidebar-user .avatar-block .hint {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.sidebar-user__label {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+/*
+ * Dark level: one slider, 0 (deep grey) to 100 (pure black). The filled part of the track uses
+ * the primary text colour, so it is black on the light theme and white on the dark one. The
+ * level itself lives in `--dark-level`, written before first paint and on every drag.
+ */
+.theme-level {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 2.1em;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.theme-level__label {
+  white-space: nowrap;
+}
+
+.theme-level__value {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.theme-level__range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-level__range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--color-text-primary) calc(var(--dark-level, 100) * 1%),
+    var(--row-hover) 0
+  );
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+
+.theme-level__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-text-primary);
+  box-shadow:
+    0 0 0 1px var(--color-bg-panel),
+    0 1px 2px rgb(0 0 0 / 0.35);
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+.theme-level__range:active::-webkit-slider-thumb {
+  transform: scale(0.9);
+}
+
+.theme-level__range:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Firefox is not a target in this desktop app, but the control stays usable there. */
+.theme-level__range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
   background: var(--row-hover);
 }
 
+.theme-level__range::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-text-primary);
+}
+
+.theme-level__range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-text-primary);
+}
+
+/*
+ * Segmented control. A single indicator slides under the pressed segment instead of each
+ * button drawing its own background, so switching theme or tabs reads as one object moving.
+ * Fixed 28px segments keep the geometry exact; :has() is supported by WebView2 and Chromium.
+ */
+.segmented {
+  --seg-w: 28px;
+  --seg-gap: 2px;
+  --seg-index: 0;
+  position: relative;
+  display: inline-flex;
+  gap: var(--seg-gap);
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  isolation: isolate;
+}
+
+.segmented::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 0;
+  width: var(--seg-w);
+  height: 24px;
+  border-radius: 8px;
+  background-color: var(--control-fill-hover);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 62%);
+  box-shadow:
+    inset 0 1px 0 var(--inner-hi),
+    0 0 0 0.5px var(--control-edge),
+    var(--control-lift);
+  transform: translateX(calc(var(--seg-index) * (var(--seg-w) + var(--seg-gap))));
+  transition: transform var(--dur-tab) var(--ease-spring);
+}
+
+.segmented:has(.seg:nth-child(2)[aria-pressed='true']) {
+  --seg-index: 1;
+}
+
+.segmented:has(.seg:nth-child(3)[aria-pressed='true']) {
+  --seg-index: 2;
+}
+
 .seg {
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
-  width: 28px;
+  width: var(--seg-w);
   height: 24px;
   padding: 0;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text-3);
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-tab) var(--ease-out);
 }
 
 .seg:hover {
@@ -310,11 +516,17 @@ button.row-main:active {
 }
 
 .seg[aria-pressed='true'] {
-  background: var(--pill-fill);
   color: var(--text);
-  box-shadow:
-    0 0 0 0.5px var(--hairline),
-    inset 0 1px 0 var(--inner-hi);
+}
+
+/* Without :has() there is no sliding layer; the pressed segment draws its own plate. */
+@supports not selector(:has(*)) {
+  .seg[aria-pressed='true'] {
+    background: var(--control-fill-hover);
+    box-shadow:
+      0 0 0 0.5px var(--hairline),
+      inset 0 1px 0 var(--inner-hi);
+  }
 }
 
 /* ---------- forms and dialogs ---------- */
@@ -326,6 +538,12 @@ button.row-main:active {
   padding: 0;
   border: 0;
   border-radius: var(--r-lg);
+  /* A dialog is a place to read a decision, so it stays opaque; the glass material is carried
+     by its buttons and tabs instead of by the sheet behind their labels. */
+  background: var(--color-bg-elevated);
+  box-shadow:
+    0 0 0 0.5px var(--color-border-subtle),
+    var(--elev-float);
   color: var(--text);
 }
 
@@ -335,13 +553,13 @@ button.row-main:active {
 }
 
 .dialog[open] {
-  animation: dialog-in var(--dur-slow) var(--ease-spring);
+  animation: dialog-in var(--dur-dialog) var(--ease-spring);
 }
 
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.97);
+    transform: translateY(6px) scale(0.98);
   }
 }
 
@@ -395,7 +613,14 @@ button.row-main:active {
   padding: 0 10px;
   border: 1px solid var(--field-edge);
   border-radius: var(--r-sm);
-  background: var(--pill-fill);
+  background: var(--input-fill);
+  transition:
+    border-color var(--dur-hover) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+
+.input:hover {
+  background: var(--control-fill-hover);
 }
 
 .input[aria-invalid='true'] {
@@ -403,7 +628,7 @@ button.row-main:active {
 }
 
 .input::placeholder {
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .inline-input {
@@ -430,15 +655,47 @@ button.row-main:active {
 }
 
 /* ---------- home ---------- */
+/* A workbench, not a splash screen: identity and actions on one line, real content below. */
 .home {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 18px;
+  width: min(1040px, 100%);
+  margin: 0 auto;
+  padding: 24px clamp(16px, 3vw, 32px) 40px;
+  text-align: left;
+}
+
+.home-head {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 48px 32px 72px;
-  text-align: center;
+  justify-content: space-between;
+  gap: 14px 20px;
+}
+
+.home-greeting {
+  min-width: 0;
+}
+
+.home-kicker {
+  margin-bottom: 2px;
+  color: var(--text-3);
+  font: 600 10.5px/1.4 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-actions .btn {
+  max-width: min(100%, 22em);
 }
 
 /* isolation keeps the halo (z-index -1) above the page sheet but behind the ring. */
@@ -471,7 +728,42 @@ button.row-main:active {
   height: 148px;
   padding: 6px;
   border-radius: 50%;
-  animation: avatar-in var(--dur-slow) var(--ease-spring) both;
+  animation: avatar-in var(--dur) var(--ease-spring) both;
+}
+
+/* The workbench figure: present, but never the centre of the page. */
+.avatar-block[data-compact='true'] {
+  flex-direction: row;
+  gap: 4px;
+}
+
+.avatar-block[data-compact='true']::before {
+  top: -16px;
+  width: 88px;
+  height: 88px;
+}
+
+.avatar-block[data-compact='true'] .avatar-ring {
+  width: 54px;
+  height: 54px;
+  padding: 3px;
+}
+
+.avatar-block[data-compact='true'] .avatar-hint {
+  padding: 10px 0 3px;
+  font-size: 10px;
+}
+
+.avatar-block[data-compact='true'] .avatar-hint svg {
+  display: none;
+}
+
+.avatar-block[data-compact='true'] .avatar-reset-compact {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-bg-elevated);
+  box-shadow: 0 0 0 0.5px var(--hairline);
 }
 
 @keyframes avatar-in {
@@ -508,7 +800,7 @@ button.row-main:active {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform var(--dur-slow) var(--ease-spring);
+  transition: transform var(--dur) var(--ease-spring);
 }
 
 .avatar-btn:hover .avatar-img,
@@ -518,7 +810,7 @@ button.row-main:active {
 
 .avatar-btn:active .avatar-img {
   transform: scale(0.98);
-  transition-duration: var(--dur-fast);
+  transition-duration: var(--dur-press);
 }
 
 .avatar-hint {
@@ -545,25 +837,25 @@ button.row-main:active {
   transform: none;
 }
 
-/* A short greeting set large, one quieter line under it. The h1 holds both, so it reads whole. */
+/* The h1 holds the greeting and its quieter sentence, so the pair still reads as one heading. */
 .welcome {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: min(30em, 100%);
-  animation: fade-in var(--dur-slow) var(--ease-out) 90ms both;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: min(44em, 100%);
+  animation: fade-in var(--dur) var(--ease-out) 40ms both;
 }
 
 .welcome-lead {
-  font: 600 34px/1.25 var(--font-display);
-  letter-spacing: 0.02em;
+  font: 600 20px/1.35 var(--font-display);
+  letter-spacing: 0.01em;
 }
 
 .welcome-body {
-  max-width: 24em;
+  max-width: 36em;
   color: var(--text-2);
-  font: 400 16px/1.7 var(--font-ui);
+  font: 400 13px/1.6 var(--font-ui);
   overflow-wrap: anywhere;
   /* Greedy wrapping, not balance: balancing a short CJK line splits words ("今天" -> "今 / 天"). */
   text-wrap: pretty;
@@ -571,16 +863,138 @@ button.row-main:active {
 
 /* A provider that answers with a sentence instead of a greeting: keep it small and in one block. */
 .welcome[data-long='true'] .welcome-lead {
-  max-width: 26em;
-  font: 500 20px/1.6 var(--font-display);
+  max-width: 30em;
+  font: 500 16px/1.5 var(--font-display);
   letter-spacing: 0.01em;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
-/* The open button quotes a paper title that may be 80 characters; clip it, never grow past the page. */
-.home .btn {
-  max-width: min(100%, 30em);
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.home-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--color-bg-panel);
+  box-shadow: var(--elev-rest);
+}
+
+.home-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.home-panel-title {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.home-panel-count {
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  transition: background-color var(--dur-hover) var(--ease-out);
+}
+
+.home-row > svg {
+  flex: none;
+  color: var(--text-3);
+  transition:
+    color var(--dur-hover) var(--ease-out),
+    transform var(--dur-hover) var(--ease-out);
+}
+
+.home-row:hover {
+  background: var(--row-hover);
+}
+
+.home-row:hover > svg {
+  color: var(--text-2);
+  transform: translateX(2px);
+}
+
+.home-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.home-row-title {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-row-meta {
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 8px 12px;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.home-empty p {
+  max-width: 32em;
+}
+
+.home-empty .btn {
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .btn-label {
@@ -588,6 +1002,256 @@ button.row-main:active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- settings ---------- */
+/* A large settings window with a category rail, like the desktop settings surfaces. */
+.dialog:has(.settings) {
+  width: min(1080px, calc(100vw - 32px));
+  max-height: min(88vh, 900px);
+  overflow-y: auto;
+  background: var(--color-bg-panel);
+}
+
+.dialog:has(.settings) .dialog-body {
+  padding: 0;
+  gap: 0;
+}
+
+.dialog:has(.settings) .dialog-head {
+  padding: 16px 20px 0;
+}
+
+.dialog:has(.settings) .settings {
+  padding: 12px 20px 24px;
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 28px;
+  width: min(1080px, 100%);
+  margin: 0 auto;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: 2px;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+
+.settings-nav-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.settings-nav-item:active {
+  transform: scale(0.985);
+}
+
+.settings-nav-item[aria-current='page'] {
+  background-color: var(--row-active);
+  box-shadow: inset 0 0 0 0.5px var(--select-edge);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-content {
+  min-width: 0;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(760px, 100%);
+}
+
+.settings-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.settings-panel-head h2 {
+  font: 600 20px/1.3 var(--font-display);
+}
+
+.settings-panel-hint {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.settings-section:last-child {
+  border-bottom: 0;
+}
+
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--hairline);
+}
+
+.settings-row-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-row-hint {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-row-text {
+  min-width: 0;
+}
+
+.settings-slider {
+  width: min(300px, 40vw);
+}
+
+.settings-slider .theme-level {
+  grid-template-columns: minmax(0, 1fr) 2.1em;
+}
+
+/* The row title already says "深色程度"; the control's own label would repeat it. */
+.settings-slider .theme-level__label {
+  display: none;
+}
+
+.settings-choices {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+}
+
+.settings-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background-color: transparent;
+  color: var(--text-2);
+  text-align: left;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+.settings-choice:last-child {
+  border-bottom: 0;
+}
+
+.settings-choice:hover:not(:disabled) {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.settings-choice[data-active='true'] {
+  background-color: var(--row-active);
+  box-shadow: inset 0 0 0 0.5px var(--select-edge);
+  color: var(--text);
+}
+
+.settings-choice[data-active='true'] .settings-choice__text {
+  color: var(--text-2);
+}
+
+.settings-choice:disabled {
+  opacity: 0.55;
+}
+
+.settings-choice__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-choice__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-choice__text {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .settings {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .settings-slider {
+    width: 100%;
+  }
 }
 
 /* ---------- project page ---------- */

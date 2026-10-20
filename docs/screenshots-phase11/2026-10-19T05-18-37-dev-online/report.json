@@ -1,0 +1,76 @@
+{
+  "phase": 11,
+  "mode": "dev-online-simulator",
+  "generatedAt": "2026-10-19T05:18:54.533Z",
+  "simulator": "http://127.0.0.1:1885",
+  "keyConfiguredBefore": true,
+  "results": [
+    {
+      "name": "开发版启动并处于离线 Mock",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "在线模式通过本地模拟器就绪",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "可选中 PDF 文字",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "在线回答通过桌面传输返回",
+      "passed": true,
+      "detail": "在线模拟回答：这段原文说明了模型学到的表示与输入顺序无关。[1] 第 1 页"
+    },
+    {
+      "name": "回答标注了在线提供方",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "引用校验保留",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "模拟器收到了模型请求",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "请求使用测试 Key",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "请求发往本地模拟器",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "请求携带了选中的原文",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "可切回离线 Mock",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "测试 Key 已删除",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "控制台无错误",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "failures": 0,
+  "consoleIssues": []
+}

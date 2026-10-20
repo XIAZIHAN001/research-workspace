@@ -15,6 +15,8 @@ interface AvatarPickerProps {
   onReset: () => void;
   /** Called when the picker is opened again, so the last attempt's problem is cleared first. */
   onDismissProblem: () => void;
+  /** A small figure for the home workbench header; the ring keeps its controls and label. */
+  compact?: boolean;
 }
 
 /** The user's figure. The picture lives in a rim-lit ring; replacing it is one click away. */
@@ -25,6 +27,7 @@ export function AvatarPicker({
   onUpload,
   onReset,
   onDismissProblem,
+  compact = false,
 }: AvatarPickerProps) {
   const input = useRef<HTMLInputElement>(null);
 
@@ -35,7 +38,7 @@ export function AvatarPicker({
   };
 
   return (
-    <div className="avatar-block">
+    <div className="avatar-block" data-compact={compact}>
       <div className="avatar-ring glass" {...glowProps}>
         <button
           type="button"
@@ -62,12 +65,23 @@ export function AvatarPicker({
         aria-hidden="true"
         onChange={onChange}
       />
-      {isCustom && (
-        <button type="button" className="btn btn-quiet" onClick={onReset}>
-          <RotateCcw size={13} aria-hidden="true" />
-          恢复默认形象
-        </button>
-      )}
+      {isCustom &&
+        (compact ? (
+          <button
+            type="button"
+            className="icon-btn avatar-reset-compact"
+            aria-label="恢复默认形象"
+            title="恢复默认形象"
+            onClick={onReset}
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+          </button>
+        ) : (
+          <button type="button" className="btn btn-quiet" onClick={onReset}>
+            <RotateCcw size={13} aria-hidden="true" />
+            恢复默认形象
+          </button>
+        ))}
       {problem !== null && (
         <p className="hint hint-error" role="alert">
           {AVATAR_PROBLEM_TEXT[problem]}

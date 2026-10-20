@@ -1,5 +1,6 @@
 /* global document, window, HTMLInputElement */
 import { spawn } from 'node:child_process';
+import { setAppTheme } from './appearance.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -866,10 +867,10 @@ async function main() {
     // ---- Dark, warm paper, narrow window ----------------------------------
     await toProject(page);
     await openKnowledge(page);
-    await page.getByRole('button', { name: '深色' }).click();
+    await setAppTheme(page, '深色');
     await page.waitForTimeout(300);
     await page.screenshot({ path: fileURLToPath(new URL('05-knowledge-dark.png', SHOT_DIR)) });
-    await page.getByRole('button', { name: '浅色' }).click();
+    await setAppTheme(page, '浅色');
     await page.setViewportSize({ width: 900, height: 900 });
     await page.waitForTimeout(300);
     const narrow = await page.evaluate(() => {
