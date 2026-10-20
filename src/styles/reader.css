@@ -186,6 +186,16 @@
   text-align: initial;
   text-size-adjust: none;
   forced-color-adjust: none;
+  /*
+   * Explicit, even though nothing above sets it any more.
+   *
+   * The glyphs here exist for selection only (`color: transparent`), but `text-shadow` is
+   * inherited and paints in its own colour, so any shadow arriving from an ancestor draws a blur
+   * under every character — on top of the canvas text, which is the only thing supposed to be
+   * visible. A one-line assertion here means a future global type rule cannot bring the doubling
+   * back.
+   */
+  text-shadow: none;
   transform-origin: 0 0;
   caret-color: CanvasText;
   --min-font-size: 1;

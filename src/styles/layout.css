@@ -59,11 +59,23 @@
   min-width: 0;
   min-height: 0;
   /*
-   * Clipped on the block axis only. `overflow: hidden` on both axes would cut the resize handle
-   * in half, since it deliberately sits half outside the column so it is easy to grab.
+   * `clip`, not `hidden`, and with 7px of slack.
+   *
+   * The column has to keep its rounded corners, but the resize handle deliberately sticks 6px
+   * out past the right edge so it is easy to grab. Two things ruled out the obvious answers:
+   *
+   * - `overflow: hidden` clips the outer half of the handle.
+   * - `overflow-x: visible` with `overflow-y: hidden` is not a legal pair: the spec computes the
+   *   `visible` axis to `auto`, which silently turned this column into a horizontal scroll
+   *   container — hence the stray scrollbar along the foot of the rail and a handle that scrolled
+   *   with the content instead of staying on the edge.
+   *
+   * `overflow: clip` creates no scroll container at all, and `overflow-clip-margin` lets the
+   * handle's 6px overhang paint while anything further out is still cut. The project list scrolls
+   * in `.sidebar-scroll`, which owns its own `overflow-y`, so nothing else depends on this box.
    */
-  overflow-x: visible;
-  overflow-y: hidden;
+  overflow: clip;
+  overflow-clip-margin: 7px;
   border-radius: var(--r-lg);
   transition:
     opacity var(--dur) var(--ease-out),
@@ -72,6 +84,12 @@
     var(--glow-t);
 }
 
+/*
+ * Every direct child fills the column — except the drag handle, which is deliberately 12px wide.
+ * Without the reset below, this rule's `min-width` wins over the handle's `width`, stretching it
+ * to the full column: the grip then centres in the middle of the rail (a line through the middle
+ * of the sidebar, under the text) and the entire column becomes a drag target.
+ */
 .sidebar > * {
   min-width: calc(var(--sidebar-w) - 2px);
 }
@@ -98,6 +116,8 @@
   display: grid;
   place-items: center;
   width: 12px;
+  /* Undoes `.sidebar > *`'s min-width, which would otherwise stretch this to the whole column. */
+  min-width: 0;
   cursor: col-resize;
   touch-action: none;
   background: none;

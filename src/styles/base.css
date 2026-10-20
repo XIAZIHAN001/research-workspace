@@ -30,9 +30,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/*
+ * No `text-shadow` here, and that is the fix rather than an omission.
+ *
+ * A 1px shadow used to sit in this rule as extra weight compensation. But `text-shadow` is an
+ * inherited property, so it also reached the PDF text layer — whose spans are `color: transparent`
+ * so only the canvas shows, yet whose shadows still paint, in the shadow's own colour. Every glyph
+ * on a rendered page therefore got a 1px black blur underneath the canvas's light text: the
+ * doubled look this was meant to cure. Grayscale antialiasing addresses the actual cause
+ * (subpixel fringing); the shadow was compensating for a defect it created.
+ */
 :root[data-theme='dark'] body {
   -webkit-font-smoothing: grayscale;
-  text-shadow: 0 0 1px rgb(0 0 0 / 0.55);
 }
 
 h1,
