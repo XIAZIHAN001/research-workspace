@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T11:19:33.889Z",
+  "generatedAt": "2026-10-21T08:54:41.007Z",
   "baseUrl": "http://127.0.0.1:4178/",
   "viewportMatrix": [
     "1440x900",
@@ -17,26 +17,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.group-title \"项目\" @28,155",
-          "ratio": 7.88,
+          "label": "h2.home-panel-title \"继续阅读\" @393,320",
+          "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.home-kicker \"Research Workspace\" @361,34",
-          "ratio": 8.17,
+          "label": "span.home-panel-count \"2\" @862,321",
+          "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @877,134",
-          "ratio": 8.17,
+          "label": "span.home-panel-count \"篇\" @868,321",
+          "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @883,134",
-          "ratio": 8.17,
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @403,387",
+          "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         }
@@ -52,26 +52,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.group-title \"项目\" @28,155",
-          "ratio": 5.31,
+          "label": "h2.home-panel-title \"继续阅读\" @393,320",
+          "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.home-kicker \"Research Workspace\" @361,34",
-          "ratio": 5.47,
+          "label": "span.home-panel-count \"2\" @862,321",
+          "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @877,134",
-          "ratio": 5.47,
+          "label": "span.home-panel-count \"篇\" @868,321",
+          "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @883,134",
-          "ratio": 5.47,
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @403,387",
+          "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         }
@@ -87,26 +87,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.group-title \"项目\" @28,155",
-          "ratio": 6.61,
+          "label": "h2.home-panel-title \"继续阅读\" @393,320",
+          "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.home-kicker \"Research Workspace\" @361,34",
-          "ratio": 6.93,
+          "label": "span.home-panel-count \"2\" @862,321",
+          "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @877,134",
-          "ratio": 6.93,
+          "label": "span.home-panel-count \"篇\" @868,321",
+          "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @883,134",
-          "ratio": 6.93,
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @403,387",
+          "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         }
@@ -122,26 +122,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.group-title \"项目\" @28,155",
-          "ratio": 6.35,
+          "label": "h2.group-title \"项目\" @32,196",
+          "ratio": 4.66,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.home-kicker \"Research Workspace\" @361,34",
-          "ratio": 6.46,
+          "label": "button.btn \"备份与恢复\" @52,730",
+          "ratio": 4.66,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @877,134",
-          "ratio": 6.46,
+          "label": "button.btn \"管理项目\" @52,763",
+          "ratio": 4.66,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @883,134",
-          "ratio": 6.46,
+          "label": "button.btn \"设置\" @52,796",
+          "ratio": 4.66,
           "need": 4.5,
           "translucent": false
         }
@@ -153,30 +153,30 @@
     },
     {
       "label": "library / dark 100",
-      "checked": 39,
+      "checked": 33,
       "failures": [],
       "lowest": [
         {
-          "label": "p.paper-row-file \"没有本地 PDF\" @428,197",
-          "ratio": 7.61,
+          "label": "input.input \"placeholder: 按标题、作者、DOI \" @455,145",
+          "ratio": 7.73,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.paper-row-file \"没有本地 PDF\" @428,317",
-          "ratio": 7.61,
+          "label": "button.btn \"导入 PDF\" @1177,227",
+          "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.paper-row-file \"没有本地 PDF\" @428,437",
-          "ratio": 7.61,
+          "label": "button.btn \"导入 PDF\" @1177,376",
+          "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "h2.group-title \"项目\" @28,155",
-          "ratio": 7.88,
+          "label": "button.btn \"导入 PDF\" @1177,525",
+          "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         }
@@ -192,26 +192,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.group-title \"项目\" @28,155",
-          "ratio": 7.81,
+          "label": "button.btn \"返回\" @313,84",
+          "ratio": 8.73,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.notes-count \"0\" @1365,184",
-          "ratio": 8.17,
+          "label": "span.reader-page-total \"/\" @914,86",
+          "ratio": 9.01,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.notes-empty \"在正文里选中文字，就能留下高亮和笔记。\" @1071,228",
-          "ratio": 8.17,
+          "label": "span.reader-page-total \"3\" @922,86",
+          "ratio": 9.01,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"返回\" @320,87",
-          "ratio": 8.26,
+          "label": "span.reader-zoom-value \"118\" @1031,86",
+          "ratio": 9.01,
           "need": 4.5,
           "translucent": false
         }
@@ -227,26 +227,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @276,257",
-          "ratio": 8.06,
+          "label": "button.btn \"显示输入\" @448,578",
+          "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.settings-choice__text \"使用已配置的在线 API；回答可能产生费用。\" @276,320",
-          "ratio": 8.17,
+          "label": "button.btn \"删除已保存的 Key\" @539,578",
+          "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.ai-settings__state \"当前：离线模拟\" @235,360",
-          "ratio": 8.17,
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @386,273",
+          "ratio": 8.09,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.ai-settings__hint \"Key 只通过一次受控 IPC 交给 Rust，\" @235,590",
-          "ratio": 8.17,
+          "label": "h3.settings-section-title \"运行模式\" @344,208",
+          "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         }
@@ -262,26 +262,26 @@
       "failures": [],
       "lowest": [
         {
-          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @276,257",
-          "ratio": 5.02,
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @386,273",
+          "ratio": 4.92,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.settings-choice__text \"使用已配置的在线 API；回答可能产生费用。\" @276,320",
-          "ratio": 5.47,
+          "label": "button.btn \"显示输入\" @448,578",
+          "ratio": 4.96,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.ai-settings__state \"当前：离线模拟\" @235,360",
-          "ratio": 5.47,
+          "label": "button.btn \"删除已保存的 Key\" @539,578",
+          "ratio": 4.96,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.ai-settings__hint \"Key 只通过一次受控 IPC 交给 Rust，\" @235,590",
-          "ratio": 5.47,
+          "label": "input \"placeholder: sk-…\" @354,533",
+          "ratio": 4.99,
           "need": 4.5,
           "translucent": false
         }
@@ -341,12 +341,12 @@
     {
       "name": "primary: dark mode uses a near-white button with near-black text",
       "passed": true,
-      "detail": "{\"foreground\":\"rgb(10, 10, 10)\",\"background\":\"rgb(245, 245, 245)\",\"ratio\":18.16,\"backgroundChannels\":[245,245,245],\"foregroundChannels\":[10,10,10]}"
+      "detail": "{\"foreground\":\"rgb(29, 29, 31)\",\"background\":\"rgb(245, 245, 247)\",\"ratio\":15.46,\"backgroundChannels\":[245,245,247],\"foregroundChannels\":[29,29,31]}"
     },
     {
       "name": "contrast: home / dark 100 — 33 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 7.88"
+      "detail": "lowest 8.23"
     },
     {
       "name": "layout: the sidebar sits within the 240–260px target",
@@ -369,29 +369,29 @@
       "detail": ""
     },
     {
-      "name": "dark level 0: app #24 stays neutral and the panels step up",
+      "name": "dark level 0: app #24 stays neutral and the tiles step up",
       "passed": true,
-      "detail": "{\"app\":\"rgb(36, 36, 36)\",\"main\":\"rgb(49, 49, 49)\",\"panel\":\"rgb(49, 49, 49)\",\"sidebar\":\"#2c2c2c\"}"
+      "detail": "{\"app\":\"rgb(36, 36, 36)\",\"main\":\"rgb(49, 49, 49)\",\"panel\":\"rgb(60, 60, 60)\",\"sidebar\":\"#2c2c2c\"}"
     },
     {
-      "name": "dark level 25: app #1b stays neutral and the panels step up",
+      "name": "dark level 25: app #1b stays neutral and the tiles step up",
       "passed": true,
-      "detail": "{\"app\":\"rgb(27, 27, 27)\",\"main\":\"rgb(40, 40, 40)\",\"panel\":\"rgb(40, 40, 40)\",\"sidebar\":\"#232323\"}"
+      "detail": "{\"app\":\"rgb(27, 27, 27)\",\"main\":\"rgb(40, 40, 40)\",\"panel\":\"rgb(51, 51, 51)\",\"sidebar\":\"#232323\"}"
     },
     {
-      "name": "dark level 50: app #12 stays neutral and the panels step up",
+      "name": "dark level 50: app #12 stays neutral and the tiles step up",
       "passed": true,
-      "detail": "{\"app\":\"rgb(18, 18, 18)\",\"main\":\"rgb(31, 31, 31)\",\"panel\":\"rgb(31, 31, 31)\",\"sidebar\":\"#1a1a1a\"}"
+      "detail": "{\"app\":\"rgb(18, 18, 18)\",\"main\":\"rgb(31, 31, 31)\",\"panel\":\"rgb(42, 42, 42)\",\"sidebar\":\"#1a1a1a\"}"
     },
     {
-      "name": "dark level 75: app #09 stays neutral and the panels step up",
+      "name": "dark level 75: app #09 stays neutral and the tiles step up",
       "passed": true,
-      "detail": "{\"app\":\"rgb(9, 9, 9)\",\"main\":\"rgb(22, 22, 22)\",\"panel\":\"rgb(22, 22, 22)\",\"sidebar\":\"#111111\"}"
+      "detail": "{\"app\":\"rgb(9, 9, 9)\",\"main\":\"rgb(22, 22, 22)\",\"panel\":\"rgb(33, 33, 33)\",\"sidebar\":\"#111111\"}"
     },
     {
-      "name": "dark level 100: app #00 stays neutral and the panels step up",
+      "name": "dark level 100: app #00 stays neutral and the tiles step up",
       "passed": true,
-      "detail": "{\"app\":\"rgb(0, 0, 0)\",\"main\":\"rgb(13, 13, 13)\",\"panel\":\"rgb(13, 13, 13)\",\"sidebar\":\"#080808\"}"
+      "detail": "{\"app\":\"rgb(0, 0, 0)\",\"main\":\"rgb(13, 13, 13)\",\"panel\":\"rgb(24, 24, 24)\",\"sidebar\":\"#080808\"}"
     },
     {
       "name": "slider: 0 is the lightest dark grey and the value is announced",
@@ -401,12 +401,12 @@
     {
       "name": "contrast: home / dark 0 — 33 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 5.31"
+      "detail": "lowest 5.11"
     },
     {
       "name": "contrast: home / dark 50 — 33 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 6.61"
+      "detail": "lowest 6.65"
     },
     {
       "name": "slider: a reload restores the saved level and colours",
@@ -434,19 +434,19 @@
       "detail": "0.55"
     },
     {
-      "name": "theme: light keeps neutral surfaces",
+      "name": "theme: light keeps a white sheet on the #F5F5F7 page",
       "passed": true,
-      "detail": "{\"app\":\"rgb(236, 236, 236)\",\"main\":\"rgb(251, 251, 251)\"}"
+      "detail": "{\"app\":\"rgb(245, 245, 247)\",\"main\":\"rgb(255, 255, 255)\"}"
     },
     {
-      "name": "primary: light mode uses a near-black button with near-white text",
+      "name": "primary: light mode uses the accent blue with white text",
       "passed": true,
-      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(18, 18, 18)\",\"ratio\":18.73,\"backgroundChannels\":[18,18,18],\"foregroundChannels\":[255,255,255]}"
+      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(0, 102, 204)\",\"ratio\":5.57,\"backgroundChannels\":[0,102,204],\"foregroundChannels\":[255,255,255]}"
     },
     {
       "name": "contrast: home / light — 33 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 6.35"
+      "detail": "lowest 4.66"
     },
     {
       "name": "system: a live switch to dark applies the saved level",
@@ -504,9 +504,9 @@
       "detail": ""
     },
     {
-      "name": "contrast: library / dark 100 — 39 text runs meet WCAG AA",
+      "name": "contrast: library / dark 100 — 33 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 7.61"
+      "detail": "lowest 7.73"
     },
     {
       "name": "reader: the generated PDF renders in the themed reader",
@@ -516,12 +516,12 @@
     {
       "name": "contrast: reader / dark 100 — 30 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 7.81"
+      "detail": "lowest 8.73"
     },
     {
       "name": "ai settings: the settings window shows both modes as compact rows",
       "passed": true,
-      "detail": "{\"dialog\":true,\"choices\":2,\"heights\":[62.5,61.5]}"
+      "detail": "{\"dialog\":true,\"choices\":2,\"heights\":[65.921875,64.921875]}"
     },
     {
       "name": "ai settings: the two modes are stacked, not two large cards",
@@ -536,7 +536,7 @@
     {
       "name": "ai settings: nothing overflows the settings window",
       "passed": true,
-      "detail": "752 / 990"
+      "detail": "572 / 980"
     },
     {
       "name": "ai settings: no vendor name is shown",
@@ -551,12 +551,12 @@
     {
       "name": "contrast: AI settings / dark 100 — 19 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 8.06"
+      "detail": "lowest 7.98"
     },
     {
       "name": "contrast: AI settings / dark 0 — 19 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 5.02"
+      "detail": "lowest 4.92"
     },
     {
       "name": "ai settings: narrow windows keep the compact mode rows stacked",
@@ -571,7 +571,7 @@
     {
       "name": "ai settings: narrow windows have no horizontal overflow",
       "passed": true,
-      "detail": "766 / 800"
+      "detail": "764 / 800"
     },
     {
       "name": "keyboard: Tab reaches a control with a visible focus ring",
@@ -616,5 +616,5 @@
   ],
   "passed": 64,
   "failed": 0,
-  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-19T11-19-06-ui\\"
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-21T08-54-14-ui\\"
 }

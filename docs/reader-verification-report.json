@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-10-16T11:07:12.832Z",
+  "generatedAt": "2026-10-21T08:46:33.555Z",
   "passed": 26,
-  "failed": 0,
+  "failed": 1,
   "results": [
     {
       "name": "import: title is prefilled from the file name",
@@ -21,7 +21,7 @@
     {
       "name": "render: the canvas has a real size",
       "passed": true,
-      "detail": "1064x1506"
+      "detail": "700x991"
     },
     {
       "name": "pages: the indicator starts at 1",
@@ -36,7 +36,7 @@
     {
       "name": "pages: jumping by number reaches page 3",
       "passed": true,
-      "detail": "{\"indicator\":\"3\",\"scrollTop\":9,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"4597.08px\"}"
+      "detail": "{\"indicator\":\"3\",\"scrollTop\":12,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"3051.76px\"}"
     },
     {
       "name": "pages: the jumped-to page has its own text",
@@ -46,17 +46,17 @@
     {
       "name": "zoom: zooming in makes the page bigger",
       "passed": true,
-      "detail": "1064 → 1190"
+      "detail": "700 → 744"
     },
     {
       "name": "zoom: fit-width returns to the container width",
       "passed": true,
-      "detail": "1064px"
+      "detail": "700px"
     },
     {
       "name": "render: the page canvas really has ink on it",
       "passed": true,
-      "detail": "225 dark samples"
+      "detail": "13076 dark samples"
     },
     {
       "name": "text: the page text can be selected and copied",
@@ -81,10 +81,15 @@
     {
       "name": "layout: the current page sits inside the visible area",
       "passed": true,
-      "detail": "{\"scroll\":[296,76,1122,815],\"page\":[320,91,1064,1506],\"scrollTop\":1530}"
+      "detail": "{\"scroll\":[286,135,758,753],\"page\":[310,151,700,991],\"scrollTop\":1015}"
     },
     {
-      "name": "theme: the page stays white paper in dark mode",
+      "name": "theme: the page follows the reading mode in dark mode",
+      "passed": true,
+      "detail": "rgb(35, 38, 43)"
+    },
+    {
+      "name": "theme: the original paper mode still gives a white page in dark mode",
       "passed": true,
       "detail": "rgb(255, 255, 255)"
     },
@@ -130,9 +135,11 @@
     },
     {
       "name": "console: no errors, warnings or page exceptions",
-      "passed": true,
-      "detail": ""
+      "passed": false,
+      "detail": "warning: Warning: Indexing all PDF objects"
     }
   ],
-  "consoleIssues": []
+  "consoleIssues": [
+    "warning: Warning: Indexing all PDF objects"
+  ]
 }
