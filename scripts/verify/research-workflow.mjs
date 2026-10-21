@@ -206,7 +206,7 @@ async function importRelated(page, filePath) {
 
 async function finishImport(page, filePath) {
   const dialog = page.getByRole('dialog', { name: /导入论文|导入 PDF 文件/ });
-  await dialog.locator('input[type="file"]').setInputFiles(filePath);
+  await dialog.locator('input[type="file"][data-autofocus]').setInputFiles(filePath);
   await dialog.getByRole('button', { name: '导入' }).click();
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if ((await page.locator('.reader').count()) > 0) break;

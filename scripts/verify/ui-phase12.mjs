@@ -1,6 +1,11 @@
 /**
- * Phase 12.1 UI acceptance: continuous neutral dark level, monochrome primary actions,
+ * Phase 12.1 UI acceptance: continuous neutral dark level, a single blue action colour,
  * layout safety and contrast — run against the production build in an isolated browser.
+ *
+ * The palette expectations were re-based for the Apple visual layer: the light page is
+ * #F5F5F7 with a white sheet, home panels are filled tiles one step above the sheet, and the
+ * light primary is the accent blue instead of the old black inverse. Everything measured for
+ * layout, contrast, focus and motion is unchanged.
  *
  * It never touches the desktop webview data directory: the browser starts with a fresh
  * profile, and the only reader data it creates is a generated sample PDF imported through
@@ -494,7 +499,7 @@ async function main() {
       primaryDark !== null &&
         primaryDark.ratio >= 4.5 &&
         primaryDark.backgroundChannels.every((channel) => channel >= 240) &&
-        primaryDark.foregroundChannels.every((channel) => channel <= 24),
+        primaryDark.foregroundChannels.every((channel) => channel <= 32),
       JSON.stringify(primaryDark),
     );
     await audit(page, 'home / dark 100');
@@ -533,11 +538,12 @@ async function main() {
       check(
         `dark level ${String(expected.level)}: app #${expected.app
           .toString(16)
-          .padStart(2, '0')} stays neutral and the panels step up`,
+          .padStart(2, '0')} stays neutral and the tiles step up`,
         actual.level === String(expected.level) &&
           actual.app.channels.every((channel) => channel === expected.app) &&
           actual.main.channels.every((channel) => channel === expected.panel) &&
-          actual.panel?.channels.every((channel) => channel === expected.panel) === true &&
+          // A home panel is a filled tile now: one step above the sheet (elevated = panel + 11).
+          actual.panel?.channels.every((channel) => channel === expected.app + 24) === true &&
           actual.darkSidebar === expected.sidebar &&
           actual.darkElevated === expected.elevated &&
           neutral,
@@ -630,22 +636,24 @@ async function main() {
       disabledOpacity,
     );
 
-    // ---- Light theme uses the inverse primary and neutral surfaces ---------------------
+    // ---- Light theme: apple.com's white sheet on a grey page, one blue action ----------
     await seed(page, { theme: 'light', level: 100 });
     const white = await surfaces(page);
     const primaryLight = await primaryContrast(page);
     check(
-      'theme: light keeps neutral surfaces',
+      'theme: light keeps a white sheet on the #F5F5F7 page',
       white.theme === 'light' &&
-        white.app.channels.every((channel) => channel === 236) &&
-        white.main.channels.every((channel) => channel === 251),
+        white.app.channels[0] === 245 &&
+        white.app.channels[1] === 245 &&
+        white.main.channels.every((channel) => channel === 255),
       JSON.stringify({ app: white.app.css, main: white.main.css }),
     );
     check(
-      'primary: light mode uses a near-black button with near-white text',
+      'primary: light mode uses the accent blue with white text',
       primaryLight !== null &&
         primaryLight.ratio >= 4.5 &&
-        primaryLight.backgroundChannels.every((channel) => channel <= 24) &&
+        primaryLight.backgroundChannels[2] >= 150 &&
+        primaryLight.backgroundChannels[0] <= 40 &&
         primaryLight.foregroundChannels.every((channel) => channel >= 240),
       JSON.stringify(primaryLight),
     );
@@ -778,7 +786,9 @@ async function main() {
     await page.getByRole('heading', { level: 1, name: 'Phase 12 阅读器验收' }).waitFor();
     await page.getByRole('button', { name: '导入新论文' }).click();
     const importDialog = page.getByRole('dialog', { name: '导入论文' });
-    await importDialog.locator('input[type="file"]').setInputFiles(SAMPLE_FILE);
+    // The dialog holds two file inputs: the real one the form reads (data-autofocus) and an
+    // inert mirror inside the drop-zone label. Target the real one explicitly.
+    await importDialog.locator('input[type="file"][data-autofocus]').setInputFiles(SAMPLE_FILE);
     await importDialog.getByRole('button', { name: '导入' }).click();
     await page.locator('.reader').waitFor({ timeout: 20_000 });
     await page.locator('.pdf-page[data-page="1"] canvas').waitFor({ timeout: 20_000 });

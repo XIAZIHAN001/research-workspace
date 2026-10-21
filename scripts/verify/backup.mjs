@@ -208,7 +208,7 @@ async function createProject(page, title) {
 async function importPaper(page, filePath) {
   await page.getByRole('button', { name: '导入新论文' }).click();
   const dialog = page.getByRole('dialog', { name: '导入论文' });
-  await dialog.locator('input[type="file"]').setInputFiles(filePath);
+  await dialog.locator('input[type="file"][data-autofocus]').setInputFiles(filePath);
   await dialog.getByRole('button', { name: '导入' }).click();
   // The same bytes imported a second time is a deliberate choice, not a silent duplicate.
   // The question appears only after the form has been submitted, so wait for either outcome.

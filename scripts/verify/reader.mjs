@@ -94,11 +94,11 @@ async function main() {
     // ---- Import a real PDF -------------------------------------------------
     await page.getByRole('button', { name: '导入新论文' }).click();
     const importDialog = page.getByRole('dialog', { name: '导入论文' });
-    await importDialog.locator('input[type="file"]').setInputFiles(SAMPLE_FILE);
+    await importDialog.locator('input[type="file"][data-autofocus]').setInputFiles(SAMPLE_FILE);
     check(
       'import: title is prefilled from the file name',
-      (await importDialog.getByLabel('标题').inputValue()) === 'sample paper',
-      await importDialog.getByLabel('标题').inputValue(),
+      (await importDialog.getByRole('textbox', { name: '标题' }).inputValue()) === 'sample paper',
+      await importDialog.getByRole('textbox', { name: '标题' }).inputValue(),
     );
     await page.screenshot({ path: fileURLToPath(new URL('01-import-dialog.png', SHOT_DIR)) });
     await importDialog.getByRole('button', { name: '导入' }).click();
@@ -382,7 +382,7 @@ async function main() {
 
     await page.getByRole('button', { name: '导入新论文' }).click();
     const duplicateDialog = page.getByRole('dialog', { name: '导入论文' });
-    await duplicateDialog.locator('input[type="file"]').setInputFiles(SAMPLE_FILE);
+    await duplicateDialog.locator('input[type="file"][data-autofocus]').setInputFiles(SAMPLE_FILE);
     await duplicateDialog.getByRole('button', { name: '导入' }).click();
     const decision = duplicateDialog.getByText(/同一份文件不代表同一篇论文/);
     await decision.waitFor({ timeout: 10_000 });
@@ -405,7 +405,7 @@ async function main() {
     await page.getByRole('button', { name: '返回' }).click();
     await page.getByRole('button', { name: '导入新论文' }).click();
     const brokenDialog = page.getByRole('dialog', { name: '导入论文' });
-    await brokenDialog.locator('input[type="file"]').setInputFiles(BROKEN_FILE);
+    await brokenDialog.locator('input[type="file"][data-autofocus]').setInputFiles(BROKEN_FILE);
     await brokenDialog.getByRole('button', { name: '导入' }).click();
     const refusal = brokenDialog.getByRole('alert');
     await refusal.waitFor({ timeout: 10_000 });
@@ -447,7 +447,7 @@ async function main() {
     await createProject(noDbPage, 'No Storage Project');
     await noDbPage.getByRole('button', { name: '导入新论文' }).click();
     const noDbDialog = noDbPage.getByRole('dialog', { name: '导入论文' });
-    await noDbDialog.locator('input[type="file"]').setInputFiles(SAMPLE_FILE);
+    await noDbDialog.locator('input[type="file"][data-autofocus]').setInputFiles(SAMPLE_FILE);
     await noDbDialog.getByRole('button', { name: '导入' }).click();
     const storageAlert = noDbDialog.getByRole('alert');
     await storageAlert.waitFor({ timeout: 10_000 });

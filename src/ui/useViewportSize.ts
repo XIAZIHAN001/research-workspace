@@ -8,6 +8,31 @@ export interface ViewportSize {
 
 const hasWindow = (): boolean => typeof window !== 'undefined';
 
+/** What a viewport reports before there is one. A constant, so it is always the same value. */
+const NO_VIEWPORT: ViewportSize = { width: 0, height: 0 };
+
+/**
+ * The last size handed to a subscriber.
+ *
+ * `useSyncExternalStore` calls `getSnapshot` several times around every render and compares the
+ * answers by identity; a fresh object on each call reads as "the store changed" on every
+ * check, which sends the subscriber back into render forever — React stops the loop by
+ * throwing, and the crash takes the component's whole boundary with it. The snapshot is only
+ * allowed to change when the window actually did, so the same numbers return the same object.
+ */
+let cachedSize: ViewportSize | null = null;
+
+function currentViewport(): ViewportSize {
+  if (!hasWindow()) return NO_VIEWPORT;
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  if (cachedSize !== null && cachedSize.width === width && cachedSize.height === height) {
+    return cachedSize;
+  }
+  cachedSize = { width, height };
+  return cachedSize;
+}
+
 /**
  * Live viewport size.
  *
@@ -32,14 +57,11 @@ export function useViewportSize(): ViewportSize {
     };
   }, []);
 
-  const getSnapshot = useCallback((): ViewportSize => {
-    if (!hasWindow()) return { width: 0, height: 0 };
-    return { width: window.innerWidth, height: window.innerHeight };
-  }, []);
+  const getSnapshot = useCallback((): ViewportSize => currentViewport(), []);
 
   // Server and first paint both report zero: a floating element placed against "no viewport"
   // is then positioned by its own layout rather than by a number that was never real.
-  const getServerSnapshot = useCallback((): ViewportSize => ({ width: 0, height: 0 }), []);
+  const getServerSnapshot = useCallback((): ViewportSize => NO_VIEWPORT, []);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

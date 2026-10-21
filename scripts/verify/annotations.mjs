@@ -113,7 +113,7 @@ async function createProject(page, title) {
 async function importIntoProject(page, filePath) {
   await page.getByRole('button', { name: '导入新论文' }).click();
   const dialog = page.getByRole('dialog', { name: '导入论文' });
-  await dialog.locator('input[type="file"]').setInputFiles(filePath);
+  await dialog.locator('input[type="file"][data-autofocus]').setInputFiles(filePath);
   await dialog.getByRole('button', { name: '导入' }).click();
   await page.locator('.reader').waitFor({ timeout: 20_000 });
   await page
@@ -390,6 +390,9 @@ async function main() {
       const payload = JSON.parse(window.localStorage.getItem(key) ?? 'null');
       return payload.projects.find((project) => project.name === 'Second Project').id;
     }, STORAGE_KEY);
+    // The picker lives behind the row's overflow menu: open it, choose "加入项目", then pick.
+    await fileRow().getByRole('button', { name: '更多操作' }).click();
+    await fileRow().getByRole('menuitem', { name: '加入项目' }).click();
     const picker = fileRow().getByLabel('选择要加入的项目');
     await picker.selectOption(secondProjectId);
     check(
@@ -413,8 +416,8 @@ async function main() {
     await page.getByRole('button', { name: '论文库', exact: true }).click();
     await library.getByRole('button', { name: '导入论文' }).click();
     const importDialog = page.getByRole('dialog', { name: '导入论文' });
-    await importDialog.locator('input[type="file"]').setInputFiles(richText);
-    await importDialog.getByLabel('标题').fill('Repeated Sentence Paper');
+    await importDialog.locator('input[type="file"][data-autofocus]').setInputFiles(richText);
+    await importDialog.getByRole('textbox', { name: '标题' }).fill('Repeated Sentence Paper');
     await importDialog.getByRole('button', { name: '导入' }).click();
     await page.locator('.reader').waitFor({ timeout: 20_000 });
     await page
@@ -504,11 +507,12 @@ async function main() {
     // ---- Replacing the file keeps the notes, but not on the new pages -----
     await page.getByRole('button', { name: '返回' }).click();
     await page.getByRole('button', { name: '论文库', exact: true }).click();
+    await repeatedRow().getByRole('button', { name: '更多操作' }).click();
     await repeatedRow()
-      .getByRole('button', { name: /替换 PDF/ })
+      .getByRole('menuitem', { name: /替换 PDF/ })
       .click();
     const replaceDialog = page.getByRole('dialog', { name: '导入 PDF 文件' });
-    await replaceDialog.locator('input[type="file"]').setInputFiles(twoColumn);
+    await replaceDialog.locator('input[type="file"][data-autofocus]').setInputFiles(twoColumn);
     await replaceDialog.getByRole('button', { name: '导入' }).click();
     await page.locator('.reader').waitFor({ timeout: 20_000 });
     await page.locator('.notes-panel').waitFor({ timeout: 20_000 });

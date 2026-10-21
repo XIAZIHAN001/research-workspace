@@ -429,13 +429,17 @@ export function ReaderView({
   }, []);
   const tops = useMemo(() => pageTops(heights), [heights]);
   // Read by the scroll handler, which needs the current column rather than the one from
-  // the render it was attached in.
+  // the render it was attached in. Kept in step inside `useLayoutEffect`: a scale change writes
+  // `scrollTop` from the new column in a layout effect of the same commit, and the scroll event
+  // that write produces must read the new column too — a passive-effect update can land after
+  // the event, and the handler would then measure the new offset against the old layout and
+  // report a page the reader is not on.
   const topsRef = useRef(tops);
-  useEffect(() => {
+  useLayoutEffect(() => {
     topsRef.current = tops;
   }, [tops]);
   const heightsRef = useRef(heights);
-  useEffect(() => {
+  useLayoutEffect(() => {
     heightsRef.current = heights;
   }, [heights]);
   /**
@@ -491,6 +495,10 @@ export function ReaderView({
     (page: number, behavior: ScrollBehavior = 'smooth') => {
       const target = clampPage(page, pageCount);
       setCurrentPage(target);
+      // The anchor moves with the jump, not after it lands: a reflow that arrives while the
+      // smooth scroll is still travelling (opening a panel, resizing the column) restores from
+      // this anchor, and restoring the pre-jump place would undo the jump under the reader.
+      viewAnchor.current = { page: target, fraction: 0 };
       // A smooth scroll passes through the pages in between; without this the indicator
       // would flicker back to them and the position could be saved mid-flight.
       jumping.current = { page: target, until: Date.now() + 1500 };
@@ -546,7 +554,12 @@ export function ReaderView({
     // that synchronously inside an effect cascades renders.
     void (async () => {
       scrollToPage(focus.page);
-      const page = await waitForRenderedPage(scrollRef.current, focus.page, RENDER_WAIT_MS, alive.current?.signal);
+      const page = await waitForRenderedPage(
+        scrollRef.current,
+        focus.page,
+        RENDER_WAIT_MS,
+        alive.current?.signal,
+      );
       if (page === null) {
         setSelectionNotice('这一页还没有渲染完，暂时无法标出这条出处；已经跳到该页。');
         return;
@@ -590,7 +603,11 @@ export function ReaderView({
     const top = tops[page - 1];
     const height = heights[page - 1];
     if (top === undefined || height === undefined) return;
-    container.scrollTop = Math.max(0, top + viewAnchor.current.fraction * height - PAGE_GAP);
+    // The fraction is measured from the page's own top, so restoring it needs no gap
+    // adjustment. A reflow happens many times in a row while a column animates or is dragged,
+    // and any constant term here would be lost again on every one of them — the view drifted
+    // a step per reflow and landed pages away from where the reader was.
+    container.scrollTop = Math.max(0, top + viewAnchor.current.fraction * height);
   }, [scale, tops, heights]);
 
   const windowRange = renderWindow(currentPage, pageCount);
@@ -658,7 +675,12 @@ export function ReaderView({
     setActiveAnnotationId(annotation.id);
     scrollToPage(annotation.page);
     void (async () => {
-      const page = await waitForRenderedPage(scrollRef.current, annotation.page, RENDER_WAIT_MS, alive.current?.signal);
+      const page = await waitForRenderedPage(
+        scrollRef.current,
+        annotation.page,
+        RENDER_WAIT_MS,
+        alive.current?.signal,
+      );
       if (page === null) {
         // The page never finished rendering. The highlight is still drawn from its stored
         // boxes; there is simply nothing to check the text against, and nothing to claim.
@@ -678,9 +700,13 @@ export function ReaderView({
     })();
     setFlashId(annotation.id);
     // Replaces any flash still running, and is cancelled with the reader if it closes first.
-    flashTimer.current = timers.scheduleReplacing(flashTimer.current, () => {
-      setFlashId((current) => (current === annotation.id ? null : current));
-    }, 1600);
+    flashTimer.current = timers.scheduleReplacing(
+      flashTimer.current,
+      () => {
+        setFlashId((current) => (current === annotation.id ? null : current));
+      },
+      1600,
+    );
   };
 
   /**
@@ -695,7 +721,12 @@ export function ReaderView({
     setFlashId(null);
     setSpotlight(null);
     void (async () => {
-      const pageElement = await waitForRenderedPage(scrollRef.current, page, RENDER_WAIT_MS, alive.current?.signal);
+      const pageElement = await waitForRenderedPage(
+        scrollRef.current,
+        page,
+        RENDER_WAIT_MS,
+        alive.current?.signal,
+      );
       if (pageElement === null) {
         setSelectionNotice('这一页还没有渲染完，暂时无法标出引用位置；已经跳到该页。');
         return;

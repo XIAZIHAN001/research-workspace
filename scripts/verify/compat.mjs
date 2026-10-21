@@ -70,7 +70,7 @@ async function openFixture(browser, filePath, title) {
   await page.getByRole('button', { name: '创建项目' }).click();
   await page.getByRole('button', { name: '导入新论文' }).click();
   const dialog = page.getByRole('dialog', { name: '导入论文' });
-  await dialog.locator('input[type="file"]').setInputFiles(filePath);
+  await dialog.locator('input[type="file"][data-autofocus]').setInputFiles(filePath);
   await dialog.getByRole('button', { name: '导入' }).click();
   await page.locator('.reader').waitFor({ timeout: 20_000 });
   await page.locator('.pdf-page[data-page="1"] .textLayer').waitFor({ timeout: 20_000 });

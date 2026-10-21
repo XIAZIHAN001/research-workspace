@@ -4,6 +4,8 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/icons/
 .cache/
+# Tool-generated session memory: machine-written notes, not application source.
+.workbuddy/
 package-lock.json
 docs/screenshots/
 # Machine-written acceptance output: the verification runs rewrite these verbatim.

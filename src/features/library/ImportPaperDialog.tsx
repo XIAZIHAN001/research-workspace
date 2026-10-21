@@ -1,4 +1,4 @@
-import { useState, type SubmitEvent } from 'react';
+import { useRef, useState, type SubmitEvent } from 'react';
 import { FileText, Upload } from 'lucide-react';
 import { MAX_NAME_LENGTH } from '../../domain/normalize';
 import type { Paper, PaperInput } from '../../domain/papers';
@@ -84,11 +84,28 @@ function ImportForm({
   const [duplicateNote, setDuplicateNote] = useState<string | null>(null);
   /** Set while the PDF's own metadata is being read, so the form can say so honestly. */
   const [readingMeta, setReadingMeta] = useState(false);
-  /** Bumped per chosen file, so a slow read from an earlier file cannot land on this one. */
-  const [metaToken, setMetaToken] = useState(0);
+  /**
+   * Bumped per chosen file, so a slow read from an earlier file cannot land on this one.
+   *
+   * Kept in a ref rather than state: the read is async and compares the token it was given
+   * against the current one, and a state read inside that closure is the value from the render
+   * the read started in — always one behind, so every read saw itself as outdated, bailed out
+   * before applying anything, and the "reading" hint never cleared.
+   */
+  const metaToken = useRef(0);
+  /**
+   * True while the title showing in the field is the one derived from the file name.
+   *
+   * The file name fills the title immediately on choosing a file, before the metadata read
+   * has returned; the metadata's own title is better, and the field's comment promises it
+   * replaces the file name. Anything the reader typed is never replaced, so the flag clears
+   * the moment the field is edited by hand.
+   */
+  const titleIsFromFile = useRef(false);
 
   const fields = (): PaperInput => {
-    const parsedYear = year.trim() === '' ? undefined : Number(year);    return {
+    const parsedYear = year.trim() === '' ? undefined : Number(year);
+    return {
       title,
       authors: authors
         .split(',')
@@ -112,13 +129,17 @@ function ImportForm({
   const fillFromMetadata = async (chosen: File, token: number): Promise<void> => {
     setReadingMeta(true);
     try {
-      const bytes = await chosen.arrayBuffer();
-      if (token !== metaToken) return;
-      const meta = await readMetadata(bytes as PdfBytes);
-      if (token !== metaToken) return;
+      const bytes = new Uint8Array(await chosen.arrayBuffer());
+      if (token !== metaToken.current) return;
+      const meta = await readMetadata(bytes);
+      if (token !== metaToken.current) return;
 
       if (meta.title !== undefined && meta.title !== '') {
-        setTitle((current) => (current.trim() === '' ? meta.title ?? current : current));
+        const replacesFileName = titleIsFromFile.current;
+        titleIsFromFile.current = false;
+        setTitle((current) =>
+          current.trim() === '' || replacesFileName ? (meta.title ?? current) : current,
+        );
       }
       if (meta.authors !== undefined && meta.authors.length > 0) {
         const joined = meta.authors.join(', ');
@@ -129,16 +150,17 @@ function ImportForm({
         setYear((current) => (current.trim() === '' ? asText : current));
       }
       if (meta.doi !== undefined && meta.doi !== '') {
-        setDoi((current) => (current.trim() === '' ? meta.doi ?? current : current));
+        setDoi((current) => (current.trim() === '' ? (meta.doi ?? current) : current));
       }
     } catch {
       // Reading metadata is best-effort. The form stays exactly as the reader left it.
     } finally {
-      if (token === metaToken) setReadingMeta(false);
+      if (token === metaToken.current) setReadingMeta(false);
     }
   };
 
-  const write = (pdf: PaperPdf, reuse: Paper | null): void => {    const intent: ImportIntent =
+  const write = (pdf: PaperPdf, reuse: Paper | null): void => {
+    const intent: ImportIntent =
       reuse !== null
         ? { kind: 'attach-file', paperId: reuse.id, projectId: projectId === '' ? null : projectId }
         : mode === 'attach' && targetPaper !== null
@@ -218,15 +240,18 @@ function ImportForm({
             setError(null);
             setPending(null);
             if (chosen === null) {
-              setMetaToken((token) => token + 1);
+              metaToken.current += 1;
               setReadingMeta(false);
               return;
             }
             // The file name is the weakest possible title, so it is only a last resort: the
             // PDF's own metadata is about to be read and will replace this if it has one.
-            if (title.trim() === '') setTitle(titleFromFile(chosen.name));
-            const token = metaToken + 1;
-            setMetaToken(token);
+            if (title.trim() === '') {
+              setTitle(titleFromFile(chosen.name));
+              titleIsFromFile.current = true;
+            }
+            const token = metaToken.current + 1;
+            metaToken.current = token;
             void fillFromMetadata(chosen, token);
           }}
         />
@@ -242,9 +267,10 @@ function ImportForm({
               if (chosen !== null) {
                 // Route through the same path as the primary input by asking the form's own
                 // file input to take it, so there is one place that reacts to a chosen file.
-                const primary = event.currentTarget.form?.querySelector<HTMLInputElement>(
-                  'input[data-autofocus]',
-                );
+                const primary =
+                  event.currentTarget.form?.querySelector<HTMLInputElement>(
+                    'input[data-autofocus]',
+                  );
                 // `form?.` short-circuits to undefined, so both have to be excluded.
                 if (primary !== null && primary !== undefined) {
                   const transfer = new DataTransfer();
@@ -287,6 +313,9 @@ function ImportForm({
           placeholder="例如 Attention Is All You Need"
           onChange={(event) => {
             setTitle(event.target.value);
+            // Typed by hand: this is the reader's title now, and a later metadata read
+            // must not replace it.
+            titleIsFromFile.current = false;
             setError(null);
           }}
         />

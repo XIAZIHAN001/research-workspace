@@ -227,7 +227,7 @@ async function main() {
     await page.getByRole('heading', { level: 1, name: PROJECT_NAME }).waitFor();
     await page.getByRole('button', { name: '导入新论文' }).click();
     const importDialog = page.getByRole('dialog', { name: '导入论文' });
-    await importDialog.locator('input[type="file"]').setInputFiles(pdfPath);
+    await importDialog.locator('input[type="file"][data-autofocus]').setInputFiles(pdfPath);
     await importDialog.getByRole('button', { name: '导入' }).click();
     const stillCreate = page.getByRole('button', { name: '仍然新建一篇论文' });
     try {

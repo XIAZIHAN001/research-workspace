@@ -166,7 +166,7 @@ async function createProject(page, title) {
 async function importIntoProject(page, filePath) {
   await page.getByRole('button', { name: '导入新论文' }).click();
   const dialog = page.getByRole('dialog', { name: '导入论文' });
-  await dialog.locator('input[type="file"]').setInputFiles(filePath);
+  await dialog.locator('input[type="file"][data-autofocus]').setInputFiles(filePath);
   await dialog.getByRole('button', { name: '导入' }).click();
   await page.locator('.reader').waitFor({ timeout: 30_000 });
   await page

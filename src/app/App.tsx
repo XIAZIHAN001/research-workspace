@@ -1,5 +1,6 @@
 import { PanelLeftOpen } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { CSSProperties } from 'react';
 import { CreateProjectDialog } from '../features/projects/CreateProjectDialog';
 import { ProjectView } from '../features/projects/ProjectView';
 import { Sidebar } from '../features/projects/Sidebar';
@@ -317,7 +318,11 @@ export function App({
       className="app"
       data-sidebar={sidebar.open ? 'open' : 'closed'}
       data-narrow={sidebar.narrow}
-      style={sidebar.narrow ? undefined : { '--sidebar-w': `${String(sidebar.width)}px` }}
+      style={
+        sidebar.narrow
+          ? undefined
+          : ({ '--sidebar-w': `${String(sidebar.width)}px` } as CSSProperties)
+      }
     >
       <Sidebar
         open={sidebar.open}

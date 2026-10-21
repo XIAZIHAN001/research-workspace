@@ -87,9 +87,10 @@ export function AnnotationToolbar({
       const box = entry.borderBoxSize?.[0];
       const width = box?.inlineSize ?? element.offsetWidth;
       const height = box?.blockSize ?? element.offsetHeight;
-      if (width > 0 && height > 0) setMeasured((current) =>
-        current.width === width && current.height === height ? current : { width, height },
-      );
+      if (width > 0 && height > 0)
+        setMeasured((current) =>
+          current.width === width && current.height === height ? current : { width, height },
+        );
     });
     observer.observe(element);
     return () => {
