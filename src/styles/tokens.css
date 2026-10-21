@@ -7,13 +7,44 @@
 }
 
 :root {
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  /*
+   * Type. The stack is the system one on purpose: this app is local-first and must not fetch a
+   * webfont, so it asks for the same families apple.com resolves to on each platform —
+   * SF Pro / PingFang SC on macOS, Segoe UI Variable / Microsoft YaHei UI on Windows.
+   */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
+    sans-serif;
   --font-display:
-    'Segoe UI Variable Display', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
+    sans-serif;
+
+  /*
+   * Type scale. One ladder for the whole interface, so a "caption" is 12px wherever it appears
+   * and a "page title" is 44px rather than a number invented per screen.
+   */
+  --fs-hero: clamp(32px, 3.4vw, 44px);
+  --fs-title: clamp(26px, 2.6vw, 34px);
+  --fs-h2: 20px;
+  --fs-h3: 17px;
+  --fs-body: 15px;
+  --fs-row: 15px;
+  --fs-small: 13px;
+  --fs-caption: 12px;
+  --fs-micro: 11px;
+
+  /* Tracking: CJK display text is set slightly open, Latin display text slightly tight. */
+  --tracking-hero: 0.005em;
+  --tracking-title: 0.01em;
+  --tracking-caps: 0.08em;
 
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 18px;
+  --r-xl: 22px;
+  --r-pill: 980px;
 
   /* Motion tokens. One scale for the whole interface so no two pages disagree. */
   --dur-fast: 120ms;
@@ -32,7 +63,7 @@
   --sidebar-w: 248px;
   --glass-blur: 20px;
   /* The only colour that used to be written by hand. It stays a UI-neutral. */
-  --scroll-thumb: rgb(128 140 150 / 0.4);
+  --scroll-thumb: rgb(0 0 0 / 0.22);
   /* Fade for the pointer light; append it to any transition list on a glowing element. */
   --glow-t: --glow var(--dur) var(--ease-out);
 }
@@ -41,39 +72,46 @@
  * Semantic palette. The `--color-*` names are the source of truth; the older short names below
  * are aliases kept because the reader, knowledge and PDF styles already speak them.
  *
- * Phase 12.1 makes both themes monochrome. The dark surfaces come from seven custom properties
- * written by theme.ts (before first paint by public/theme-init.js), so the sidebar, panels and
- * floating layers are recalculated from the one "dark level" instead of being fixed presets.
+ * The light palette is apple.com's: #F5F5F7 for the page and for filled tiles, #FFFFFF for the
+ * sheet that holds content, #1D1D1F for text and one blue (#0066CC) reserved for anything
+ * interactive. The dark palette is still a continuous neutral ladder computed from one "dark
+ * level" by theme.ts (before first paint by public/theme-init.js), so the sidebar, panels and
+ * floating layers stay in step with the slider.
  */
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --color-bg-app: #ececec;
-  --color-bg-sidebar: #f5f5f5;
-  --color-bg-panel: #fbfbfb;
+  --color-bg-app: #f5f5f7;
+  --color-bg-sidebar: #f5f5f7;
+  --color-bg-panel: #ffffff;
   --color-bg-elevated: #ffffff;
-  --color-border-subtle: #d9d9d9;
-  --color-text-primary: #141414;
-  --color-text-secondary: #454545;
-  --color-text-tertiary: #5c5c5c;
-  --color-accent: #1a1a1a;
-  --color-accent-strong: #000000;
-  --color-danger: #b3322b;
-  --color-ok: #1f6b3a;
-  --color-warn: #7a5300;
-  --color-primary-bg: #121212;
-  --color-primary-bg-hover: #000000;
+  --color-border-subtle: #d2d2d7;
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #515154;
+  --color-text-tertiary: #6e6e73;
+  --color-accent: #0066cc;
+  --color-accent-strong: #0066cc;
+  --color-danger: #d70015;
+  --color-ok: #1e7b34;
+  --color-warn: #8a5b00;
+  --color-primary-bg: #0066cc;
+  --color-primary-bg-hover: #005cba;
   --color-primary-fg: #ffffff;
 
   --bg-base: var(--color-bg-app);
-  --ambient-top: rgb(255 255 255 / 0.55);
-  --ambient-bottom: rgb(0 0 0 / 0.035);
+  --ambient-top: rgb(255 255 255 / 0.5);
+  --ambient-bottom: rgb(0 0 0 / 0.03);
   --sheet: var(--color-bg-panel);
-  --sheet-edge: var(--color-border-subtle);
-  --sheet-shadow: 0 12px 32px -24px rgb(0 0 0 / 0.22), 0 2px 6px -2px rgb(0 0 0 / 0.08);
-  /* Cards sit on the sheet: a hair warmer/whiter than the sheet so they read as objects. */
-  --card: rgb(255 255 255 / 0.66);
-  --card-edge: rgb(0 0 0 / 0.09);
+  --sheet-edge: rgb(0 0 0 / 0.06);
+  --sheet-shadow: 0 1px 3px rgb(0 0 0 / 0.04), 0 12px 32px -18px rgb(0 0 0 / 0.16);
+  /* Cards sit on the sheet as filled tiles, the way apple.com sets a product tile on white. */
+  --card: #ffffff;
+  --card-edge: rgb(0 0 0 / 0.07);
+  --tile: #f5f5f7;
+  --tile-hover: #ededf0;
+  --tile-edge: transparent;
+  /* The recessed well a document sits in (the reader's page area). One step under the tiles. */
+  --well: #ebebee;
 
   --text: var(--color-text-primary);
   --text-2: var(--color-text-secondary);
@@ -81,50 +119,52 @@
   --accent: var(--color-accent);
   --accent-hi: var(--color-accent-strong);
   --accent-ink: #ffffff;
-  --accent-soft: rgb(0 0 0 / 0.08);
+  --accent-soft: rgb(0 102 204 / 0.1);
+  /* Text links: the one blue that is legible as text on the page surfaces of this theme. */
+  --link: #0066cc;
   --danger: var(--color-danger);
   --danger-ink: #ffffff;
   --ok: var(--color-ok);
   --warn: var(--color-warn);
-  --field-edge: rgb(0 0 0 / 0.45);
-  --focus: #1a1a1a;
+  --field-edge: rgb(0 0 0 / 0.12);
+  --focus: #0066cc;
 
-  --hairline: rgb(0 0 0 / 0.1);
-  --glass-fill: rgb(255 255 255 / 0.62);
+  --hairline: rgb(0 0 0 / 0.08);
+  --glass-fill: rgb(255 255 255 / 0.72);
   --glass-fill-strong: rgb(255 255 255 / 0.94);
-  --sheen: rgb(255 255 255 / 0.55);
-  --rim-top: rgb(255 255 255 / 0.98);
-  --rim-mid: rgb(255 255 255 / 0.42);
-  --rim-low: rgb(255 255 255 / 0.2);
-  --inner-hi: rgb(255 255 255 / 0.8);
-  --elev-rest: 0 8px 24px -18px rgb(0 0 0 / 0.22), 0 1px 3px -1px rgb(0 0 0 / 0.06);
-  --elev-float: 0 18px 40px -22px rgb(0 0 0 / 0.28), 0 4px 12px -4px rgb(0 0 0 / 0.1);
-  --foot-tint: rgb(0 0 0 / 0.025);
-  --row-hover: rgb(0 0 0 / 0.055);
-  --row-active: rgb(0 0 0 / 0.08);
-  --select-edge: rgb(0 0 0 / 0.22);
-  --select-glow: rgb(0 0 0 / 0.16);
-  --halo: rgb(0 0 0 / 0.06);
+  --sheen: rgb(255 255 255 / 0);
+  --rim-top: rgb(255 255 255 / 0);
+  --rim-mid: rgb(255 255 255 / 0);
+  --rim-low: rgb(255 255 255 / 0);
+  --inner-hi: rgb(255 255 255 / 0);
+  --elev-rest: 0 1px 2px rgb(0 0 0 / 0.03), 0 6px 18px -12px rgb(0 0 0 / 0.1);
+  --elev-float: 0 2px 6px rgb(0 0 0 / 0.05), 0 18px 44px -16px rgb(0 0 0 / 0.18);
+  --foot-tint: rgb(0 0 0 / 0.02);
+  --row-hover: rgb(0 0 0 / 0.045);
+  --row-active: #ffffff;
+  --select-edge: rgb(0 0 0 / 0.06);
+  --select-glow: rgb(0 0 0 / 0);
+  --halo: rgb(0 0 0 / 0.05);
   --avatar-edge: rgb(255 255 255 / 0.6);
   --spot-color: #000000;
-  --spot-strength: 8%;
-  --pill-fill: rgb(255 255 255 / 0.92);
-  --ring: rgb(0 0 0 / 0.08);
-  --scrim: rgb(10 10 10 / 0.32);
+  --spot-strength: 0%;
+  --pill-fill: rgb(255 255 255 / 0.94);
+  --ring: rgb(0 0 0 / 0.06);
+  --scrim: rgb(0 0 0 / 0.28);
 
-  /* Liquid-glass control material: a translucent fill, a top sheen and a hairline edge. */
-  --control-fill: rgb(255 255 255 / 0.7);
-  --control-fill-hover: rgb(255 255 255 / 0.94);
-  --control-sheen: rgb(255 255 255 / 0.72);
-  --control-edge: rgb(0 0 0 / 0.14);
-  --control-lift: 0 1px 1px rgb(0 0 0 / 0.06);
-  --input-fill: rgb(255 255 255 / 0.92);
+  /* Filled / outlined control material: flat fills, a hairline edge, no gloss. */
+  --control-fill: #f5f5f7;
+  --control-fill-hover: #ebebef;
+  --control-sheen: rgb(255 255 255 / 0);
+  --control-edge: rgb(0 0 0 / 0.08);
+  --control-lift: 0 1px 1px rgb(0 0 0 / 0.03);
+  --input-fill: #f5f5f7;
 
-  /* Primary actions are the inverse of the page in light mode: near-black on white. */
-  --primary-sheen: rgb(255 255 255 / 0.12);
-  --primary-rim: rgb(255 255 255 / 0.14);
-  --primary-shadow: rgb(0 0 0 / 0.24);
-  --primary-glow: rgb(0 0 0 / 0.18);
+  /* Primary actions are the one saturated element on the page: apple.com's blue pill. */
+  --primary-sheen: rgb(255 255 255 / 0);
+  --primary-rim: rgb(255 255 255 / 0);
+  --primary-shadow: rgb(0 102 204 / 0.28);
+  --primary-glow: rgb(0 102 204 / 0.3);
 }
 
 /*
@@ -136,79 +176,86 @@
   color-scheme: dark;
 
   --color-bg-app: var(--dark-app, #000000);
-  --color-bg-sidebar: var(--dark-sidebar, #080808);
+  --color-bg-sidebar: var(--dark-app, #000000);
   --color-bg-panel: var(--dark-panel, #0d0d0d);
   --color-bg-elevated: var(--dark-elevated, #181818);
   --color-border-subtle: var(--dark-border, #262626);
-  --color-text-primary: #f2f2f2;
-  --color-text-secondary: #bdbdbd;
-  --color-text-tertiary: #a8a8a8;
-  --color-accent: #f2f2f2;
-  --color-accent-strong: #ffffff;
-  --color-danger: #f2a29a;
-  --color-ok: #86d6a6;
+  --color-text-primary: #f5f5f7;
+  --color-text-secondary: #c2c2c7;
+  /* Tertiary has to clear AA against a tile, and at dark level 0 that tile is #3c3c3c. */
+  --color-text-tertiary: #b0b0b6;
+  --color-accent: #2997ff;
+  --color-accent-strong: #2997ff;
+  --color-danger: #ff9a92;
+  --color-ok: #7fd39b;
   --color-warn: #e8c27a;
-  --color-primary-bg: #f5f5f5;
+  --color-primary-bg: #f5f5f7;
   --color-primary-bg-hover: #ffffff;
-  --color-primary-fg: #0a0a0a;
+  --color-primary-fg: #1d1d1f;
 
   --bg-base: var(--color-bg-app);
-  --ambient-top: rgb(255 255 255 / 0.04);
-  --ambient-bottom: rgb(255 255 255 / 0.025);
+  --ambient-top: rgb(255 255 255 / 0.035);
+  --ambient-bottom: rgb(255 255 255 / 0.02);
   --sheet: var(--color-bg-panel);
-  --sheet-edge: var(--color-border-subtle);
-  --sheet-shadow: 0 12px 34px -22px rgb(0 0 0 / 0.8);
-  /* Cards sit on the sheet: a hair warmer/whiter than the sheet so they read as objects. */
-  --card: rgb(255 255 255 / 0.055);
-  --card-edge: rgb(255 255 255 / 0.1);
+  --sheet-edge: rgb(255 255 255 / 0.07);
+  --sheet-shadow: 0 1px 2px rgb(0 0 0 / 0.6), 0 18px 44px -24px rgb(0 0 0 / 0.9);
+  --card: var(--color-bg-elevated);
+  --card-edge: rgb(255 255 255 / 0.08);
+  /* Tiles step up from the sheet, so they keep heading the same way at every dark level. */
+  --tile: var(--color-bg-elevated);
+  --tile-hover: color-mix(in srgb, var(--tile) 86%, #ffffff);
+  --tile-edge: transparent;
+  --well: color-mix(in srgb, var(--dark-app, #000000) 70%, #000000);
 
   --text: var(--color-text-primary);
   --text-2: var(--color-text-secondary);
   --text-3: var(--color-text-tertiary);
   --accent: var(--color-accent);
   --accent-hi: var(--color-accent-strong);
-  --accent-ink: #0a0a0a;
-  --accent-soft: rgb(255 255 255 / 0.12);
+  --accent-ink: #ffffff;
+  --accent-soft: rgb(41 151 255 / 0.14);
+  /* #2997FF is a fill colour; as text on a level-0 tile (#3c3c3c) it needs one step lighter. */
+  --link: #6bb2ff;
   --danger: var(--color-danger);
   --danger-ink: #2a0d0b;
   --ok: var(--color-ok);
   --warn: var(--color-warn);
-  --field-edge: rgb(255 255 255 / 0.34);
-  --focus: #f2f2f2;
+  --field-edge: rgb(255 255 255 / 0.16);
+  --focus: #2997ff;
 
   --hairline: var(--dark-hairline, #1a1a1a);
   --glass-fill: rgb(255 255 255 / 0.04);
   --glass-fill-strong: rgb(255 255 255 / 0.08);
-  --sheen: rgb(255 255 255 / 0.05);
-  --rim-top: rgb(255 255 255 / 0.22);
-  --rim-mid: rgb(255 255 255 / 0.08);
-  --rim-low: rgb(255 255 255 / 0.035);
-  --inner-hi: rgb(255 255 255 / 0.11);
-  --elev-rest: 0 8px 22px -16px rgb(0 0 0 / 0.7);
-  --elev-float: 0 22px 48px -24px rgb(0 0 0 / 0.9);
+  --sheen: rgb(255 255 255 / 0);
+  --rim-top: rgb(255 255 255 / 0);
+  --rim-mid: rgb(255 255 255 / 0);
+  --rim-low: rgb(255 255 255 / 0);
+  --inner-hi: rgb(255 255 255 / 0);
+  --elev-rest: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 20px -14px rgb(0 0 0 / 0.7);
+  --elev-float: 0 4px 12px rgb(0 0 0 / 0.5), 0 24px 56px -20px rgb(0 0 0 / 0.9);
   --foot-tint: rgb(0 0 0 / 0.18);
-  --row-hover: rgb(255 255 255 / 0.06);
+  --row-hover: rgb(255 255 255 / 0.07);
   --row-active: rgb(255 255 255 / 0.1);
-  --select-edge: rgb(255 255 255 / 0.26);
-  --select-glow: rgb(255 255 255 / 0.18);
+  --select-edge: rgb(255 255 255 / 0.08);
+  --select-glow: rgb(0 0 0 / 0);
   --halo: rgb(255 255 255 / 0.06);
   --avatar-edge: rgb(255 255 255 / 0.18);
   --spot-color: #ffffff;
-  --spot-strength: 8%;
-  --pill-fill: rgb(255 255 255 / 0.06);
-  --ring: rgb(255 255 255 / 0.1);
+  --spot-strength: 0%;
+  --pill-fill: rgb(255 255 255 / 0.08);
+  --ring: rgb(255 255 255 / 0.08);
   --scrim: rgb(0 0 0 / 0.72);
 
-  --control-fill: rgb(255 255 255 / 0.055);
-  --control-fill-hover: rgb(255 255 255 / 0.095);
-  --control-sheen: rgb(255 255 255 / 0.07);
-  --control-edge: rgb(255 255 255 / 0.11);
+  --control-fill: rgb(255 255 255 / 0.07);
+  --control-fill-hover: rgb(255 255 255 / 0.12);
+  --control-sheen: rgb(255 255 255 / 0);
+  --control-edge: rgb(255 255 255 / 0.1);
   --control-lift: 0 1px 2px rgb(0 0 0 / 0.4);
-  --input-fill: rgb(255 255 255 / 0.06);
+  --input-fill: rgb(255 255 255 / 0.07);
 
-  /* Primary actions are the inverse of the page in dark mode: near-white on black. */
-  --primary-sheen: rgb(255 255 255 / 0.5);
-  --primary-rim: rgb(255 255 255 / 0.9);
-  --primary-shadow: rgb(0 0 0 / 0.45);
-  --primary-glow: rgb(255 255 255 / 0.16);
+  /* On black the primary action inverts instead of glowing blue: white pill, near-black label. */
+  --primary-sheen: rgb(255 255 255 / 0);
+  --primary-rim: rgb(255 255 255 / 0);
+  --primary-shadow: rgb(0 0 0 / 0.5);
+  --primary-glow: rgb(255 255 255 / 0.2);
 }

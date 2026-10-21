@@ -25,14 +25,17 @@ export function useSidebar() {
   const narrow = useMediaQuery(NARROW_VIEWPORT_QUERY);
   const [wideOpen, setWideOpen] = useState(() => readItem(SIDEBAR_STORAGE_KEY) !== 'closed');
   const [overlayOpen, setOverlayOpen] = useState(false);
-  const [width, setWidth] = useState(() =>
-    clampWidth(
-      Number(readItem(SIDEBAR_WIDTH_STORAGE_KEY)),
+  const [width, setWidth] = useState(() => {
+    // `Number(null)` is 0, which is finite — so a first run with nothing stored used to clamp
+    // to the minimum width (200px) instead of starting at the designed default (248px).
+    const stored = readItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    return clampWidth(
+      stored === null ? null : Number(stored),
       SIDEBAR_MIN_WIDTH,
       SIDEBAR_MAX_WIDTH,
       SIDEBAR_DEFAULT_WIDTH,
-    ),
-  );
+    );
+  });
   const open = narrow ? overlayOpen : wideOpen;
 
   const setOpen = useCallback(
@@ -87,7 +90,9 @@ export function useSidebar() {
 
       const onMove = (move: PointerEvent): void => {
         const delta = move.clientX - startX;
-        setWidthRaw(clampWidth(startWidth + delta, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, startWidth));
+        setWidthRaw(
+          clampWidth(startWidth + delta, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, startWidth),
+        );
       };
       const onUp = (): void => {
         handle.releasePointerCapture(event.pointerId);

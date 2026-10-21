@@ -142,6 +142,11 @@ function rampFor(palette: Exclude<PaperPalette, 'original'>): Uint8ClampedArray 
  * Measures a page before deciding whether it can be recoloured.
  *
  * Kept separate from the transform so the caller can report why a page was left alone.
+ *
+ * The recoloured modes render on a transparent canvas (see PdfPage), where transparency *is*
+ * the paper. A transparent pixel counts toward the page area, but as paper: it is neither
+ * ink (dark) nor figure (colour). That keeps `darkShare` meaning what it always meant — the
+ * share of the *page* covered in ink — so the image-heavy judgement is unchanged.
  */
 export function measurePage(data: Uint8ClampedArray): {
   darkShare: number;
@@ -156,6 +161,12 @@ export function measurePage(data: Uint8ClampedArray): {
   const step = pixels > 250_000 ? 4 : 1;
   let sampled = 0;
   for (let index = 0; index < data.length; index += 4 * step) {
+    // A transparent pixel counts toward the page area but is neither ink nor colour: the
+    // recoloured modes render on a transparent canvas where transparency *is* the paper.
+    // Counting it as dark (its rgb reads as black) would call a plain text page image-heavy;
+    // dropping it from the denominator would do the same by another route.
+    sampled += 1;
+    if ((data[index + 3] ?? 255) === 0) continue;
     const r = data[index] ?? 0;
     const g = data[index + 1] ?? 0;
     const b = data[index + 2] ?? 0;
@@ -163,7 +174,6 @@ export function measurePage(data: Uint8ClampedArray): {
     const low = Math.min(r, g, b);
     if (high - low > CHROMA_THRESHOLD) colour += 1;
     else if (luminance(r, g, b) < DARK_PIXEL) dark += 1;
-    sampled += 1;
   }
   return { darkShare: dark / sampled, colourShare: colour / sampled, pixels };
 }
@@ -236,8 +246,12 @@ function recolourRange(
   ramp: Uint8ClampedArray,
 ): void {
   for (let index = from; index < to; index += 4) {
-    // A transparent pixel only happens if the caller did not ask pdf.js to paint a background;
-    // leave it transparent rather than inventing paper behind it.
+    // Transparent pixels are the paper itself (the recoloured modes render without a
+    // background so text keeps greyscale anti-aliasing). Leave them alone: the page
+    // element's own background shows through, at exactly the palette's paper colour.
+    // Semi-transparent pixels are anti-aliased edges — black ink at partial alpha — and are
+    // ramped like any other neutral pixel with their alpha kept, which is what makes the
+    // recoloured text as smooth as the original.
     if ((data[index + 3] ?? 255) === 0) continue;
     const r = data[index] ?? 0;
     const g = data[index + 1] ?? 0;

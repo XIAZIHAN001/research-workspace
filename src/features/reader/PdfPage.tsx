@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { Annotation, NormalizedRect } from '../../domain/annotation';
 import { paperBackground, recolorImageDataAsync, type PaperPalette } from './paperTheme';
 import { isRenderCancelled, loadPdfjs, type PDFDocumentProxy } from './pdfjs';
@@ -75,7 +75,8 @@ export function PdfPage({
   onMeasure,
 }: PdfPageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  /** The page's own size at scale 1 — what the reader stores and multiplies by the zoom. */
+  const [intrinsic, setIntrinsic] = useState<{ width: number; height: number } | null>(null);
   const [failed, setFailed] = useState(false);
   /**
    * A page can render perfectly and still have nothing to select — a scan, or an image of a
@@ -91,18 +92,27 @@ export function PdfPage({
   const [keptOriginal, setKeptOriginal] = useState(false);
 
   // Measure first: the column needs the page's real height even when it is not rendered.
+  const reportedRef = useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const page = await doc.getPage(pageNumber);
         if (cancelled) return;
-        const viewport = page.getViewport({ scale });
+        // The page's *unscaled* size. The reader stores it and applies the zoom itself; a size
+        // measured at the current scale would carry the zoom into the column a second time, and
+        // the layout would only be right while every page happened to measure at exactly 100% —
+        // at 75% the slots closed to 3/4 of the page height and the pages overlapped.
+        const viewport = page.getViewport({ scale: 1 });
         const next = { width: viewport.width, height: viewport.height };
-        setSize(next);
-        // One synchronous report per measurement. The reader is the only listener; it knows
-        // what to do with a real number and can drop the page-1 estimate for this page.
-        onMeasure?.(pageNumber, next);
+        // One report per real change. The intrinsic size does not vary with the zoom, so this
+        // stays quiet across zoom changes instead of churning the reader's height map.
+        const key = `${String(next.width)}x${String(next.height)}`;
+        if (reportedRef.current !== key) {
+          reportedRef.current = key;
+          onMeasure?.(pageNumber, next);
+        }
+        setIntrinsic(next);
       } catch {
         // A page that cannot be measured keeps the placeholder size; rendering reports it.
       }
@@ -110,7 +120,17 @@ export function PdfPage({
     return () => {
       cancelled = true;
     };
-  }, [doc, pageNumber, scale, onMeasure]);
+  }, [doc, pageNumber, onMeasure]);
+
+  // The page box at the current zoom. Memoised on purpose: the render effect below lists `size`
+  // in its dependencies, so a fresh object every render would rebuild the canvas forever.
+  const size = useMemo(
+    () =>
+      intrinsic === null
+        ? null
+        : { width: intrinsic.width * scale, height: intrinsic.height * scale },
+    [intrinsic, scale],
+  );
 
   useEffect(() => {
     const host = hostRef.current;
@@ -141,13 +161,34 @@ export function PdfPage({
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
 
+      // Our own 2d context, handed to pdf.js through `canvasContext` (which it only honours
+      // when `canvas` is not passed). Two things ride on this:
+      //
+      // - pdf.js asks for the context itself with `alpha: false`, which makes Chromium
+      //   anti-alias text per subpixel. On white paper those red/blue fringe pixels are
+      //   invisible, but they carry real chroma, so the recolour protects them as "colour"
+      //   and every glyph kept a rainbow edge on dark paper. Our context keeps the default
+      //   `alpha: true`, where text is anti-aliased in greyscale: edges arrive as black ink
+      //   at partial alpha and the recolour maps them to the palette ink at the same alpha —
+      //   crisp, fringe-free text on any paper.
+      // - `willReadFrequently` lets the recolour read the pixels back without a warning or a
+      //   GPU round-trip, so no separate working canvas is needed.
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (context === null) {
+        setFailed(true);
+        return;
+      }
+
       const task = page.render({
-        canvas,
+        // `canvas` must be null for pdf.js to honour `canvasContext`.
+        canvas: null,
+        canvasContext: context,
         viewport,
-        // A white page behind the PDF's own drawing. Without it the canvas keeps transparent
-        // pixels wherever the page does not paint, and recolouring would treat "no ink" as
-        // black — so the background is laid down first and then becomes the paper colour.
-        background: '#ffffff',
+        // Original mode paints the page white. The recoloured modes must NOT: the paper comes
+        // from the page element's own background (exactly the palette paper, so no seam can
+        // show), and pdf.js fills `background || '#ffffff'` — the string 'transparent' is a
+        // valid fillStyle that fills nothing, which is how the fill is declined.
+        background: palette === 'original' ? '#ffffff' : 'transparent',
         transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
       });
       renderTask = task;
@@ -155,26 +196,13 @@ export function PdfPage({
       if (cancelled) return;
 
       if (palette !== 'original') {
-        // The recolour reads and writes every pixel, so it is done on a working canvas that was
-        // created for exactly that (`willReadFrequently`), then blitted back. Reading the visible
-        // canvas directly is slower and makes Chromium warn on every page.
-        const work = document.createElement('canvas');
-        work.width = canvas.width;
-        work.height = canvas.height;
-        const workContext = work.getContext('2d', { willReadFrequently: true });
-        const visible = canvas.getContext('2d');
-        if (workContext !== null && visible !== null) {
-          workContext.drawImage(canvas, 0, 0);
-          const image = workContext.getImageData(0, 0, work.width, work.height);
-          const report = await recolorImageDataAsync(image.data, palette, alive.signal);
-          if (cancelled) return;
-          if (report.outcome === 'recoloured') {
-            workContext.putImageData(image, 0, 0);
-            visible.clearRect(0, 0, canvas.width, canvas.height);
-            visible.drawImage(work, 0, 0);
-          }
-          setKeptOriginal(report.outcome === 'image-heavy');
+        const image = context.getImageData(0, 0, canvas.width, canvas.height);
+        const report = await recolorImageDataAsync(image.data, palette, alive.signal);
+        if (cancelled) return;
+        if (report.outcome === 'recoloured') {
+          context.putImageData(image, 0, 0);
         }
+        setKeptOriginal(report.outcome === 'image-heavy');
       } else {
         setKeptOriginal(false);
       }
@@ -216,7 +244,13 @@ export function PdfPage({
       className="pdf-page"
       data-page={pageNumber}
       data-paper={palette}
-      style={{ width: `${width}px`, height: `${height}px`, background: paperBackground(palette) }}
+      style={{
+        width: `${width}px`,
+        height: `${height}px`,
+        // An image-heavy page keeps its original drawing — including black ink — so it must
+        // sit on white, not on the palette paper; the note below says why this page differs.
+        background: keptOriginal ? '#ffffff' : paperBackground(palette),
+      }}
     >
       <div ref={hostRef} className="pdf-host" />
       {(spotlight !== null && spotlight.length > 0) || annotations.length > 0 ? (

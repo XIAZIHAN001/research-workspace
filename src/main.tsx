@@ -19,6 +19,9 @@ import './styles/knowledge.css';
 import './styles/knowledge-ai.css';
 import './styles/backup.css';
 import './styles/desktop.css';
+// Presentation only, imported last: it settles the surface hierarchy, type ladder and accent
+// on top of the component stylesheets without touching any behaviour.
+import './styles/apple.css';
 
 const container = document.getElementById('root');
 if (container === null) throw new Error('Missing #root element');

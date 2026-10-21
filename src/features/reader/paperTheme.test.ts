@@ -116,6 +116,16 @@ describe('recolorImageData: what changes', () => {
     expect(at(data, 0)).toEqual([255, 255, 255]);
   });
 
+  it('maps an anti-aliased ink edge to ink while keeping its alpha', () => {
+    // The recoloured modes render on a transparent canvas, so text edges arrive as black at
+    // partial alpha. Mapping the colour but keeping the alpha is what makes recoloured text
+    // as smooth as the original — the alpha does the blending, not the rgb.
+    const data = buffer([[0, 0, 0, 128]]);
+    recolorImageData(data, 'dark');
+    expect(at(data, 0)).toEqual(PALETTES.dark.ink);
+    expect(data[3]).toBe(128);
+  });
+
   it('warms the paper without tinting the ink', () => {
     const data = buffer([
       [255, 255, 255],
@@ -230,6 +240,20 @@ describe('measurePage', () => {
     expect(measured.pixels).toBe(4);
     expect(measured.darkShare).toBeCloseTo(0.25, 2);
     expect(measured.colourShare).toBeCloseTo(0.25, 2);
+  });
+
+  it('ignores fully transparent pixels, which are paper and not ink', () => {
+    // A transparent-rendered page is mostly transparent: if transparency counted as dark,
+    // every such page would be judged image-heavy and never recoloured.
+    const data = buffer([
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [255, 255, 255],
+    ]);
+    const measured = measurePage(data);
+    expect(measured.darkShare).toBe(0);
+    expect(measured.colourShare).toBe(0);
   });
 });
 
