@@ -7,10 +7,17 @@ src-tauri/target/
 src-tauri/gen/
 # Generated desktop sidecar runtime (Node + service sources copied by npm run desktop:prepare)
 src-tauri/sidecar/
+# Locally produced installers: build artifacts, not source
+docs/installers/
 
 # Local caches, logs and machine-specific paths
 .cache/
 .rw-local.json
+
+# Local agent/editor state, never part of the project
+.trae/
+.claude/
+.workbuddy/
 
 # Secrets and machine-specific configuration — never commit these
 .env

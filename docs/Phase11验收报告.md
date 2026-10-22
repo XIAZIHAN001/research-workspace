@@ -35,7 +35,7 @@ Phase 11 的目标已完成，并且**没有发出任何真实付费 DeepSeek �
 | Phase 10 版本 | 0.10.0 |
 | Phase 10 安装包 | `Research Workspace_0.10.0_x64-setup.exe`（保留未覆盖） |
 | `npm run check` 基线 | 63 个测试文件 / 1316 项 |
-| 正式数据目录 | `C:\Users\xiaziihan\AppData\Local\com.researchworkspace.desktop\webview` |
+| 正式数据目录 | `C:\Users\user\AppData\Local\com.researchworkspace.desktop\webview` |
 | 磁盘 | D 盘剩余约 269 GB（构建前） |
 
 ### 2.2 Phase 11 构建结果

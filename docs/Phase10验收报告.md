@@ -198,8 +198,8 @@ npm run desktop:build
 
 ### 7.1 实际存储位置
 
-- 生产：`C:\Users\xiaziihan\AppData\Local\com.researchworkspace.desktop\webview`（WebView2 的 `EBWebView`）；
-- 开发：`C:\Users\xiaziihan\AppData\Local\com.researchworkspace.desktop.dev\webview`；
+- 生产：`C:\Users\user\AppData\Local\com.researchworkspace.desktop\webview`（WebView2 的 `EBWebView`）；
+- 开发：`C:\Users\user\AppData\Local\com.researchworkspace.desktop.dev\webview`；
 - `rw.projects`：项目、论文元数据、批注（LocalStorage）；
 - `rw.knowledge`：知识 schema v2，概念、证据、关系、拒绝记录（LocalStorage）；
 - PDF 内容：IndexedDB，内容寻址（SHA-256）；

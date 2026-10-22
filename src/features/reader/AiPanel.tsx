@@ -303,7 +303,7 @@ export function AiPanel({
     health === null
       ? '还没有连上本地 AI 服务（npm run ai:serve）。'
       : health.online
-        ? `在线模式：会调用在线模型，可能产生费用。${health.reasoning === null ? '' : ` ${health.reasoning}`}`
+        ? `在线模式：${health.model}${health.reasoning === null ? '' : ` · ${health.reasoning}`}，会调用在线模型，可能产生费用。`
         : '本地模拟：不会发起任何在线调用。';
 
   return (

@@ -16,12 +16,12 @@
     {
       "name": "开发模式使用独立的 WebView 数据目录",
       "passed": true,
-      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop.dev\\webview"
+      "detail": "C:\\Users\\user\\AppData\\Local\\com.researchworkspace.desktop.dev\\webview"
     },
     {
       "name": "开发数据目录与安装版分离",
       "passed": true,
-      "detail": "dev=C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop.dev\\webview"
+      "detail": "dev=C:\\Users\\user\\AppData\\Local\\com.researchworkspace.desktop.dev\\webview"
     },
     {
       "name": "开发模式启动了自带的 sidecar",

@@ -22,7 +22,7 @@
     {
       "name": "WebView2 数据目录已创建",
       "passed": true,
-      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop\\webview"
+      "detail": "C:\\Users\\user\\AppData\\Local\\com.researchworkspace.desktop\\webview"
     },
     {
       "name": "应用启动了自己的 rw-node sidecar",

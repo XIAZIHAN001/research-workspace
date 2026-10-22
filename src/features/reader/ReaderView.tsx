@@ -43,7 +43,6 @@ import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
-import { useMediaQuery } from '../../ui/useMediaQuery';
 import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
@@ -301,15 +300,6 @@ export function ReaderView({
       : null,
   );
   /**
-   * Whether the side column is an overlay rather than a column of its own.
-   *
-   * The CSS switches `.reader-side` to `position: absolute` with a fixed width below this
-   * breakpoint, so `--panel-w` stops being what sizes it. A drag handle in that state would
-   * move a number nobody renders — the handle is hidden and the drag refuses to start.
-   */
-  const overlay = useMediaQuery(OVERLAY_QUERY);
-
-  /**
    * How wide the side panel column is.
    *
    * Persisted, clamped, and adjustable by dragging its edge or with the arrow keys. Reading is
@@ -335,8 +325,6 @@ export function ReaderView({
   /** Pointer-captured drag on the panel's left edge; growing the panel means dragging left. */
   const startPanelResize = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      // Belt and braces with the unrendered handle: an overlay is sized by the stylesheet.
-      if (overlay) return;
       event.preventDefault();
       const handle = event.currentTarget;
       handle.setPointerCapture(event.pointerId);
@@ -359,7 +347,7 @@ export function ReaderView({
       handle.addEventListener('pointerup', onUp);
       handle.addEventListener('pointercancel', onUp);
     },
-    [overlay, panelWidth, setPanelWidth],
+    [panelWidth, setPanelWidth],
   );
 
   /** Boxes shown briefly when the reader follows a citation. Never saved, never a highlight. */
@@ -1485,36 +1473,34 @@ export function ReaderView({
               className="reader-side"
               style={{ '--panel-w': `${String(panelWidth)}px` } as CSSProperties}
             >
-              {!overlay && (
-                <div
-                  className="panel-resize"
-                  role="separator"
-                  aria-label="调整侧边面板宽度"
-                  aria-orientation="vertical"
-                  aria-valuenow={panelWidth}
-                  aria-valuemin={PANEL_MIN_WIDTH}
-                  aria-valuemax={PANEL_MAX_WIDTH}
-                  tabIndex={0}
-                  onPointerDown={startPanelResize}
-                  onKeyDown={(event) => {
-                    if (event.key === 'ArrowLeft') {
-                      event.preventDefault();
-                      nudgePanelWidth(-16);
-                    } else if (event.key === 'ArrowRight') {
-                      event.preventDefault();
-                      nudgePanelWidth(16);
-                    } else if (event.key === 'Home') {
-                      event.preventDefault();
-                      setPanelWidth(PANEL_MIN_WIDTH);
-                    } else if (event.key === 'End') {
-                      event.preventDefault();
-                      setPanelWidth(PANEL_MAX_WIDTH);
-                    }
-                  }}
-                >
-                  <span className="panel-resize__grip" aria-hidden="true" />
-                </div>
-              )}
+              <div
+                className="panel-resize"
+                role="separator"
+                aria-label="调整侧边面板宽度"
+                aria-orientation="vertical"
+                aria-valuenow={panelWidth}
+                aria-valuemin={PANEL_MIN_WIDTH}
+                aria-valuemax={PANEL_MAX_WIDTH}
+                tabIndex={0}
+                onPointerDown={startPanelResize}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    nudgePanelWidth(-16);
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    nudgePanelWidth(16);
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setPanelWidth(PANEL_MIN_WIDTH);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setPanelWidth(PANEL_MAX_WIDTH);
+                  }
+                }}
+              >
+                <span className="panel-resize__grip" aria-hidden="true" />
+              </div>
               <div className="reader-side-tabs" role="group" aria-label="侧边面板">
                 <button
                   type="button"

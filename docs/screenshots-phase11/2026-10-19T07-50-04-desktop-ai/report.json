@@ -28,7 +28,7 @@
     {
       "name": "应用数据目录存在",
       "passed": true,
-      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop\\webview"
+      "detail": "C:\\Users\\user\\AppData\\Local\\com.researchworkspace.desktop\\webview"
     },
     {
       "name": "AI 设置可从侧栏打开",
@@ -68,12 +68,12 @@
     {
       "name": "Key 不在普通 JSON 配置",
       "passed": true,
-      "detail": "C:\\Users\\xiaziihan\\AppData\\Roaming\\com.researchworkspace.desktop\\ai-preferences.json"
+      "detail": "C:\\Users\\user\\AppData\\Roaming\\com.researchworkspace.desktop\\ai-preferences.json"
     },
     {
       "name": "Key 不在 WebView2 数据目录",
       "passed": true,
-      "detail": "C:\\Users\\xiaziihan\\AppData\\Local\\com.researchworkspace.desktop\\webview"
+      "detail": "C:\\Users\\user\\AppData\\Local\\com.researchworkspace.desktop\\webview"
     },
     {
       "name": "Key 不在页面可见文本或标题",

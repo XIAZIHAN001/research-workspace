@@ -41,6 +41,23 @@ export interface AiBudgetSettings {
   tokensPerSession: number;
 }
 
+/** The documented thinking levels. `none` disables thinking entirely. */
+export type AiReasoningEffort = 'none' | 'low' | 'high' | 'max';
+
+/** How a model call is made: which model, how hard it thinks, and what it may spend. */
+export interface AiSettings {
+  budget: AiBudgetSettings;
+  model: string;
+  reasoningEffort: AiReasoningEffort;
+}
+
+/** A save changes only the section it belongs to; the shell merges it with the rest. */
+export interface AiSettingsPatch {
+  budget?: AiBudgetSettings;
+  model?: string;
+  reasoningEffort?: AiReasoningEffort;
+}
+
 export const AI_STATUS_EVENT = 'ai-service-status';
 /** Fired in-page after a mode or key change, so panels holding health can refresh it. */
 export const AI_MODE_EVENT = 'rw-ai-mode-changed';
@@ -127,25 +144,25 @@ export async function setDesktopAiMode(mode: DesktopAiMode): Promise<CredentialM
   }
 }
 
-export async function getAiBudgetSettings(): Promise<AiBudgetSettings | null> {
+export async function getAiSettings(): Promise<AiSettings | null> {
   if (!isDesktopApp()) return null;
   try {
-    return await invoke<AiBudgetSettings>('get_ai_settings');
+    return await invoke<AiSettings>('get_ai_settings');
   } catch {
     return null;
   }
 }
 
-export async function updateAiBudgetSettings(
-  budget: AiBudgetSettings,
-): Promise<{ ok: true; budget: AiBudgetSettings } | { ok: false; message: string }> {
-  if (!isDesktopApp()) return { ok: false, message: '只有桌面版可以修改预算设置。' };
+export async function updateAiSettings(
+  patch: AiSettingsPatch,
+): Promise<{ ok: true; settings: AiSettings } | { ok: false; message: string }> {
+  if (!isDesktopApp()) return { ok: false, message: '只有桌面版可以修改 AI 设置。' };
   try {
-    const saved = await invoke<AiBudgetSettings>('update_ai_settings', { budget });
+    const settings = await invoke<AiSettings>('update_ai_settings', { patch });
     notifyAiModeChanged();
-    return { ok: true, budget: saved };
+    return { ok: true, settings };
   } catch (error) {
-    return { ok: false, message: typeof error === 'string' ? error : '预算设置没有保存成功。' };
+    return { ok: false, message: typeof error === 'string' ? error : 'AI 设置没有保存成功。' };
   }
 }
 

@@ -754,8 +754,9 @@
  * Below 1100px the column becomes an overlay.
  *
  * This number is duplicated in `app/config.ts` as `READER_OVERLAY_QUERY`, because a media query
- * cannot read a custom property; that constant is what hides the resize handle (an overlay is
- * sized here, not by `--panel-w`). The two must change together.
+ * cannot read a custom property. The overlay still reads `--panel-w`, clamped so a drag can
+ * never push the panel past the window: covering the page at a fixed width left no way to see
+ * the page's right edge. The two must change together.
  */
 @media (max-width: 1100px) {
   .reader-side {
@@ -764,11 +765,16 @@
     right: 0;
     bottom: 0;
     z-index: 12;
-    width: min(360px, 92vw);
+    width: min(var(--panel-w, 360px), calc(100% - 24px));
     padding: 6px;
     background: var(--glass-fill-strong);
     box-shadow: var(--elev-float);
     backdrop-filter: blur(var(--glass-blur));
+  }
+
+  /* Over the page there is no gutter to mark the edge, so the grip itself is the divider. */
+  .reader-side .panel-resize__grip {
+    background: var(--hairline);
   }
 }
 

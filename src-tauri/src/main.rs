@@ -115,11 +115,88 @@ impl BudgetSettings {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+/// Model names this build offers. They match `KNOWN_DEEPSEEK_MODELS` in `server/config.mjs`;
+/// the sidecar would accept any syntactically valid name, but a free-text field in the interface
+/// would turn a typo into a failed paid request.
+const KNOWN_MODELS: [&str; 2] = ["deepseek-flash", "deepseek-v4-pro"];
+/// The documented thinking levels. `none` disables thinking; the other three enable it.
+const REASONING_EFFORTS: [&str; 4] = ["none", "low", "high", "max"];
+const DEFAULT_MODEL: &str = "deepseek-flash";
+const DEFAULT_REASONING_EFFORT: &str = "low";
+
+fn default_model() -> String {
+    DEFAULT_MODEL.to_string()
+}
+
+fn default_reasoning_effort() -> String {
+    DEFAULT_REASONING_EFFORT.to_string()
+}
+
+/// Everything the interface may change about how a model call is made: the model, how hard it
+/// thinks, and the spending caps. None of it is a secret.
+///
+/// The sidecar reads these from its environment at spawn time, so a change takes effect by
+/// restarting it — unlike the API key, there is no live channel for them.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AiPreferences {
+struct AiSettings {
     #[serde(default)]
     budget: BudgetSettings,
+    #[serde(default = "default_model")]
+    model: String,
+    #[serde(default = "default_reasoning_effort")]
+    reasoning_effort: String,
+}
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        Self {
+            budget: BudgetSettings::default(),
+            model: default_model(),
+            reasoning_effort: default_reasoning_effort(),
+        }
+    }
+}
+
+impl AiSettings {
+    fn validate(&self) -> Result<(), String> {
+        self.budget.validate()?;
+        if !KNOWN_MODELS.contains(&self.model.as_str()) {
+            return Err(format!(
+                "未知的模型：{}。可选：{}。",
+                self.model,
+                KNOWN_MODELS.join(" / ")
+            ));
+        }
+        if !REASONING_EFFORTS.contains(&self.reasoning_effort.as_str()) {
+            return Err(format!(
+                "未知的思考强度：{}。可选：{}。",
+                self.reasoning_effort,
+                REASONING_EFFORTS.join(" / ")
+            ));
+        }
+        Ok(())
+    }
+
+    /// A hand-edited preferences file must not stop the application from starting.
+    fn sanitized(mut self) -> Self {
+        if !KNOWN_MODELS.contains(&self.model.as_str()) {
+            self.model = default_model();
+        }
+        if !REASONING_EFFORTS.contains(&self.reasoning_effort.as_str()) {
+            self.reasoning_effort = default_reasoning_effort();
+        }
+        self
+    }
+}
+
+/// A partial update from the settings page: each save changes only the section it belongs to.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiSettingsPatch {
+    budget: Option<BudgetSettings>,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
 }
 
 /// What the webview is allowed to know about the AI service.
@@ -186,7 +263,7 @@ struct AiRuntime {
     generation: u64,
     /// The mode this runtime is meant to be in. Restarts reuse it; startup always uses mock.
     mode: AiMode,
-    budget: BudgetSettings,
+    settings: AiSettings,
 }
 
 #[derive(Clone)]
@@ -203,7 +280,7 @@ impl AiManager {
             // Every launch starts offline. The interface can switch to online in this session,
             // but nothing about a previous session can turn a new launch into a paid one.
             mode: AiMode::Mock,
-            budget: BudgetSettings::default(),
+            settings: AiSettings::default(),
         })))
     }
 
@@ -315,12 +392,12 @@ fn set_ai_mode(
 }
 
 #[tauri::command]
-fn get_ai_settings(manager: State<'_, AiManager>) -> BudgetSettings {
+fn get_ai_settings(manager: State<'_, AiManager>) -> AiSettings {
     manager
         .0
         .lock()
         .expect("AI runtime lock poisoned")
-        .budget
+        .settings
         .clone()
 }
 
@@ -328,20 +405,29 @@ fn get_ai_settings(manager: State<'_, AiManager>) -> BudgetSettings {
 fn update_ai_settings(
     app: AppHandle,
     manager: State<'_, AiManager>,
-    budget: BudgetSettings,
-) -> Result<BudgetSettings, String> {
-    budget.validate()?;
-    {
+    patch: AiSettingsPatch,
+) -> Result<AiSettings, String> {
+    let next = {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-        runtime.budget = budget.clone();
-    }
-    save_preferences(&app, &AiPreferences {
-        budget: budget.clone(),
-    })?;
-    // The sidecar reads the budget from its environment, so applying a change means a fresh
-    // process. It also gives the reader a clean session counter to go with the new limits.
+        let mut next = runtime.settings.clone();
+        if let Some(budget) = patch.budget {
+            next.budget = budget;
+        }
+        if let Some(model) = patch.model {
+            next.model = model;
+        }
+        if let Some(effort) = patch.reasoning_effort {
+            next.reasoning_effort = effort;
+        }
+        next.validate()?;
+        runtime.settings = next.clone();
+        next
+    };
+    save_preferences(&app, &next)?;
+    // The sidecar reads every one of these from its environment, so applying a change means a
+    // fresh process. It also gives the reader a clean session counter to go with the new limits.
     start_service(&app, manager.inner());
-    Ok(budget)
+    Ok(next)
 }
 
 #[tauri::command]
@@ -398,31 +484,31 @@ fn preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("找不到应用配置目录：{error}"))
 }
 
-fn load_preferences(app: &AppHandle) -> AiPreferences {
+fn load_preferences(app: &AppHandle) -> AiSettings {
     let Ok(path) = preferences_path(app) else {
-        return AiPreferences::default();
+        return AiSettings::default();
     };
     let Ok(text) = std::fs::read_to_string(path) else {
-        return AiPreferences::default();
+        return AiSettings::default();
     };
-    serde_json::from_str::<AiPreferences>(&text)
-        .map(|preferences| AiPreferences {
-            budget: if preferences.budget.validate().is_ok() {
-                preferences.budget
-            } else {
-                BudgetSettings::default()
-            },
+    serde_json::from_str::<AiSettings>(&text)
+        .map(|settings| {
+            let mut settings = settings.sanitized();
+            if settings.budget.validate().is_err() {
+                settings.budget = BudgetSettings::default();
+            }
+            settings
         })
         .unwrap_or_default()
 }
 
-fn save_preferences(app: &AppHandle, preferences: &AiPreferences) -> Result<(), String> {
+fn save_preferences(app: &AppHandle, settings: &AiSettings) -> Result<(), String> {
     let path = preferences_path(app)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("无法创建应用配置目录：{error}"))?;
     }
-    let text = serde_json::to_string_pretty(preferences)
+    let text = serde_json::to_string_pretty(settings)
         .map_err(|error| format!("无法序列化 AI 设置：{error}"))?;
     std::fs::write(path, text).map_err(|error| format!("无法保存 AI 设置：{error}"))
 }
@@ -534,7 +620,7 @@ fn spawn_child(
     mode: AiMode,
     token: &str,
     instance: &str,
-    budget: &BudgetSettings,
+    settings: &AiSettings,
     stderr_sink: Arc<Mutex<VecDeque<String>>>,
 ) -> Result<(Child, Option<ChildStdin>, ChildStdout), String> {
     let directory = sidecar_dir(app)?;
@@ -573,15 +659,27 @@ fn spawn_child(
         .env("AI_PARENT_PID", std::process::id().to_string())
         .env("AI_PORT", "0")
         .env("AI_LOG_REQUESTS", "0")
-        .env("AI_BUDGET_REQUESTS", budget.requests.to_string())
+        .env("AI_BUDGET_REQUESTS", settings.budget.requests.to_string())
         .env(
             "AI_BUDGET_TOKENS_PER_REQUEST",
-            budget.tokens_per_request.to_string(),
+            settings.budget.tokens_per_request.to_string(),
         )
         .env(
             "AI_BUDGET_TOKENS_SESSION",
-            budget.tokens_per_session.to_string(),
+            settings.budget.tokens_per_session.to_string(),
         )
+        .env("DEEPSEEK_MODEL", &settings.model)
+        // `none` means no thinking at all; the service resolves a disabled thinking mode to
+        // effort `none` itself, so both variables are always sent and always agree.
+        .env(
+            "DEEPSEEK_THINKING",
+            if settings.reasoning_effort == "none" {
+                "disabled"
+            } else {
+                "enabled"
+            },
+        )
+        .env("DEEPSEEK_REASONING_EFFORT", &settings.reasoning_effort)
         // Windows serves the built front end from http://tauri.localhost; Linux and macOS use
         // the custom tauri://localhost scheme. All three are listed so the same sidecar
         // configuration works on every desktop target.
@@ -825,14 +923,14 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
     let token = random_token();
     let instance = Uuid::new_v4().to_string();
     let mode = runtime.mode;
-    let budget = runtime.budget.clone();
+    let settings = runtime.settings.clone();
     let stderr_sink = Arc::new(Mutex::new(VecDeque::new()));
     runtime.stderr = stderr_sink.clone();
     runtime.status = AiServiceStatus::empty(STATUS_STARTING, mode);
     runtime.status.credential_configured = credentials::status().configured;
     let starting = runtime.status.clone();
 
-    match spawn_child(app, mode, &token, &instance, &budget, stderr_sink) {
+    match spawn_child(app, mode, &token, &instance, &settings, stderr_sink) {
         Ok((mut child, mut stdin, stdout)) => {
             if mode == AiMode::Online {
                 // Read the key only now, after the child exists. An absent or unreadable key is
@@ -985,11 +1083,11 @@ fn main() {
 
             // The spending caps are ordinary preferences, not secrets. A corrupt or missing
             // file falls back to the defaults rather than stopping the application.
-            let preferences = load_preferences(&app.handle().clone());
+            let settings = load_preferences(&app.handle().clone());
             let manager = app.state::<AiManager>().inner().clone();
             {
                 let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-                runtime.budget = preferences.budget;
+                runtime.settings = settings;
             }
 
             let mut builder = tauri::WebviewWindowBuilder::new(

@@ -104,7 +104,7 @@ Phase 1.1 的四项任务（旧 ID 冲突、DOI/arXiv 冲突、加载失败保�
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 仓库         | 本轮新建，`git init -b main`，工作目录即为仓库根                                                                                                                                                                                    |
 | 基线提交     | `712872a`「Phase 1 baseline: schema v2 data layer with global paper identity」（96 个文件）                                                                                                                                         |
-| 提交者身份   | 仓库本地 `user.name=xiaziihan` / `user.email=xiaziihan@localhost`。全局配置是占位值 `Your Name <you@example.com>`，没有改全局配置，只设了本仓库 local                                                                               |
+| 提交者身份   | 仓库本地 `user.name=user` / `user.email=user@localhost`。全局配置是占位值 `Your Name <you@example.com>`，没有改全局配置，只设了本仓库 local                                                                               |
 | 换行         | 新增 `.gitattributes`（`* text=auto eol=lf`）。`core.autocrlf=true` 会在检出时写 CRLF，而 Prettier 要求 `endOfLine: lf`，不锁死会让 `npm run check` 在每次检出后全红。实测 84 个文本文件 index/worktree 均为 LF，12 个 PNG 为二进制 |
 | `.gitignore` | 原有条目（`node_modules/`、`dist/`、`*.tsbuildinfo`、`src-tauri/`、`.cache/`、`.rw-local.json`、编辑器与系统噪声）保留；新增 `.env`、`.env.*`、`*.local`、`*.pem`、`*.key`、`.vscode/`、`.idea/`                                    |
 | 暂存方式     | 逐路径 `git add`，未使用 `git add .`；实际核对过暂存清单（95→96 个文件）与未跟踪文件（0 个），`node_modules/`、`dist/`、`.cache/` 均未进入索引                                                                                      |
@@ -211,7 +211,7 @@ Phase 1.1 的四项任务（旧 ID 冲突、DOI/arXiv 冲突、加载失败保�
 6. **配额耗尽的真实压测缺失**：C2/C3 的保护用内存桩模拟写入失败验证过，没有在真实满配额环境里跑过。
 7. **`updatedAt` 一字段两用、作者稳定标识**等 Phase 0 遗留项仍未处理（与本轮无关）。
 8. **迁移的"先到先得"**：A2 场景下谁让位取决于遍历顺序。结果确定且无数据丢失，但若将来希望"字面 id 优先于派生 id"，需要改成两遍扫描。
-9. **Git 身份是仓库本地占位值**（`xiaziihan@localhost`）。如果将来的提交要对外署真名/邮箱，请自行改 `git config user.email`。
+9. **Git 身份是仓库本地占位值**（`user@localhost`）。如果将来的提交要对外署真名/邮箱，请自行改 `git config user.email`。
 
 ## 九、Agent 执行过程中的有效工作与重复操作
 

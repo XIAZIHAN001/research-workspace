@@ -65,6 +65,16 @@ input {
   color: inherit;
 }
 
+/*
+ * The dropdown list is painted by the webview, not by this page. Some WebView2 builds keep its
+ * surface light while the options inherit the field's light-on-dark text, leaving every
+ * unselected row invisible. State both colours on the options so the list follows the theme.
+ */
+select option {
+  background-color: var(--card);
+  color: var(--text);
+}
+
 button {
   cursor: default;
 }
