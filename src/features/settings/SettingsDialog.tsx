@@ -13,6 +13,9 @@ interface SettingsDialogProps {
   onChangePref: (pref: ThemePref) => void;
   onChangeLevel: (level: DarkLevel) => void;
   avatar: ReturnType<typeof useAvatar>;
+  profileName: string;
+  onProfileName: (raw: string) => string;
+  stats: { papers: number; notes: number; concepts: number };
 }
 
 /**
@@ -30,6 +33,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
         onChangePref={props.onChangePref}
         onChangeLevel={props.onChangeLevel}
         avatar={props.avatar}
+        profileName={props.profileName}
+        onProfileName={props.onProfileName}
+        stats={props.stats}
       />
     </Dialog>
   );

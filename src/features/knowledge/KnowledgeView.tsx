@@ -1,9 +1,11 @@
-import { Plus, Search, Sparkles, Trash2 } from 'lucide-react';
+import { Download, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Annotation } from '../../domain/annotation';
 import { conceptsInProject, normalizeConceptName, type Concept } from '../../domain/knowledge';
+import { buildKnowledgeMarkdown } from '../../domain/knowledgeMarkdown';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
+import { downloadTextFile } from '../../services/download';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { ConceptDetail } from './ConceptDetail';
 import { ConceptGraph } from './ConceptGraph';
@@ -182,6 +184,31 @@ export function KnowledgeView({
         <button type="button" className="btn btn-quiet" onClick={organize}>
           <Sparkles size={14} aria-hidden="true" />
           从阅读记录整理
+        </button>
+        <button
+          type="button"
+          className="btn btn-quiet"
+          onClick={() => {
+            const name =
+              project.name
+                .replace(/[\\/:*?"<>|]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim() || '知识';
+            downloadTextFile(
+              `${name}.md`,
+              buildKnowledgeMarkdown({
+                project,
+                papers,
+                concepts,
+                evidence: state.evidence,
+                relations: state.relations,
+              }),
+              'text/markdown;charset=utf-8',
+            );
+          }}
+        >
+          <Download size={14} aria-hidden="true" />
+          导出 Markdown
         </button>
       </div>
 

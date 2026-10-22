@@ -405,6 +405,18 @@ describe('parseModelOutput: the agreed contract', () => {
     const parsed = parseModelOutput(`${answer}\n${SENTINEL}\n{"citations": []}`);
     expect(parsed.text).toBe(answer.trim());
   });
+
+  it('keeps the block when the sentinel is repeated after it', () => {
+    // A live DeepSeek reply ended with the sentinel once more after its JSON. Choosing strictly
+    // the last occurrence found an empty block there and dropped citations that were readable.
+    const block =
+      '{"groundedInText": true, "citations": [{"n":1,"passageId":"selection","quote":"normalised"}]}';
+    const parsed = parseModelOutput(`作者说 [1]。\n${SENTINEL}\n${block}\n${SENTINEL}`);
+    expect(parsed.status).toBe('valid');
+    expect(parsed.recovery).toBe('sentinel');
+    expect(parsed.text).toBe('作者说 [1]。');
+    expect(parsed.value.citations).toHaveLength(1);
+  });
 });
 
 describe('parseModelOutput: the shapes that are not the contract', () => {

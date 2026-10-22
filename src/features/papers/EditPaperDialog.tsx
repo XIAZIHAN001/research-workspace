@@ -1,6 +1,13 @@
 import { useState, type SubmitEvent } from 'react';
 import { MAX_NAME_LENGTH } from '../../domain/normalize';
-import type { Paper, PaperEdit } from '../../domain/papers';
+import {
+  paperStatus,
+  READING_STATUSES,
+  READING_STATUS_LABEL,
+  type Paper,
+  type PaperEdit,
+  type ReadingStatus,
+} from '../../domain/papers';
 import { Dialog } from '../../ui/Dialog';
 
 interface EditPaperDialogProps {
@@ -33,6 +40,8 @@ function EditForm({
   const [year, setYear] = useState(paper.year === undefined ? '' : String(paper.year));
   const [doi, setDoi] = useState(paper.doi ?? '');
   const [arxivId, setArxivId] = useState(paper.arxivId ?? '');
+  const [tags, setTags] = useState((paper.tags ?? []).join(', '));
+  const [status, setStatus] = useState<ReadingStatus>(paperStatus(paper));
   const [error, setError] = useState<string | null>(null);
 
   const submit = (event: SubmitEvent<HTMLFormElement>): void => {
@@ -48,6 +57,12 @@ function EditForm({
       // An emptied field clears the identifier rather than keeping the old one.
       doi: doi.trim() === '' ? null : doi.trim(),
       arxivId: arxivId.trim() === '' ? null : arxivId.trim(),
+      // An emptied field clears the tags rather than keeping the old ones.
+      tags: tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag !== ''),
+      status,
     };
     const message = onSave(edit);
     if (message === null) onClose();
@@ -92,6 +107,37 @@ function EditForm({
               setError(null);
             }}
           />
+        </label>
+      </div>
+      <div className="field-row">
+        <label className="field">
+          <span className="field-label">标签（逗号分隔）</span>
+          <input
+            className="input"
+            value={tags}
+            placeholder="强化学习, 综述"
+            onChange={(event) => {
+              setTags(event.target.value);
+              setError(null);
+            }}
+          />
+        </label>
+        <label className="field field-narrow">
+          <span className="field-label">阅读状态</span>
+          <select
+            className="input"
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value as ReadingStatus);
+              setError(null);
+            }}
+          >
+            {READING_STATUSES.map((option) => (
+              <option key={option} value={option}>
+                {READING_STATUS_LABEL[option]}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
       <label className="field">

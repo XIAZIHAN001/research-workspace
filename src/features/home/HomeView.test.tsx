@@ -18,6 +18,8 @@ function project(id: string, name: string, updatedAt: number): Project {
   };
 }
 
+const PDF = { sha256: 'a'.repeat(64), name: 'a.pdf', bytes: 1, pageCount: 10, addedAt: 1 };
+
 function paper(id: string, title: string, reading?: { page: number; updatedAt: number }): Paper {
   return {
     id,
@@ -111,13 +113,42 @@ describe('HomeView', () => {
     expect(onOpenSelected).toHaveBeenCalled();
   });
 
-  it('offers real entry points for new work', async () => {
-    const { user, onCreate, onImport, onLibrary } = renderHome();
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('button', { name: '导入论文' }));
-    await user.click(screen.getByRole('button', { name: '论文库' }));
-    expect(onCreate).toHaveBeenCalled();
-    expect(onImport).toHaveBeenCalled();
-    expect(onLibrary).toHaveBeenCalled();
+  it('queues unread papers that have a file, newest first', async () => {
+    const older = { ...paper('p1', 'Older Unread'), pdf: PDF, createdAt: NOW - 2000 };
+    const newer = { ...paper('p2', 'Newer Unread'), pdf: PDF, createdAt: NOW - 1000 };
+    const noFile = paper('p3', 'No File');
+    const done = { ...paper('p4', 'Finished'), pdf: PDF, status: 'done' as const };
+    const { user, onOpenReader } = renderHome({ papers: [older, newer, noFile, done] });
+
+    const queue = screen.getByRole('region', { name: '阅读队列' });
+    const rows = within(queue).getAllByRole('button');
+    expect(rows[0]).toHaveTextContent('Newer Unread');
+    expect(rows[1]).toHaveTextContent('Older Unread');
+    expect(within(queue).queryByText('No File')).toBeNull();
+    expect(within(queue).queryByText('Finished')).toBeNull();
+
+    await user.click(within(queue).getByRole('button', { name: /Older Unread/ }));
+    expect(onOpenReader).toHaveBeenCalledWith('p1');
+  });
+
+  it('counts papers by reading status', () => {
+    const reading = { ...paper('p1', 'Reading'), pdf: PDF, status: 'reading' as const };
+    const done = { ...paper('p2', 'Done'), status: 'done' as const };
+    const unread = { ...paper('p3', 'Unread'), pdf: PDF };
+    renderHome({ papers: [reading, done, unread] });
+    const queue = screen.getByRole('region', { name: '阅读队列' });
+    expect(within(queue).getByText('1 在读 · 1 未读 · 1 读完')).toBeInTheDocument();
+  });
+
+  it('does not queue an unread paper that already has a reading position', () => {
+    const started = {
+      ...paper('p1', 'Started But Unread', { page: 3, updatedAt: NOW }),
+      pdf: PDF,
+      status: 'unread' as const,
+    };
+    renderHome({ papers: [started] });
+    const queue = screen.getByRole('region', { name: '阅读队列' });
+    expect(within(queue).queryByRole('button', { name: /Started But Unread/ })).toBeNull();
+    expect(within(queue).getByText('队列里没有待读的论文。')).toBeInTheDocument();
   });
 });

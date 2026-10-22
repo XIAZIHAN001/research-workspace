@@ -20,6 +20,7 @@
  */
 
 import type { Annotation } from './annotation';
+import type { Bookmark } from './bookmark';
 import {
   parseDifficultyState,
   trimDifficultyPages,
@@ -753,6 +754,21 @@ export function mergeRestore(
     stats.annotationsAdded += 1;
   }
 
+  /* Bookmarks follow their paper the same way; a clash by id keeps the local name. */
+  const bookmarks: Bookmark[] = [...current.projects.bookmarks];
+  for (const incoming of contents.projects.bookmarks) {
+    const mappedPaperId = paperIdMap.get(incoming.paperId) ?? incoming.paperId;
+    const mapped: Bookmark =
+      mappedPaperId === incoming.paperId ? incoming : { ...incoming, paperId: mappedPaperId };
+    const index = bookmarks.findIndex((entry) => entry.id === incoming.id);
+    if (index >= 0) {
+      if (preferBackup && !sameJson(bookmarks[index], mapped)) bookmarks[index] = mapped;
+      continue;
+    }
+    if (papers[mappedPaperId] === undefined) continue;
+    bookmarks.push(mapped);
+  }
+
   /* Concepts are global: keep every one, and keep only project links that resolve. */
   const concepts: Concept[] = [...current.knowledge.concepts];
   for (const incoming of contents.knowledge.concepts) {
@@ -951,7 +967,7 @@ export function mergeRestore(
       : (projects[0]?.id ?? null);
 
   return {
-    projects: { projects, papers, annotations, selectedId },
+    projects: { projects, papers, annotations, bookmarks, selectedId },
     knowledge,
     difficulties,
     preferences,

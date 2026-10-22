@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { Annotation, AnnotationEdit } from '../../domain/annotation';
+import type { Bookmark } from '../../domain/bookmark';
 import {
   applyPaperEdit,
   createPaper,
@@ -104,6 +105,16 @@ export function useProjects(store: ProjectsStore) {
       removeAnnotation(id: string): void {
         store.dispatch({ type: 'removeAnnotation', id });
       },
+      /** Saves a place in a paper; the reader names it or leaves it as a page number. */
+      addBookmark(bookmark: Bookmark): void {
+        store.dispatch({ type: 'addBookmark', bookmark });
+      },
+      renameBookmark(id: string, label: string): void {
+        store.dispatch({ type: 'renameBookmark', id, label });
+      },
+      removeBookmark(id: string): void {
+        store.dispatch({ type: 'removeBookmark', id });
+      },
       rename(id: string, name: string): void {
         store.dispatch({ type: 'rename', id, name, now: Date.now() });
       },
@@ -121,6 +132,7 @@ export function useProjects(store: ProjectsStore) {
     projects: state.projects,
     papers: state.papers,
     annotations: state.annotations,
+    bookmarks: state.bookmarks,
     selected,
     persisted,
     issue,

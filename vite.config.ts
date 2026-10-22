@@ -16,6 +16,14 @@ import { defineConfig } from 'vitest/config';
 const PDFJS_DATA_DIRS = ['standard_fonts', 'cmaps'];
 const PDFJS_OUT = 'pdfjs';
 
+/**
+ * The app's own version, read at build time so the settings page can show it without asking
+ * Tauri. It is the same number the desktop package reports, because both come from here.
+ */
+const APP_VERSION = (
+  JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { version?: string }
+).version;
+
 function pdfjsDataFiles(): Plugin {
   const packageRoot = join(process.cwd(), 'node_modules', 'pdfjs-dist');
   const readDir = (name: string): { file: string; source: Buffer }[] => {
@@ -58,6 +66,9 @@ function pdfjsDataFiles(): Plugin {
 
 export default defineConfig({
   plugins: [react(), pdfjsDataFiles()],
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION ?? '0.0.0'),
+  },
   clearScreen: false,
   // Declared up front so the first `vite` run bundles React and its consumers together.
   // Without it, lucide-react is discovered late and one page load can mix two React copies.

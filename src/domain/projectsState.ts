@@ -1,4 +1,5 @@
 import { applyAnnotationEdit, type Annotation, type AnnotationEdit } from './annotation';
+import type { Bookmark } from './bookmark';
 import { normalizeName } from './normalize';
 import { applyPaperEdit, type Paper, type PaperEdit } from './papers';
 import type { Project } from './project';
@@ -19,12 +20,18 @@ export interface ProjectsState {
    * inside `Project`.
    */
   annotations: Annotation[];
+  /**
+   * Saved places in papers. Like annotations they belong to a paper, not a project, and
+   * survive the project that led the reader to them.
+   */
+  bookmarks: Bookmark[];
 }
 
 export const EMPTY_STATE: ProjectsState = {
   projects: [],
   papers: {},
   annotations: [],
+  bookmarks: [],
   selectedId: null,
 };
 
@@ -48,6 +55,11 @@ export type ProjectsAction =
   /** Changes what the reader wrote about a passage, never where the passage is. */
   | { type: 'updateAnnotation'; id: string; edit: AnnotationEdit; now: number }
   | { type: 'removeAnnotation'; id: string }
+  /** Saves a place in a paper. */
+  | { type: 'addBookmark'; bookmark: Bookmark }
+  /** Changes the bookmark's name; where it points never moves. */
+  | { type: 'renameBookmark'; id: string; label: string }
+  | { type: 'removeBookmark'; id: string }
   | { type: 'rename'; id: string; name: string; now: number }
   | { type: 'remove'; id: string }
   | { type: 'select'; id: string };
@@ -148,6 +160,30 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
       return {
         ...state,
         annotations: state.annotations.filter((annotation) => annotation.id !== action.id),
+      };
+    }
+
+    case 'addBookmark': {
+      if (state.bookmarks.some((bookmark) => bookmark.id === action.bookmark.id)) return state;
+      return { ...state, bookmarks: [...state.bookmarks, action.bookmark] };
+    }
+
+    case 'renameBookmark': {
+      const current = state.bookmarks.find((bookmark) => bookmark.id === action.id);
+      if (current === undefined || current.label === action.label) return state;
+      return {
+        ...state,
+        bookmarks: state.bookmarks.map((bookmark) =>
+          bookmark === current ? { ...bookmark, label: action.label } : bookmark,
+        ),
+      };
+    }
+
+    case 'removeBookmark': {
+      if (!state.bookmarks.some((bookmark) => bookmark.id === action.id)) return state;
+      return {
+        ...state,
+        bookmarks: state.bookmarks.filter((bookmark) => bookmark.id !== action.id),
       };
     }
 

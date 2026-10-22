@@ -1,4 +1,4 @@
-import { Crosshair, Pencil, Trash2, X } from 'lucide-react';
+import { Crosshair, Download, Pencil, Trash2, X } from 'lucide-react';
 import { useState, type SubmitEvent } from 'react';
 import {
   ANNOTATION_KINDS,
@@ -22,6 +22,8 @@ interface NotesPanelProps {
   onEdit: (id: string, edit: AnnotationEdit) => void;
   onDelete: (annotation: Annotation) => void;
   onClose: () => void;
+  /** Offered when the reader can take the notes away as a file. */
+  onExport?: () => void;
 }
 
 /**
@@ -39,6 +41,7 @@ export function NotesPanel({
   onEdit,
   onDelete,
   onClose,
+  onExport,
 }: NotesPanelProps) {
   const ordered = sortAnnotations(annotations);
   const here =
@@ -51,6 +54,17 @@ export function NotesPanel({
       <header className="notes-head">
         <h2 className="notes-title">笔记</h2>
         <span className="notes-count">{annotations.length}</span>
+        {onExport !== undefined && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="导出笔记为 Markdown"
+            title="导出笔记为 Markdown"
+            onClick={onExport}
+          >
+            <Download size={15} aria-hidden="true" />
+          </button>
+        )}
         <button type="button" className="icon-btn" aria-label="收起笔记" onClick={onClose}>
           <X size={15} aria-hidden="true" />
         </button>

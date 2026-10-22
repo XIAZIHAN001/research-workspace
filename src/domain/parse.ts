@@ -5,7 +5,8 @@ import {
   type AnnotationKind,
   type AnnotationOrigin,
 } from './annotation';
-import type { Paper } from './papers';
+import type { Bookmark } from './bookmark';
+import { isReadingStatus, normalizeTags, type Paper, type ReadingStatus } from './papers';
 import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
 import type { ProjectsState } from './projectsState';
@@ -14,7 +15,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /* ------------------------------------------------------------------ *
- * Current shape (schema version 4)
+ * Current shape (schema version 6)
  * ------------------------------------------------------------------ */
 
 /**
@@ -103,6 +104,18 @@ function parseAnnotation(value: unknown): Annotation | null {
   };
 }
 
+/** A malformed bookmark is rejected, like a malformed highlight. */
+function parseBookmark(value: unknown): Bookmark | null {
+  if (!isRecord(value)) return null;
+  const { id, paperId, page, label, createdAt } = value;
+  if (typeof id !== 'string' || id === '') return null;
+  if (typeof paperId !== 'string' || paperId === '') return null;
+  if (typeof page !== 'number' || !Number.isInteger(page) || page < 1) return null;
+  if (typeof label !== 'string') return null;
+  if (typeof createdAt !== 'number') return null;
+  return { id, paperId, page, label, createdAt };
+}
+
 /** A malformed PDF binding is dropped: rejecting the whole payload would hide the workspace. */
 function parsePaperPdf(value: unknown): PaperPdf | null {
   if (!isRecord(value)) return null;
@@ -123,9 +136,38 @@ function parsePaperReading(value: unknown): PaperReading | null {
   return { page, updatedAt };
 }
 
+/**
+ * Tags are optional and cosmetic: a malformed list is dropped with the rest of the paper's
+ * metadata intact, like the PDF binding. `undefined` means "this payload has none".
+ */
+function parsePaperTags(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((tag) => typeof tag === 'string')) return undefined;
+  const tags = normalizeTags(value as string[]);
+  return tags.length === 0 ? undefined : tags;
+}
+
+/** A status this build does not know is dropped; the paper falls back to unread. */
+function parsePaperStatus(value: unknown): ReadingStatus | undefined {
+  return isReadingStatus(value) ? value : undefined;
+}
+
 function parsePaper(value: unknown): Paper | null {
   if (!isRecord(value)) return null;
-  const { id, title, authors, year, doi, arxivId, pdf, reading, createdAt, updatedAt } = value;
+  const {
+    id,
+    title,
+    authors,
+    year,
+    doi,
+    arxivId,
+    pdf,
+    reading,
+    tags,
+    status,
+    createdAt,
+    updatedAt,
+  } = value;
   if (typeof id !== 'string' || typeof title !== 'string') return null;
   if (!Array.isArray(authors) || !authors.every((a) => typeof a === 'string')) return null;
   if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
@@ -138,6 +180,10 @@ function parsePaper(value: unknown): Paper | null {
   if (parsedPdf !== null) paper.pdf = parsedPdf;
   const parsedReading = parsePaperReading(reading);
   if (parsedReading !== null) paper.reading = parsedReading;
+  const parsedTags = parsePaperTags(tags);
+  if (parsedTags !== undefined) paper.tags = parsedTags;
+  const parsedStatus = parsePaperStatus(status);
+  if (parsedStatus !== undefined) paper.status = parsedStatus;
   return paper;
 }
 
@@ -209,9 +255,24 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
     }
   }
 
+  // A payload written before saved bookmarks existed has no list; anything else that is not a
+  // list is corrupt rather than old.
+  const rawBookmarks = value.bookmarks;
+  const bookmarks: Bookmark[] = [];
+  if (rawBookmarks !== undefined) {
+    if (!Array.isArray(rawBookmarks)) return null;
+    for (const entry of rawBookmarks) {
+      const bookmark = parseBookmark(entry);
+      if (bookmark === null) return null;
+      if (papers[bookmark.paperId] === undefined) return null;
+      bookmarks.push(bookmark);
+    }
+    if (new Set(bookmarks.map((bookmark) => bookmark.id)).size !== bookmarks.length) return null;
+  }
+
   const known = projects.some((p) => p.id === value.selectedId);
   const selectedId = known ? (value.selectedId as string) : (projects[0]?.id ?? null);
-  return { projects, papers, annotations, selectedId };
+  return { projects, papers, annotations, bookmarks, selectedId };
 }
 
 /* ------------------------------------------------------------------ *

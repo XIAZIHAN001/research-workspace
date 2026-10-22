@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Annotation } from './annotation';
+import type { Bookmark } from './bookmark';
 import { MAX_NAME_LENGTH } from './normalize';
 import type { Paper } from './papers';
 import type { Project } from './project';
@@ -40,7 +41,7 @@ function papersOf(projects: Project[]): Record<string, Paper> {
 
 function makeState(ids: string[], selectedId: string | null = ids[0] ?? null): ProjectsState {
   const projects = ids.map((id) => makeProject(id));
-  return { projects, papers: papersOf(projects), annotations: [], selectedId };
+  return { projects, papers: papersOf(projects), annotations: [], bookmarks: [], selectedId };
 }
 
 const idsOf = (state: ProjectsState): string[] => state.projects.map((p) => p.id);
@@ -57,11 +58,12 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('EMPTY_STATE', () => {
-  it('has no projects, no papers, no annotations and no selection', () => {
+  it('has no projects, no papers, no annotations, no bookmarks and no selection', () => {
     expect(EMPTY_STATE).toStrictEqual({
       projects: [],
       papers: {},
       annotations: [],
+      bookmarks: [],
       selectedId: null,
     });
   });
@@ -81,6 +83,7 @@ describe('projectsReducer', () => {
         projects: [],
         papers: {},
         annotations: [],
+        bookmarks: [],
         selectedId: null,
       });
     });
@@ -127,12 +130,14 @@ describe('projectsReducer', () => {
         projects: [added],
         papers: { 'paper-first': paper },
         annotations: [],
+        bookmarks: [],
         selectedId: 'first',
       });
       expect(EMPTY_STATE).toStrictEqual({
         projects: [],
         papers: {},
         annotations: [],
+        bookmarks: [],
         selectedId: null,
       });
     });
@@ -392,6 +397,7 @@ describe('projectsReducer', () => {
         projects: [],
         papers: state.papers,
         annotations: state.annotations,
+        bookmarks: state.bookmarks,
         selectedId: null,
       });
     });
@@ -800,6 +806,107 @@ describe('projectsReducer: annotations belong to the paper, not the project', ()
       projectsReducer(state, {
         type: 'addAnnotation',
         annotation: makeAnnotation('three', 'paper-a'),
+      }),
+    ).not.toThrow();
+    expect(state).toStrictEqual(before);
+  });
+});
+
+describe('projectsReducer: bookmarks are saved places, not notes', () => {
+  function makeBookmark(id: string, paperId: string, overrides: Partial<Bookmark> = {}): Bookmark {
+    return { id, paperId, page: 1, label: `Place ${id}`, createdAt: 10, ...overrides };
+  }
+
+  function stateWithBookmarks(): ProjectsState {
+    const state = makeState(['a', 'b']);
+    return {
+      ...state,
+      bookmarks: [
+        makeBookmark('one', 'paper-a', { page: 3 }),
+        makeBookmark('two', 'paper-b', { page: 7 }),
+      ],
+    };
+  }
+
+  it('adds a bookmark at the end and keeps the existing ones', () => {
+    const state = stateWithBookmarks();
+    const added = makeBookmark('three', 'paper-a', { page: 9 });
+    const next = projectsReducer(state, { type: 'addBookmark', bookmark: added });
+    expect(next.bookmarks.map((bookmark) => bookmark.id)).toStrictEqual(['one', 'two', 'three']);
+    expect(next.bookmarks[0]).toBe(state.bookmarks[0]);
+    expect(next.annotations).toBe(state.annotations);
+    expect(next.projects).toBe(state.projects);
+  });
+
+  it('allows two bookmarks on the same page of one paper', () => {
+    const next = projectsReducer(stateWithBookmarks(), {
+      type: 'addBookmark',
+      bookmark: makeBookmark('same-page', 'paper-a', { page: 3 }),
+    });
+    expect(next.bookmarks.filter((bookmark) => bookmark.paperId === 'paper-a')).toHaveLength(2);
+  });
+
+  it('ignores a bookmark id that is already there', () => {
+    const state = stateWithBookmarks();
+    expect(
+      projectsReducer(state, {
+        type: 'addBookmark',
+        bookmark: makeBookmark('one', 'paper-a', { page: 99 }),
+      }),
+    ).toBe(state);
+  });
+
+  it('renames one bookmark without moving it or touching the rest', () => {
+    const state = stateWithBookmarks();
+    const next = projectsReducer(state, {
+      type: 'renameBookmark',
+      id: 'one',
+      label: '方法比较',
+    });
+    expect(next.bookmarks.find((bookmark) => bookmark.id === 'one')).toStrictEqual({
+      ...makeBookmark('one', 'paper-a', { page: 3 }),
+      label: '方法比较',
+    });
+    expect(next.bookmarks.find((bookmark) => bookmark.id === 'two')).toBe(state.bookmarks[1]);
+  });
+
+  it('returns the same state for an unknown bookmark or an unchanged label', () => {
+    const state = stateWithBookmarks();
+    expect(projectsReducer(state, { type: 'renameBookmark', id: 'ghost', label: 'x' })).toBe(state);
+    expect(projectsReducer(state, { type: 'renameBookmark', id: 'one', label: 'Place one' })).toBe(
+      state,
+    );
+  });
+
+  it('removes one bookmark and leaves the rest', () => {
+    const next = projectsReducer(stateWithBookmarks(), { type: 'removeBookmark', id: 'one' });
+    expect(next.bookmarks.map((bookmark) => bookmark.id)).toStrictEqual(['two']);
+  });
+
+  it('returns the same state when there is nothing to remove', () => {
+    const state = stateWithBookmarks();
+    expect(projectsReducer(state, { type: 'removeBookmark', id: 'ghost' })).toBe(state);
+  });
+
+  it('survives the project and the paper reference being removed', () => {
+    const removed = projectsReducer(stateWithBookmarks(), { type: 'remove', id: 'b' });
+    expect(removed.bookmarks.map((bookmark) => bookmark.id)).toStrictEqual(['one', 'two']);
+    const unlinked = projectsReducer(removed, {
+      type: 'unlinkPaper',
+      projectId: 'a',
+      paperId: 'paper-a',
+      now: 99,
+    });
+    expect(unlinked.bookmarks).toStrictEqual(removed.bookmarks);
+  });
+
+  it('does not mutate the state it is given', () => {
+    const state = deepFreeze(stateWithBookmarks());
+    const before = structuredClone(state);
+    expect(() =>
+      projectsReducer(state, {
+        type: 'addBookmark',
+        bookmark: makeBookmark('three', 'paper-a'),
       }),
     ).not.toThrow();
     expect(state).toStrictEqual(before);

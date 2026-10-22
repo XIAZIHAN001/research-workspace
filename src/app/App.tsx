@@ -12,6 +12,7 @@ import { useTheme } from '../features/theme/useTheme';
 import { EditPaperDialog } from '../features/papers/EditPaperDialog';
 import { ImportPaperDialog } from '../features/library/ImportPaperDialog';
 import { LibraryView } from '../features/library/LibraryView';
+import { NotesView } from '../features/notes/NotesView';
 import {
   commitImport,
   describeEditFailure,
@@ -24,9 +25,13 @@ import { ReaderView } from '../features/reader/ReaderView';
 import { BackupDialog } from '../features/backup/BackupDialog';
 import { SettingsDialog } from '../features/settings/SettingsDialog';
 import type { SettingsSection } from '../features/settings/SettingsView';
+import { useProfileName } from '../features/settings/useProfileName';
+import { GlobalSearchDialog } from '../features/search/GlobalSearchDialog';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createAnnotation } from '../domain/annotation';
+import { cleanBookmarkLabel, createBookmark } from '../domain/bookmark';
+import { bibtexKey, toBibtex } from '../domain/citation';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
@@ -61,7 +66,7 @@ interface AppProps {
   restoreNotice?: 'completed' | 'clean' | 'rolled-back' | 'blocked';
 }
 
-type View = 'home' | 'project' | 'library' | 'reader';
+type View = 'home' | 'project' | 'library' | 'notes' | 'reader';
 
 /** Which file the import dialog is collecting, and where the paper should end up. */
 interface ImportRequest {
@@ -103,7 +108,8 @@ export function App({
   knowledgeStore,
   restoreNotice,
 }: AppProps) {
-  const { projects, papers, annotations, selected, persisted, issue, actions } = useProjects(store);
+  const { projects, papers, annotations, bookmarks, selected, persisted, issue, actions } =
+    useProjects(store);
   const theme = useTheme();
   const sidebar = useSidebar();
   const avatar = useAvatar();
@@ -132,7 +138,9 @@ export function App({
   const [knowledgeSelectedId, setKnowledgeSelectedId] = useState<string | null>(null);
   const [backupOpen, setBackupOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('appearance');
+  const profile = useProfileName();
 
   const paperList = useMemo(
     () =>
@@ -141,10 +149,15 @@ export function App({
       ),
     [papers],
   );
+  /** Which papers have notes, for the library's "有笔记" filter. */
+  const annotatedPaperIds = useMemo(
+    () => new Set(annotations.map((annotation) => annotation.paperId)),
+    [annotations],
+  );
   /** The workspace in the shape the backup service reads — the same state the stores persist. */
   const projectsState = useMemo<ProjectsState>(
-    () => ({ projects, papers, annotations, selectedId: selected?.id ?? null }),
-    [projects, papers, annotations, selected?.id],
+    () => ({ projects, papers, annotations, bookmarks, selectedId: selected?.id ?? null }),
+    [projects, papers, annotations, bookmarks, selected?.id],
   );
   const readingPaper = readingPaperId === null ? null : (papers[readingPaperId] ?? null);
   // Notes follow the paper, so every project that opens it sees the same ones.
@@ -155,7 +168,25 @@ export function App({
         : annotations.filter((annotation) => annotation.paperId === readingPaper.id),
     [annotations, readingPaper],
   );
+  // Bookmarks follow the paper too, and are shown only in the reader for that paper.
+  const paperBookmarks = useMemo(
+    () =>
+      readingPaper === null
+        ? []
+        : bookmarks.filter((bookmark) => bookmark.paperId === readingPaper.id),
+    [bookmarks, readingPaper],
+  );
   const editingPaper = editingPaperId === null ? null : (papers[editingPaperId] ?? null);
+  /** Everything the global search can match, rebuilt only when one of its sources changes. */
+  const searchSource = useMemo(
+    () => ({
+      papers: paperList,
+      annotations,
+      concepts: knowledgeApi.state.concepts,
+      evidence: knowledgeApi.state.evidence,
+    }),
+    [paperList, annotations, knowledgeApi.state.concepts, knowledgeApi.state.evidence],
+  );
 
   // `now` ticks once a minute. Only the values derived from it feed the memo, so the
   // welcome line is requested again when the hour or the idle-day count changes, not every tick.
@@ -186,6 +217,21 @@ export function App({
       window.clearTimeout(timer);
     };
   }, [notice]);
+
+  // Ctrl/Cmd+K opens the workspace search. Any open dialog owns the keyboard already, so the
+  // shortcut declines rather than stacking a second modal on top of it.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return;
+      if (document.querySelector('dialog[open]') !== null) return;
+      event.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   // Reading position: kept in a ref until the page has been still for a moment, so a fast
   // scroll does not write the workspace on every page it passes.
@@ -330,10 +376,13 @@ export function App({
         selectedId={selected?.id ?? null}
         homeActive={view === 'home'}
         libraryActive={view === 'library'}
+        notesActive={view === 'notes'}
+        notesCount={annotations.length}
         now={now}
         managing={managing}
         renamingId={renamingId}
         avatar={avatar}
+        userName={profile.name}
         onHome={() => {
           setView('home');
           closeOverlay();
@@ -341,6 +390,13 @@ export function App({
         onLibrary={() => {
           setView('library');
           closeOverlay();
+        }}
+        onNotes={() => {
+          setView('notes');
+          closeOverlay();
+        }}
+        onSearch={() => {
+          setSearchOpen(true);
         }}
         onCollapse={() => {
           sidebar.setOpen(false);
@@ -450,6 +506,22 @@ export function App({
                 });
               }}
               annotations={paperAnnotations}
+              bookmarks={paperBookmarks}
+              onAddBookmark={(page, label) => {
+                const created = createBookmark(
+                  { paperId: readingPaper.id, page, label },
+                  makeId,
+                  Date.now(),
+                );
+                if (created === null) return;
+                actions.addBookmark(created);
+              }}
+              onRenameBookmark={(id, label) => {
+                actions.renameBookmark(id, cleanBookmarkLabel(label));
+              }}
+              onDeleteBookmark={(bookmark) => {
+                actions.removeBookmark(bookmark.id);
+              }}
               onCreateAnnotation={(anchor, draft) => {
                 const created = createAnnotation(
                   {
@@ -539,6 +611,7 @@ export function App({
           <LibraryView
             papers={paperList}
             projects={projects}
+            annotatedPaperIds={annotatedPaperIds}
             preferredProjectId={selected?.id ?? null}
             onOpenReader={openReader}
             onEditPaper={setEditingPaperId}
@@ -563,7 +636,28 @@ export function App({
                   : `已经把《${title}》加入《${project?.name ?? ''}》。`,
               );
             }}
+            onCopyBibtex={(paper) => {
+              const taken = paperList
+                .filter((other) => other.id !== paper.id)
+                .map((other) => bibtexKey(other));
+              const entry = toBibtex(paper, taken);
+              const clipboard = navigator.clipboard as Clipboard | undefined;
+              if (clipboard === undefined) {
+                setNotice('这个窗口不支持剪贴板，暂时无法复制 BibTeX。');
+                return;
+              }
+              void clipboard.writeText(entry).then(
+                () => {
+                  setNotice(`已复制《${paper.title}》的 BibTeX。`);
+                },
+                () => {
+                  setNotice('没有取得剪贴板权限，暂时无法复制 BibTeX。');
+                },
+              );
+            }}
           />
+        ) : view === 'notes' ? (
+          <NotesView annotations={annotations} papers={papers} onOpenPaper={openReader} />
         ) : showProject ? (
           <ProjectView
             project={selected}
@@ -704,6 +798,22 @@ export function App({
         />
       )}
 
+      <GlobalSearchDialog
+        open={searchOpen}
+        source={searchSource}
+        onClose={() => {
+          setSearchOpen(false);
+        }}
+        onOpenPaper={(paperId, focus) => {
+          setSearchOpen(false);
+          openReader(paperId, focus);
+        }}
+        onOpenConcept={(conceptId, projectId) => {
+          setSearchOpen(false);
+          openConceptFromReader(conceptId, projectId);
+        }}
+      />
+
       <SettingsDialog
         open={settingsOpen}
         section={settingsSection}
@@ -716,6 +826,13 @@ export function App({
         onChangePref={theme.setPref}
         onChangeLevel={theme.setLevel}
         avatar={avatar}
+        profileName={profile.name}
+        onProfileName={profile.save}
+        stats={{
+          papers: paperList.length,
+          notes: annotations.length,
+          concepts: knowledgeApi.state.concepts.length,
+        }}
       />
     </div>
   );

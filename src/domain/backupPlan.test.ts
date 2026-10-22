@@ -95,7 +95,13 @@ function relation(
   };
 }
 
-const EMPTY_STATE: ProjectsState = { projects: [], papers: {}, annotations: [], selectedId: null };
+const EMPTY_STATE: ProjectsState = {
+  projects: [],
+  papers: {},
+  annotations: [],
+  bookmarks: [],
+  selectedId: null,
+};
 const EMPTY_KNOWLEDGE: KnowledgeState = {
   version: 2,
   concepts: [],
@@ -142,6 +148,7 @@ function rawData(overrides: Record<string, unknown> = {}) {
       projects: [],
       papers: {},
       annotations: [],
+      bookmarks: [],
       selectedId: null,
     },
     knowledge: { version: 1, concepts: [], evidence: [], relations: [] },
@@ -165,6 +172,7 @@ describe('reading a backup data section', () => {
           }),
         },
         annotations: [annotation('n1', 'paper1')],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -196,6 +204,7 @@ describe('reading a backup data section', () => {
         projects: [project('p1', '项目', 'paper1')],
         papers: { paper1: paper('paper1', '论文') },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -218,6 +227,7 @@ describe('reading a backup data section', () => {
         projects: [project('p1', '项目', 'paper1')],
         papers: { paper1: paper('paper1', '论文') },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -237,6 +247,7 @@ describe('reading a backup data section', () => {
         projects: [project('p1', '项目', 'paper1')],
         papers: { paper1: paper('paper1', '论文') },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -288,6 +299,7 @@ describe('merging a restore', () => {
           paper2: paper('paper2', '论文二'),
         },
         annotations: [annotation('n1', 'paper1')],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -318,6 +330,7 @@ describe('merging a restore', () => {
         projects: [project('p1', '项目', 'paper1')],
         papers: { paper1: paper('paper1', '论文') },
         annotations: [annotation('n1', 'paper1')],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -356,6 +369,7 @@ describe('merging a restore', () => {
         localPaper: paper('localPaper', '同一篇论文', { doi: '10.1000/x', pdf: undefined }),
       },
       annotations: [],
+      bookmarks: [],
       selectedId: 'pLocal',
     };
     const incoming = contents({
@@ -368,6 +382,7 @@ describe('merging a restore', () => {
           }),
         },
         annotations: [annotation('nRemote', 'remotePaper')],
+        bookmarks: [],
         selectedId: 'pRemote',
       },
       knowledge: {
@@ -404,6 +419,7 @@ describe('merging a restore', () => {
       projects: [],
       papers: {},
       annotations: [],
+      bookmarks: [],
       selectedId: null,
     };
     const currentKnowledge: KnowledgeState = {
@@ -442,6 +458,7 @@ describe('merging a restore', () => {
       projects: [project('pLocal', '同名项目', 'localPaper')],
       papers: { localPaper: paper('localPaper', '本地论文') },
       annotations: [],
+      bookmarks: [],
       selectedId: 'pLocal',
     };
     const incoming = contents({
@@ -449,6 +466,7 @@ describe('merging a restore', () => {
         projects: [project('pRemote', '同名项目', 'remotePaper')],
         papers: { remotePaper: paper('remotePaper', '备份论文') },
         annotations: [],
+        bookmarks: [],
         selectedId: 'pRemote',
       },
     });
@@ -469,6 +487,7 @@ describe('merging a restore', () => {
         projects: [project('p1', '项目一', 'paper1'), project('p2', '项目二', 'paper1')],
         papers: { paper1: paper('paper1', '论文') },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -579,6 +598,7 @@ describe('planning a restore', () => {
           }),
         },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
     });
@@ -682,6 +702,7 @@ describe('planning a restore', () => {
         two: paper('two', '论文二', { doi: '10.1000/x' }),
       },
       annotations: [],
+      bookmarks: [],
       selectedId: null,
     };
     const incoming = contents({
@@ -689,6 +710,7 @@ describe('planning a restore', () => {
         projects: [],
         papers: { three: paper('three', '论文三', { doi: '10.1000/x' }) },
         annotations: [],
+        bookmarks: [],
         selectedId: null,
       },
     });
@@ -715,6 +737,7 @@ describe('Phase 8: suggestion evidence in backups', () => {
       }),
     },
     annotations: [],
+    bookmarks: [],
     selectedId: 'p1',
   };
   const c1 = concept('c1', 'KZG commitment', ['p1']);
@@ -840,6 +863,7 @@ describe('Phase 8: suggestion evidence in backups', () => {
           }),
         },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {
@@ -904,6 +928,7 @@ describe('Phase 9: rejections in backups', () => {
           }),
         },
         annotations: [],
+        bookmarks: [],
         selectedId: 'p1',
       },
       knowledge: {

@@ -59,7 +59,8 @@ import type { RestoreJournal, RestoreJournalStore } from './restoreJournal';
 
 const PREF_THEMES: ReadonlySet<string> = new Set(['system', 'light', 'dark']);
 const PREF_PAPER: ReadonlySet<string> = new Set(['auto', 'original', 'warm', 'dark']);
-const RECOVERY_KEYS = [
+/** Copies kept aside when stored data could not be read; safe to discard, never primary data. */
+export const RECOVERY_KEYS = [
   'rw.projects.backup',
   'rw.projects.backup.2',
   'rw.projects.backup.3',

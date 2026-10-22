@@ -1,37 +1,51 @@
-import { FileUp, FolderPlus, Pencil, Plus, Search, SquareArrowOutUpRight } from 'lucide-react';
+import {
+  Copy,
+  FileUp,
+  FolderPlus,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  SquareArrowOutUpRight,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import { RowOverflow, RowOverflowItem } from '../../ui/RowOverflow';
 import { PaperRow } from '../papers/PaperRow';
+import {
+  collectTags,
+  libraryPapers,
+  LIBRARY_SCOPE_LABEL,
+  LIBRARY_SORT_LABEL,
+  LIBRARY_STATUS_LABEL,
+  readingProgress,
+  type LibraryScope,
+  type LibrarySort,
+  type LibraryStatusFilter,
+} from './libraryFilters';
 
 interface LibraryViewProps {
   /** Every paper in the knowledge base, already ordered. */
   papers: Paper[];
   projects: Project[];
+  /** Papers that have at least one note, so the library can filter by them. */
+  annotatedPaperIds?: ReadonlySet<string>;
   onOpenReader: (paperId: string) => void;
   onEditPaper: (paperId: string) => void;
   onImportFile: (paperId: string) => void;
   onImportNew: () => void;
   onLinkToProject: (paperId: string, projectId: string) => void;
+  /** Copies the paper's BibTeX entry. Omitted in tests and in hosts without a clipboard. */
+  onCopyBibtex?: (paper: Paper) => void;
   /** Preselected in every row's project picker, so a detour through the library is quick. */
   preferredProjectId?: string | null;
 }
 
-/** Finds a paper by anything a reader would remember about it. */
-function matches(paper: Paper, query: string): boolean {
-  if (query === '') return true;
-  const haystack = [
-    paper.title,
-    paper.authors.join(' '),
-    paper.doi ?? '',
-    paper.arxivId ?? '',
-    paper.pdf?.name ?? '',
-  ]
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(query.toLowerCase());
-}
+const SCOPES: readonly LibraryScope[] = ['all', 'has-pdf', 'in-project', 'has-notes'];
+const STATUSES: readonly LibraryStatusFilter[] = ['all', 'unread', 'reading', 'done'];
+const SORTS: readonly LibrarySort[] = ['recent-reading', 'added', 'year-desc', 'year-asc', 'title'];
+const NO_PAPERS: ReadonlySet<string> = new Set();
 
 /**
  * The library: every paper the workspace knows, with the projects that use it.
@@ -43,15 +57,47 @@ function matches(paper: Paper, query: string): boolean {
 export function LibraryView({
   papers,
   projects,
+  annotatedPaperIds = NO_PAPERS,
   onOpenReader,
   onEditPaper,
   onImportFile,
   onImportNew,
   onLinkToProject,
+  onCopyBibtex,
   preferredProjectId = null,
 }: LibraryViewProps) {
   const [query, setQuery] = useState('');
-  const shown = useMemo(() => papers.filter((paper) => matches(paper, query)), [papers, query]);
+  const [sort, setSort] = useState<LibrarySort>('recent-reading');
+  const [scope, setScope] = useState<LibraryScope>('all');
+  const [status, setStatus] = useState<LibraryStatusFilter>('all');
+  const [tag, setTag] = useState('');
+
+  const projectPaperIds = useMemo(
+    () => new Set(projects.flatMap((project) => [project.corePaperId, ...project.relatedPaperIds])),
+    [projects],
+  );
+  const tags = useMemo(() => collectTags(papers), [papers]);
+  const shown = useMemo(
+    () =>
+      libraryPapers(papers, {
+        query,
+        sort,
+        scope,
+        status,
+        tag: tag === '' ? null : tag,
+        projectPaperIds,
+        annotatedPaperIds,
+      }),
+    [papers, query, sort, scope, status, tag, projectPaperIds, annotatedPaperIds],
+  );
+  const filtered = query !== '' || scope !== 'all' || status !== 'all' || tag !== '';
+  const reset = (): void => {
+    setQuery('');
+    setSort('recent-reading');
+    setScope('all');
+    setStatus('all');
+    setTag('');
+  };
 
   const projectsOf = (paper: Paper): string[] =>
     projects
@@ -66,7 +112,11 @@ export function LibraryView({
         <h1 id="library-title" className="library-title">
           论文库
         </h1>
-        <span className="library-count">{papers.length} 篇</span>
+        <span className="library-count">
+          {shown.length === papers.length
+            ? `${String(papers.length)} 篇`
+            : `${String(shown.length)} / ${String(papers.length)} 篇`}
+        </span>
         <button type="button" className="btn" onClick={onImportNew}>
           <Plus size={14} aria-hidden="true" />
           导入论文
@@ -87,11 +137,90 @@ export function LibraryView({
         />
       </label>
 
+      <div className="library-controls">
+        <div className="library-chips" role="group" aria-label="论文范围">
+          {SCOPES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className="chip"
+              aria-pressed={scope === option}
+              onClick={() => {
+                setScope(option);
+              }}
+            >
+              {LIBRARY_SCOPE_LABEL[option]}
+            </button>
+          ))}
+        </div>
+        <div className="library-selects">
+          <label className="library-select">
+            <span className="sr-only">排序方式</span>
+            <select
+              className="input"
+              value={sort}
+              onChange={(event) => {
+                setSort(event.target.value as LibrarySort);
+              }}
+            >
+              {SORTS.map((option) => (
+                <option key={option} value={option}>
+                  {LIBRARY_SORT_LABEL[option]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="library-select">
+            <span className="sr-only">阅读状态</span>
+            <select
+              className="input"
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value as LibraryStatusFilter);
+              }}
+            >
+              {STATUSES.map((option) => (
+                <option key={option} value={option}>
+                  {LIBRARY_STATUS_LABEL[option]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {tags.length > 0 && (
+            <label className="library-select">
+              <span className="sr-only">标签</span>
+              <select
+                className="input"
+                value={tag}
+                onChange={(event) => {
+                  setTag(event.target.value);
+                }}
+              >
+                <option value="">全部标签</option>
+                {tags.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {filtered && (
+            <button type="button" className="btn btn-quiet" onClick={reset}>
+              <RotateCcw size={14} aria-hidden="true" />
+              重置
+            </button>
+          )}
+        </div>
+      </div>
+
       {shown.length === 0 ? (
         <p className="library-empty">
           {papers.length === 0
             ? '论文库还是空的。导入一份 PDF，或从项目里新建论文。'
-            : '没有匹配的论文。'}
+            : filtered
+              ? '没有符合筛选条件的论文。'
+              : '没有匹配的论文。'}
         </p>
       ) : (
         <ul className="library-list">
@@ -101,6 +230,7 @@ export function LibraryView({
               <li key={paper.id}>
                 <PaperRow
                   paper={paper}
+                  progress={readingProgress(paper)}
                   note={
                     used.length > 0 ? (
                       <p className="paper-row-note">用于：{used.join('、')}</p>
@@ -140,6 +270,16 @@ export function LibraryView({
                   <RowOverflow label="更多操作">
                     {(close) => (
                       <>
+                        {onCopyBibtex !== undefined && (
+                          <RowOverflowItem
+                            icon={<Copy size={14} aria-hidden="true" />}
+                            label="复制 BibTeX"
+                            onSelect={() => {
+                              close();
+                              onCopyBibtex(paper);
+                            }}
+                          />
+                        )}
                         <RowOverflowItem
                           icon={<FileUp size={14} aria-hidden="true" />}
                           label={paper.pdf === undefined ? '导入 PDF' : '替换 PDF'}

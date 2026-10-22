@@ -18,6 +18,8 @@ export const SIDEBAR_WIDTH_STORAGE_KEY = 'rw.sidebarWidth';
 /** How wide the reader's side panel is, in CSS pixels. */
 export const PANEL_WIDTH_STORAGE_KEY = 'rw.panelWidth';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';
+/** The name shown at the bottom of the sidebar. Local only; there is no account. */
+export const PROFILE_NAME_STORAGE_KEY = 'rw.profileName';
 export const PROJECTS_STORAGE_KEY = 'rw.projects';
 /** Verbatim copy of a payload that could not be read at all, kept for recovery by hand. */
 export const PROJECTS_CORRUPT_KEY = 'rw.projects.corrupt';

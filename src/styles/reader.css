@@ -245,6 +245,70 @@
   font-size: 12px;
 }
 
+/* --- Finding words in the paper -------------------------------------------- */
+
+.find-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background-color: var(--control-fill);
+  background-image: linear-gradient(180deg, var(--control-sheen), transparent 72%);
+  box-shadow:
+    inset 0 1px 0 var(--inner-hi),
+    var(--control-lift);
+}
+
+.find-field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.find-field input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--input-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.find-status {
+  min-width: 5.5rem;
+  color: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Search results sit above saved highlights and difficulty markers: they are what the reader
+   asked to see just now, and they must not be mistaken for a highlight they made. */
+.pdf-find-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pdf-find {
+  position: absolute;
+  border-radius: 2px;
+  background: rgb(255 196 0 / 0.34);
+  box-shadow: inset 0 0 0 1px rgb(205 150 0 / 0.55);
+  mix-blend-mode: multiply;
+}
+
+.pdf-page[data-paper='dark'] .pdf-find {
+  background: rgb(255 208 64 / 0.46);
+  box-shadow: inset 0 0 0 1px rgb(255 226 130 / 0.75);
+  mix-blend-mode: screen;
+}
+
 /* --- Highlights and notes ------------------------------------------------- */
 
 .reader-body {
@@ -484,6 +548,7 @@
 .reader-side-tabs {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--hairline);
@@ -493,6 +558,12 @@
   box-shadow:
     inset 0 1px 0 var(--inner-hi),
     var(--control-lift);
+}
+
+/* Six tabs do not fit on one line at the narrowest panel: wrap the row, never the labels. */
+.reader-side-tabs .chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* Collapsed, the panel leaves a rail: the assistant is always one click away. */
@@ -1451,4 +1522,259 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* --- Jump history and outline ---------------------------------------------- */
+
+.reader-history {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.outline-panel {
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--color-bg-panel);
+}
+
+.reader-side > .outline-panel {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.outline-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.outline-title {
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.outline-count {
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.outline-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 6px;
+}
+
+.outline-note {
+  margin: 0;
+  padding: 12px;
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.outline-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.outline-toggle {
+  display: grid;
+  flex: 0 0 18px;
+  place-items: center;
+  width: 18px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.outline-toggle:hover {
+  background: var(--row-active);
+  color: var(--text);
+}
+
+.outline-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.outline-toggle[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.outline-link {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-link:hover {
+  background: var(--row-active);
+  color: var(--text);
+}
+
+.outline-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.outline-link[data-active='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.outline-link:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.outline-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-page {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Saved bookmarks ------------------------------------------------------ */
+
+.bookmark-add {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.bookmark-add-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.bookmark-add .input,
+.bookmark-edit .input {
+  width: 100%;
+  height: 30px;
+}
+
+.bookmark-add .btn {
+  flex: none;
+}
+
+.bookmark-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.bookmark-item {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.bookmark-item:hover {
+  background: var(--row-hover);
+}
+
+.bookmark-item[data-current='true'] {
+  background: var(--accent-soft);
+}
+
+.bookmark-link {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.bookmark-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+.bookmark-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookmark-item[data-current='true'] .bookmark-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.bookmark-page {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bookmark-edit {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+}
+
+.bookmark-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
 }

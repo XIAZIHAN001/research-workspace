@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(5);
+    expect(SCHEMA_VERSION).toBe(6);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -202,6 +202,7 @@ describe('migrateStoredPayload: current payloads', () => {
     projects: [project],
     papers: { pa, pb },
     annotations: [],
+    bookmarks: [],
     selectedId: 'a',
   };
 
@@ -480,6 +481,7 @@ describe('migrateStoredPayload: v2 → current', () => {
       projects: [PROJECT],
       papers: { pa: PAPER_V2 },
       annotations: [],
+      bookmarks: [],
       selectedId: 'p1',
     });
   });
@@ -634,5 +636,85 @@ describe('migrateStoredPayload: v4 → current', () => {
     const outcome = migrateStoredPayload(raw);
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.reason).toBe('invalid');
+  });
+});
+
+describe('migrateStoredPayload: v5 → current', () => {
+  const PAPER = {
+    id: 'pa',
+    title: 'Attention',
+    authors: ['Ashish Vaswani'],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const PROJECT = {
+    id: 'p1',
+    name: 'Reading',
+    corePaperId: 'pa',
+    relatedPaperIds: [],
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  const NOTE = {
+    id: 'n1',
+    paperId: 'pa',
+    pdfSha256: 'a'.repeat(64),
+    page: 4,
+    quote: 'the rotated attention mechanism',
+    prefix: 'we replace ',
+    suffix: ' which lets',
+    rects: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.02 }],
+    kind: 'insight',
+    note: '作者用旋转替换了绝对位置编码。',
+    origin: 'user',
+    sourceLabel: '',
+    createdAt: 5,
+    updatedAt: 6,
+  };
+  const V5_PAYLOAD = JSON.stringify({
+    version: 5,
+    projects: [PROJECT],
+    papers: { pa: PAPER },
+    annotations: [NOTE],
+    selectedId: 'p1',
+  });
+
+  it('adds an empty bookmark list and reports the version it came from', () => {
+    const outcome = migrateStoredPayload(V5_PAYLOAD);
+    expect(outcome.ok && outcome.from).toBe(5);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.bookmarks).toStrictEqual([]);
+  });
+
+  it('leaves the papers, notes and selection alone', () => {
+    const outcome = migrateStoredPayload(V5_PAYLOAD);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.projects).toStrictEqual([PROJECT]);
+    expect(outcome.state.papers).toStrictEqual({ pa: PAPER });
+    expect(outcome.state.annotations).toStrictEqual([NOTE]);
+    expect(outcome.state.selectedId).toBe('p1');
+  });
+
+  it('keeps tags and a reading status the payload already carries', () => {
+    const raw = JSON.stringify({
+      ...JSON.parse(V5_PAYLOAD),
+      papers: {
+        pa: { ...PAPER, tags: [' Transformer ', 'transformer', 'Attention'], status: 'reading' },
+      },
+    });
+    const outcome = migrateStoredPayload(raw);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.papers.pa?.tags).toStrictEqual(['Transformer', 'Attention']);
+    expect(outcome.state.papers.pa?.status).toBe('reading');
+  });
+
+  it('is idempotent: the payload it writes is already current', () => {
+    const migrated = migrateStoredPayload(V5_PAYLOAD);
+    if (!migrated.ok) throw new Error(migrated.detail);
+    expect(migrateStoredPayload(serializeProjects(migrated.state))).toStrictEqual({
+      ok: true,
+      state: migrated.state,
+      from: SCHEMA_VERSION,
+    });
   });
 });

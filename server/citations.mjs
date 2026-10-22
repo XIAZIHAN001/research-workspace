@@ -71,12 +71,24 @@ function looksLikeProtocol(text) {
   return /"(answer|groundedInText|citations)"\s*:/.test(head.slice(0, 400));
 }
 
-/** The last line that is exactly the sentinel, and the text either side of it. */
-function splitOnSentinel(text) {
-  const at = text.lastIndexOf(CITATION_SENTINEL);
-  if (at < 0) return null;
-  const after = text.slice(at + CITATION_SENTINEL.length);
-  return { answer: text.slice(0, at).trim(), block: after.trim() };
+/**
+ * Every boundary the sentinel marks, latest first.
+ *
+ * All of them are kept rather than only the last, because a live reply ended with the sentinel
+ * once more *after* its JSON block. Taking strictly the last occurrence found an empty block
+ * there and threw away citations that had already been written and could be read perfectly well.
+ */
+function sentinelSplits(text) {
+  const splits = [];
+  let at = text.lastIndexOf(CITATION_SENTINEL);
+  while (at >= 0) {
+    splits.push({
+      answer: text.slice(0, at).trim(),
+      block: text.slice(at + CITATION_SENTINEL.length).trim(),
+    });
+    at = at === 0 ? -1 : text.lastIndexOf(CITATION_SENTINEL, at - 1);
+  }
+  return splits;
 }
 
 /**
@@ -182,37 +194,52 @@ export function parseModelOutput(raw) {
   if (trimmed === '') return unusable();
 
   // 1. The agreed contract: plain text, a sentinel line, then a small JSON block.
-  const split = splitOnSentinel(trimmed);
-  if (split !== null && !looksLikeProtocol(split.answer)) {
-    if (split.answer === '') {
-      // A delimiter with nothing in front of it. There is no answer body here to show, and the
-      // block after it is metadata — printing it would put protocol in front of the reader.
-      return unusable('sentinel-no-answer');
+  const splits = sentinelSplits(trimmed).filter((split) => !looksLikeProtocol(split.answer));
+  if (splits.length > 0) {
+    // The block that can actually be read wins, at the latest boundary that offers one. Only
+    // when no boundary carries a readable block does the reply count as blockless or broken.
+    let chosen = null;
+    let block = null;
+    for (const split of splits) {
+      if (split.answer === '') continue;
+      const parsed = parseCitationBlock(split.block);
+      if (parsed !== null) {
+        chosen = split;
+        block = parsed;
+        break;
+      }
     }
-    const block = parseCitationBlock(split.block);
-    if (block !== null) {
+    if (chosen !== null && block !== null) {
       return parsedResult(
         block.complete ? OUTPUT_STATUS.valid : OUTPUT_STATUS.recovered,
-        split.answer,
+        chosen.answer,
         block.value,
         'sentinel',
       );
     }
-    if (split.block === '') {
-      // No citation block at all, but a perfectly good answer. Worth showing, without citations.
+
+    const answered = splits.find((split) => split.answer !== '') ?? null;
+    if (answered === null) {
+      // A delimiter with nothing in front of it. There is no answer body here to show, and the
+      // block after it is metadata — printing it would put protocol in front of the reader.
+      return unusable('sentinel-no-answer');
+    }
+    const broken = splits.find((split) => split.answer !== '' && split.block !== '');
+    if (broken !== undefined) {
+      // A sentinel with something unreadable after it: the answer survives, the citations do not.
       return parsedResult(
         OUTPUT_STATUS.recovered,
-        split.answer,
+        broken.answer,
         { groundedInText: undefined, citations: [] },
-        'sentinel-no-block',
+        'sentinel-broken-block',
       );
     }
-    // A sentinel with something unreadable after it: the answer survives, the citations do not.
+    // No citation block at all, but a perfectly good answer. Worth showing, without citations.
     return parsedResult(
       OUTPUT_STATUS.recovered,
-      split.answer,
+      answered.answer,
       { groundedInText: undefined, citations: [] },
-      'sentinel-broken-block',
+      'sentinel-no-block',
     );
   }
 

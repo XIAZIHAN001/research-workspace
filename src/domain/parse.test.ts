@@ -25,7 +25,7 @@ function rawState(
   selectedId: unknown = null,
   annotations: unknown = [],
 ): Raw {
-  return { projects, papers, annotations, selectedId };
+  return { projects, papers, annotations, bookmarks: [], selectedId };
 }
 
 /** A registry that matches the default project fixture. */
@@ -53,6 +53,7 @@ describe('parseProjectsState (current schema)', () => {
         projects: [],
         papers: {},
         annotations: [],
+        bookmarks: [],
         selectedId: null,
       });
     });
@@ -207,6 +208,7 @@ describe('parseProjectsState (current schema)', () => {
         projects: [],
         papers: {},
         annotations: [],
+        bookmarks: [],
         selectedId: null,
       });
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
@@ -300,6 +302,91 @@ describe('parseProjectsState (current schema)', () => {
     it('selects nothing when there are no projects, whatever selectedId says', () => {
       expect(parseProjectsState(rawState([], {}, 'a'))?.selectedId).toBeNull();
     });
+  });
+});
+
+describe('parseProjectsState: paper tags, reading status and bookmarks', () => {
+  const valid = (): Raw => rawState([rawProject('a')], registryOf('core-a'), 'a');
+
+  it('keeps tags normalized, deduplicated and bounded', () => {
+    const papers = {
+      'core-a': rawPaper('core-a', { tags: ['  Transformer ', 'transformer', '', 'Attention'] }),
+    };
+    const parsed = parseProjectsState(rawState([rawProject('a')], papers, 'a'));
+    expect(parsed?.papers['core-a']?.tags).toStrictEqual(['Transformer', 'Attention']);
+  });
+
+  it('drops a malformed tag list instead of the whole paper', () => {
+    const papers = { 'core-a': rawPaper('core-a', { tags: 'attention' }) };
+    const parsed = parseProjectsState(rawState([rawProject('a')], papers, 'a'));
+    expect(parsed?.papers['core-a']).toStrictEqual(rawPaper('core-a'));
+  });
+
+  it.each([
+    { label: 'a known status', status: 'reading', kept: true },
+    { label: 'an unknown status', status: 'archived', kept: false },
+    { label: 'a non-string status', status: 3, kept: false },
+  ])('keeps $label only when this build knows it', ({ status, kept }) => {
+    const papers = { 'core-a': rawPaper('core-a', { status }) };
+    const parsed = parseProjectsState(rawState([rawProject('a')], papers, 'a'));
+    expect(parsed?.papers['core-a']).toStrictEqual(
+      kept ? { ...rawPaper('core-a'), status } : rawPaper('core-a'),
+    );
+  });
+
+  it('round-trips a bookmark and drops unknown fields', () => {
+    const bookmark = { id: 'b1', paperId: 'core-a', page: 3, label: '方法', createdAt: 7 };
+    const parsed = parseProjectsState({
+      ...valid(),
+      bookmarks: [{ ...bookmark, extra: 'x' }],
+    });
+    expect(parsed?.bookmarks).toStrictEqual([bookmark]);
+  });
+
+  it('treats a missing bookmark list as none', () => {
+    expect(parseProjectsState(without(valid(), 'bookmarks'))?.bookmarks).toStrictEqual([]);
+  });
+
+  it.each([
+    { label: 'an object', bookmarks: {} },
+    { label: 'a string', bookmarks: 'b1' },
+  ])('rejects a bookmark list that is $label', ({ bookmarks }) => {
+    expect(parseProjectsState({ ...valid(), bookmarks })).toBeNull();
+  });
+
+  it.each([
+    { label: 'a paper that is not in the registry', overrides: { paperId: 'ghost' } },
+    { label: 'a page below the first', overrides: { page: 0 } },
+    { label: 'a fractional page', overrides: { page: 1.5 } },
+    { label: 'a missing label', overrides: { label: undefined } },
+    { label: 'a non-numeric createdAt', overrides: { createdAt: '7' } },
+    { label: 'an empty id', overrides: { id: '' } },
+  ])('rejects a bookmark with $label', ({ overrides }) => {
+    const bookmark = {
+      id: 'b1',
+      paperId: 'core-a',
+      page: 3,
+      label: '方法',
+      createdAt: 7,
+      ...overrides,
+    };
+    expect(parseProjectsState({ ...valid(), bookmarks: [bookmark] })).toBeNull();
+  });
+
+  it('rejects two bookmarks sharing an id', () => {
+    const bookmark = { id: 'b1', paperId: 'core-a', page: 3, label: '方法', createdAt: 7 };
+    expect(
+      parseProjectsState({ ...valid(), bookmarks: [bookmark, { ...bookmark, page: 4 }] }),
+    ).toBeNull();
+  });
+
+  it('allows two bookmarks on the same page of one paper', () => {
+    const bookmark = { id: 'b1', paperId: 'core-a', page: 3, label: '方法', createdAt: 7 };
+    const parsed = parseProjectsState({
+      ...valid(),
+      bookmarks: [bookmark, { ...bookmark, id: 'b2' }],
+    });
+    expect(parsed?.bookmarks).toHaveLength(2);
   });
 });
 

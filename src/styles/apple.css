@@ -944,6 +944,11 @@ select.input {
 /* The control column sits at the row's top line, aligned to the section's right edge. */
 .settings-row > :last-child {
   justify-self: end;
+  /* A control wider than its grid track would otherwise grow leftwards across the gap and
+     under the explanation text (the 300px dark-level slider in a 260px track did exactly
+     that). Cap it to the track; the slider sizes itself against this box. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 .settings-row-title {
@@ -956,6 +961,57 @@ select.input {
   color: var(--text-3);
   font-size: var(--fs-caption);
   line-height: 1.55;
+}
+
+.settings-field {
+  width: 100%;
+}
+
+.settings-field .input {
+  width: 100%;
+}
+
+.settings-value {
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.settings-note {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--tile);
+  color: var(--text-2);
+  font-size: var(--fs-caption);
+  line-height: 1.55;
+}
+
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(140px, max-content) minmax(0, 1fr);
+  gap: 16px;
+  align-items: baseline;
+}
+
+.shortcut-row dt {
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shortcut-row dd {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-caption);
 }
 
 .settings-choices {
@@ -1244,6 +1300,22 @@ select.input {
     grid-template-columns: 1fr;
     gap: 20px;
   }
+}
+
+/* The search entry looks like a nav row, with the shortcut sitting at its right edge. */
+.sidebar-search {
+  margin-bottom: 6px;
+}
+
+.sidebar-kbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 @media (prefers-reduced-motion: reduce) {

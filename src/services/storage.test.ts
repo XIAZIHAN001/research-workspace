@@ -100,6 +100,7 @@ const SAMPLE_STATE: ProjectsState = {
     r1: makePaper('r1', { title: 'BERT' }),
   },
   annotations: [],
+  bookmarks: [],
   selectedId: 'p2',
 };
 
@@ -261,6 +262,7 @@ describe('saveProjects', () => {
       projects: SAMPLE_STATE.projects,
       papers: SAMPLE_STATE.papers,
       annotations: SAMPLE_STATE.annotations,
+      bookmarks: SAMPLE_STATE.bookmarks,
       selectedId: SAMPLE_STATE.selectedId,
     });
   });

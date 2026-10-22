@@ -33,6 +33,14 @@ interface PdfPageProps {
    * mistaken for — or confused with — a saved annotation.
    */
   spotlight?: readonly NormalizedRect[] | null;
+  /**
+   * Every find hit on this page, right now.
+   *
+   * Only the page the reader is looking at receives boxes: the column renders a small window
+   * and the other pages have no text layer to measure. They are fractions of the page, so a
+   * zoom change moves them with the words.
+   */
+  findRects?: readonly NormalizedRect[] | null;
   /** How the page itself is drawn: original colours, warm paper, or dark paper. */
   palette?: PaperPalette;
   /**
@@ -69,6 +77,7 @@ export function PdfPage({
   annotations = [],
   flashId = null,
   spotlight = null,
+  findRects = null,
   palette = 'original',
   suggestions = [],
   onSuggestionClick,
@@ -291,6 +300,23 @@ export function PdfPage({
           ))}
         </div>
       ) : null}
+      {findRects !== null && findRects.length > 0 && (
+        <div className="pdf-find-layer" aria-hidden="true">
+          {findRects.map((rect, index) => (
+            <div
+              // The boxes of one search are a position list; their order is their identity.
+              key={`find-${String(index)}`}
+              className="pdf-find"
+              style={{
+                left: `${String(rect.x * 100)}%`,
+                top: `${String(rect.y * 100)}%`,
+                width: `${String(rect.width * 100)}%`,
+                height: `${String(rect.height * 100)}%`,
+              }}
+            />
+          ))}
+        </div>
+      )}
       {suggestions.length > 0 && (
         <div className="suggestion-layer">
           {suggestions.map((suggestion) =>

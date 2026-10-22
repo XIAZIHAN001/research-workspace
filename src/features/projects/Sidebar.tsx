@@ -2,8 +2,10 @@ import {
   HardDriveDownload,
   House,
   Library,
+  NotebookPen,
   PanelLeftClose,
   Plus,
+  Search,
   Settings2,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -26,13 +28,21 @@ interface SidebarProps {
   selectedId: string | null;
   homeActive: boolean;
   libraryActive: boolean;
+  notesActive: boolean;
+  /** How many notes exist across the workspace; shown beside the notes entry. */
+  notesCount: number;
   now: number;
   managing: boolean;
   renamingId: string | null;
   /** The local figure, shown at the bottom-left like a desktop profile chip. */
   avatar: ReturnType<typeof useAvatar>;
+  /** The name chosen in settings; the default when the reader has not chosen one. */
+  userName?: string;
   onHome: () => void;
   onLibrary: () => void;
+  onNotes: () => void;
+  /** Opens the workspace-wide search dialog (also bound to Ctrl/Cmd+K). */
+  onSearch: () => void;
   onCollapse: () => void;
   onCreate: () => void;
   onSelect: (id: string) => void;
@@ -54,8 +64,17 @@ interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { projects, selectedId, homeActive, libraryActive, now, managing, renamingId, open } =
-    props;
+  const {
+    projects,
+    selectedId,
+    homeActive,
+    libraryActive,
+    notesActive,
+    now,
+    managing,
+    renamingId,
+    open,
+  } = props;
   // updatedAt is the "last touched" clock; reading sessions will bump it once a reader exists.
   const recent = useMemo(
     () =>
@@ -90,6 +109,18 @@ export function Sidebar(props: SidebarProps) {
         <button
           type="button"
           {...glowProps}
+          className="nav-item spot sidebar-search"
+          aria-keyshortcuts="Control+K Meta+K"
+          onClick={props.onSearch}
+        >
+          <Search size={15} aria-hidden="true" />
+          <span>全局检索</span>
+          <kbd className="sidebar-kbd">Ctrl K</kbd>
+        </button>
+
+        <button
+          type="button"
+          {...glowProps}
           className="nav-item spot"
           aria-current={homeActive ? 'page' : undefined}
           onClick={props.onHome}
@@ -107,6 +138,18 @@ export function Sidebar(props: SidebarProps) {
         >
           <Library size={15} aria-hidden="true" />
           <span>论文库</span>
+        </button>
+
+        <button
+          type="button"
+          {...glowProps}
+          className="nav-item spot"
+          aria-current={notesActive ? 'page' : undefined}
+          onClick={props.onNotes}
+        >
+          <NotebookPen size={15} aria-hidden="true" />
+          <span>全部笔记</span>
+          {props.notesCount > 0 && <span className="row-meta">{props.notesCount}</span>}
         </button>
 
         {recent.length > 0 && (
@@ -207,7 +250,9 @@ export function Sidebar(props: SidebarProps) {
           onReset={props.avatar.reset}
           onDismissProblem={props.avatar.dismiss}
         />
-        <span className="sidebar-user__label">本地工作区</span>
+        <span className="sidebar-user__label" title={props.userName}>
+          {props.userName ?? '本地工作区'}
+        </span>
       </div>
 
       {/*

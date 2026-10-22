@@ -141,6 +141,7 @@ function sampleSource(): BackupSource {
         updatedAt: 1,
       },
     ],
+    bookmarks: [],
     selectedId: 'project-1',
   };
   const knowledge: KnowledgeState = {

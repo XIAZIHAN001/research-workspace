@@ -1,6 +1,47 @@
 import { normalizeName } from './normalize';
 import type { PaperPdf, PaperReading } from './pdfFile';
 
+/** Where a paper is in the reading queue. Absence on a paper means `unread`. */
+export const READING_STATUSES = ['unread', 'reading', 'done'] as const;
+export type ReadingStatus = (typeof READING_STATUSES)[number];
+
+export const READING_STATUS_LABEL: Record<ReadingStatus, string> = {
+  unread: '未读',
+  reading: '在读',
+  done: '读完',
+};
+
+export const MAX_TAG_LENGTH = 24;
+export const MAX_TAGS = 12;
+
+export function isReadingStatus(value: unknown): value is ReadingStatus {
+  return typeof value === 'string' && READING_STATUSES.includes(value as ReadingStatus);
+}
+
+/** The status a paper shows for; a paper that never had one is unread. */
+export function paperStatus(paper: Pick<Paper, 'status'>): ReadingStatus {
+  return paper.status ?? 'unread';
+}
+
+/**
+ * Tags as stored: trimmed, empty entries dropped, compared case-insensitively so "RL" and
+ * "rl" are one tag, and bounded so one paste cannot turn a row into a paragraph.
+ */
+export function normalizeTags(tags: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of tags) {
+    const tag = raw.trim().slice(0, MAX_TAG_LENGTH);
+    if (tag === '') continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(tag);
+    if (result.length >= MAX_TAGS) break;
+  }
+  return result;
+}
+
 /**
  * A paper as the knowledge base knows it, independent of any project.
  *
@@ -22,6 +63,10 @@ export interface Paper {
   pdf?: PaperPdf;
   /** Where the reader last left off. */
   reading?: PaperReading;
+  /** Free-form labels for the library. Absent when the paper has none. */
+  tags?: string[];
+  /** Reading queue state. Absent means unread. */
+  status?: ReadingStatus;
   /** Epoch milliseconds. */
   createdAt: number;
   /** Epoch milliseconds. */
@@ -53,6 +98,10 @@ export interface PaperEdit {
   arxivId?: string | null;
   pdf?: PaperPdf | null;
   reading?: PaperReading;
+  /** `null` clears every tag; an array replaces them. */
+  tags?: string[] | null;
+  /** `null` or `'unread'` clears the queue state back to unread. */
+  status?: ReadingStatus | null;
 }
 
 export type PaperEditFailure =
@@ -202,6 +251,20 @@ export function applyPaperEdit(
       page: Math.max(1, Math.floor(edit.reading.page)),
       updatedAt: edit.reading.updatedAt,
     };
+  }
+  if (edit.tags !== undefined) {
+    if (edit.tags === null) {
+      delete updated.tags;
+    } else {
+      const tags = normalizeTags(edit.tags);
+      if (tags.length === 0) delete updated.tags;
+      else updated.tags = tags;
+    }
+  }
+  if (edit.status !== undefined) {
+    // `unread` is the absence of a status, so both spellings produce the same record.
+    if (edit.status === null || edit.status === 'unread') delete updated.status;
+    else updated.status = edit.status;
   }
 
   if (papersEqual(current, updated)) return { ok: true, paper: current };

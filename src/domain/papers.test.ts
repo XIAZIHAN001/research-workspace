@@ -439,4 +439,36 @@ describe('applyPaperEdit', () => {
     const result = applyPaperEdit(registry(withPdf), 'd', { pdf: replacement }, 5);
     expect(result.ok && result.paper.pdf).toStrictEqual(replacement);
   });
+
+  it('normalizes tags: trims, drops blanks, dedupes case-insensitively', () => {
+    const result = applyPaperEdit(
+      registry(attention),
+      'a',
+      { tags: [' RL ', 'rl', '', '  survey  ', 'RL'] },
+      5,
+    );
+    expect(result.ok && result.paper.tags).toStrictEqual(['RL', 'survey']);
+  });
+
+  it('clears tags with an empty list', () => {
+    const tagged = paper('e', { tags: ['RL'] });
+    const result = applyPaperEdit(registry(tagged), 'e', { tags: [] }, 5);
+    if (!result.ok) throw new Error(result.failure.reason);
+    expect(result.paper).not.toHaveProperty('tags');
+  });
+
+  it('sets a reading status and treats unread as its absence', () => {
+    const reading = applyPaperEdit(registry(attention), 'a', { status: 'reading' }, 5);
+    expect(reading.ok && reading.paper.status).toBe('reading');
+
+    const cleared = applyPaperEdit(
+      registry({ ...attention, status: 'done' }),
+      'a',
+      {
+        status: 'unread',
+      },
+      5,
+    );
+    expect(cleared.ok && cleared.paper).not.toHaveProperty('status');
+  });
 });

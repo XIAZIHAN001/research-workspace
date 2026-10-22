@@ -59,6 +59,7 @@ function stateOf(
     projects,
     papers: Object.fromEntries(projects.map((p) => [p.corePaperId, makePaper(p.corePaperId)])),
     annotations: [],
+    bookmarks: [],
     selectedId,
   };
 }

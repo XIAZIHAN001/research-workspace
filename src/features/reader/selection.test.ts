@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { describeSelection, locateAnchor, readPageText, textSpans } from './selection';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describeSelection, locateAll, locateAnchor, readPageText, textSpans } from './selection';
 
 afterEach(() => {
   document.body.innerHTML = '';
+  vi.restoreAllMocks();
+  // jsdom does not implement Range geometry; the tests add it and this puts it back.
+  delete (Range.prototype as { getClientRects?: unknown }).getClientRects;
 });
 
 /**
@@ -182,5 +185,73 @@ describe('locateAnchor', () => {
   it('reports a page with no text layer as missing rather than throwing', () => {
     const page = buildPage('');
     expect(locateAnchor(page, anchor).match).toStrictEqual({ kind: 'missing' });
+  });
+});
+
+describe('locateAll', () => {
+  /** jsdom has no layout, so the page box and the range boxes are supplied explicitly. */
+  function withLayout(
+    page: HTMLElement,
+    boxes: { left: number; top: number; width: number; height: number }[],
+  ): void {
+    vi.spyOn(page, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 200,
+      width: 100,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    Object.defineProperty(Range.prototype, 'getClientRects', {
+      configurable: true,
+      writable: true,
+      value: () =>
+        boxes.map((box) => ({
+          ...box,
+          x: box.left,
+          y: box.top,
+          right: box.left + box.width,
+          bottom: box.top + box.height,
+          toJSON: () => ({}),
+        })) as unknown as DOMRectList,
+    });
+  }
+
+  it('returns boxes for every occurrence on the page, in reading order', () => {
+    const page = buildPage('<span>machine learning</span> and <span>machine vision</span>');
+    withLayout(page, [{ left: 10, top: 20, width: 30, height: 8 }]);
+
+    const hits = locateAll(page, 'machine');
+    expect(hits).toHaveLength(2);
+    expect(hits[0]?.rects[0]).toStrictEqual({ x: 0.1, y: 0.1, width: 0.3, height: 0.04 });
+  });
+
+  it('marks a hit that crosses a line break with more than one box', () => {
+    const page = buildPage('<span>continues on the next</span><br><span>line</span>');
+    withLayout(page, [
+      { left: 10, top: 20, width: 80, height: 8 },
+      { left: 10, top: 32, width: 30, height: 8 },
+    ]);
+
+    const hits = locateAll(page, 'next line');
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.rects).toHaveLength(2);
+  });
+
+  it('matches Chinese text that the text layer spaced out', () => {
+    const page = buildPage('<span>机 器 学 习 的 方 法</span>');
+    withLayout(page, [{ left: 0, top: 0, width: 20, height: 10 }]);
+
+    expect(locateAll(page, '机器学习')).toHaveLength(1);
+  });
+
+  it('returns nothing when the page has no text layer', () => {
+    const page = document.createElement('div');
+    page.className = 'pdf-page';
+    document.body.append(page);
+    expect(locateAll(page, 'machine')).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
-import { ArrowRight, BookOpen, FileUp, FolderOpen, Library, Plus } from 'lucide-react';
+import { ArrowRight, BookOpen, FileUp, FolderOpen, Library, ListTodo, Plus } from 'lucide-react';
 import { useMemo } from 'react';
-import type { Paper } from '../../domain/papers';
+import { authorCredit, paperStatus, type Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import { splitWelcome } from '../../services/welcome';
 import { formatRelativeDay } from '../../ui/format';
@@ -9,6 +9,8 @@ import { formatRelativeDay } from '../../ui/format';
 const LONG_LEAD = 16;
 /** The workbench shows a short list, not the whole library. */
 const RECENT_LIMIT = 4;
+/** The queue is a nudge, not a backlog screen: the library is where the backlog lives. */
+const QUEUE_LIMIT = 6;
 
 interface HomeViewProps {
   welcome: { text: string | null; status: 'loading' | 'ready' | 'error' };
@@ -61,6 +63,25 @@ export function HomeView({
       [...projects].sort((one, other) => other.updatedAt - one.updatedAt).slice(0, RECENT_LIMIT),
     [projects],
   );
+  /** Unread papers that have a file and no reading position: the honest "next up" list. */
+  const queue = useMemo(
+    () =>
+      papers
+        .filter(
+          (paper) =>
+            paperStatus(paper) === 'unread' &&
+            paper.reading === undefined &&
+            paper.pdf !== undefined,
+        )
+        .sort((one, other) => other.createdAt - one.createdAt)
+        .slice(0, QUEUE_LIMIT),
+    [papers],
+  );
+  const counts = useMemo(() => {
+    const result = { unread: 0, reading: 0, done: 0 };
+    for (const paper of papers) result[paperStatus(paper)] += 1;
+    return result;
+  }, [papers]);
 
   return (
     <section className="home" aria-label="首页">
@@ -203,6 +224,58 @@ export function HomeView({
                   </button>
                 </li>
               ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="home-panel home-queue-panel" aria-labelledby="reading-queue-title">
+          <div className="home-panel-head">
+            <h2 id="reading-queue-title" className="home-panel-title">
+              阅读队列
+            </h2>
+            {papers.length > 0 && (
+              <span className="home-panel-count">
+                {counts.reading} 在读 · {counts.unread} 未读 · {counts.done} 读完
+              </span>
+            )}
+          </div>
+          {queue.length === 0 ? (
+            <div className="home-empty home-queue-empty">
+              <ListTodo size={20} aria-hidden="true" />
+              <p>
+                {papers.length === 0
+                  ? '导入论文后，未读的论文会排在这里。'
+                  : '队列里没有待读的论文。'}
+              </p>
+            </div>
+          ) : (
+            <ul className="home-list home-queue-list">
+              {queue.map((paper) => {
+                const meta = [
+                  authorCredit(paper),
+                  paper.year === undefined ? '' : String(paper.year),
+                ]
+                  .filter((part) => part !== '')
+                  .join(' · ');
+                return (
+                  <li key={paper.id}>
+                    <button
+                      type="button"
+                      className="home-row"
+                      title={paper.title}
+                      onClick={() => {
+                        onOpenReader(paper.id);
+                      }}
+                    >
+                      <span className="home-row-main">
+                        <span className="home-row-title">{paper.title}</span>
+                        {meta !== '' && <span className="home-row-meta">{meta}</span>}
+                      </span>
+                      <ArrowRight size={14} aria-hidden="true" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

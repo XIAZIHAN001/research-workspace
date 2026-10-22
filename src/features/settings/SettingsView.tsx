@@ -1,10 +1,11 @@
-import { Bot, Palette } from 'lucide-react';
+import { Bot, Palette, UserRound } from 'lucide-react';
 import { AppearancePanel } from './AppearancePanel';
 import { AiSettingsPanel } from './AiSettingsPanel';
+import { ProfilePanel } from './ProfilePanel';
 import type { useAvatar } from '../home/useAvatar';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 
-export type SettingsSection = 'appearance' | 'ai';
+export type SettingsSection = 'profile' | 'appearance' | 'ai';
 
 interface SettingsViewProps {
   section: SettingsSection;
@@ -14,9 +15,14 @@ interface SettingsViewProps {
   onChangePref: (pref: ThemePref) => void;
   onChangeLevel: (level: DarkLevel) => void;
   avatar: ReturnType<typeof useAvatar>;
+  profileName: string;
+  /** Stores the nickname and returns what is displayed after trimming. */
+  onProfileName: (raw: string) => string;
+  stats: { papers: number; notes: number; concepts: number };
 }
 
 const SECTIONS = [
+  { value: 'profile', label: '个人', Icon: UserRound },
   { value: 'appearance', label: '外观', Icon: Palette },
   { value: 'ai', label: 'AI 服务', Icon: Bot },
 ] as const;
@@ -30,6 +36,9 @@ export function SettingsView({
   onChangePref,
   onChangeLevel,
   avatar,
+  profileName,
+  onProfileName,
+  stats,
 }: SettingsViewProps) {
   return (
     <section className="settings" aria-label="设置">
@@ -58,8 +67,10 @@ export function SettingsView({
             onChangeLevel={onChangeLevel}
             avatar={avatar}
           />
-        ) : (
+        ) : section === 'ai' ? (
           <AiSettingsPanel />
+        ) : (
+          <ProfilePanel name={profileName} onName={onProfileName} stats={stats} />
         )}
       </div>
     </section>

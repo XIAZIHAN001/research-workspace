@@ -1,0 +1,146 @@
+{
+  "generatedAt": "2026-10-22T13:22:04.861Z",
+  "provider": "deepseek (live)",
+  "model": "deepseek-flash",
+  "cases": [
+    "explain"
+  ],
+  "outputCeiling": 8192,
+  "reasoning": "思考模式 low",
+  "callsMade": 1,
+  "callBudget": 4,
+  "tokens": {
+    "prompt": 1034,
+    "completion": 4132
+  },
+  "estimatedCostUsd": 0.002634,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+    {
+      "name": "setup: the CC BY 4.0 paper is open",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "原文解释: the passage sent is the passage selected",
+      "passed": true,
+      "detail": "167 sent vs 167 selected"
+    },
+    {
+      "name": "explain: the model answered and the app parsed it",
+      "passed": true,
+      "detail": "1386 chars in 20543 ms"
+    },
+    {
+      "name": "explain: the answer cites text that is really in what was sent",
+      "passed": true,
+      "detail": "6 verified, 0 rejected, from selection/before/after"
+    },
+    {
+      "name": "explain: usage, model and thinking budget were reported",
+      "passed": true,
+      "detail": "in 1034 / out 4132 (reasoning 3091)"
+    },
+    {
+      "name": "explain: the answer is not the passage echoed back",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "budget: the run stayed inside the approved number of calls",
+      "passed": true,
+      "detail": "1 of 4 used, 1034 in / 4132 out"
+    },
+    {
+      "name": "safety: no credential appears anywhere in what was captured",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: the page reported no errors beyond the ones this run provoked",
+      "passed": true,
+      "detail": "0 unexpected, 0 provoked"
+    }
+  ],
+  "calls": [
+    {
+      "label": "原文解释",
+      "page": 1,
+      "mode": "explain",
+      "question": null,
+      "selectionChars": 203,
+      "selectionExcerpt": "yielding further gains in several settings.Initial canvas\nFollow the examples:\nMeeting January 5: M 5 Jan\nReview March 3",
+      "sentSelection": "yielding further gains in several settings.Initial canvas Follow the examples: Meeting January 5: M 5 Jan Review March 3: R 3 Mar Workshop April 7: [M] [M] [M] Deadline June 30: [M] [M] [M] After round 1",
+      "status": 200,
+      "elapsedMs": 20543,
+      "answer": "这段文字本身不是一段论证，而是图 1 的图内示意文字和图注被逐字抽取后粘在一起的结果；开头的“yielding further gains in several settings”其实是上文（摘要/引言）最后一句话的尾巴，被提取顺序串到了图的标签前面[1]。图要说明的事情分成两层：一是给出一个具体的少样本提示的“示例—待填”结构，二是说明扩散语言模型（DLM）怎么在一条共享 canvas 上把多个带掩码的位置一次填掉。\n\n先说例子。演示（demonstrations）要学的映射是“事件名 + 日期 → 首字母 + 日 + 月份缩写”：Meeting January 5 → M 5 Jan，Review March 3 → R 3 Mar[1][4]。待填的两行 Workshop April 7 和 Deadline June 30，其输出位置全部写成 [M]（掩码占位符，每行三个：首字母、日、月份缩写），模型要据此推出 W 7 Apr 和 D 30 Jun。所谓“Initial canvas”，就是初始的共享画布：输入行已经写好，输出槽位被 [M] 盖住。\n\n再说“多目标”和“共享”。两行不是分开生成，而是在同一条 canvas 上一起生成，前文把它概括为“examples guide the infilling of multiple masked regions within a shared canvas”[2]。图注进一步说明关键的一点：DLM 是逐步把两个被掩码的输出填满的，并且“在一个位置露出的 token 可以影响另一个位置后续的预测”[5]。这正是这类任务不适合从左到右自回归解码的原因——上下文里说，这种按示例做的编辑往往同时依赖左右两侧的上下文，用因果自回归模型来生成很别扭[3]。补充一点背景（非原文）：文本上的扩散/掩码扩散模型通常是多轮去噪，每轮对所有被掩码位置同时给出或更新预测，因此先把某些位置定下来，确实能给其余位置提供格式上的线索；这段原文并没有解释 DLM 的内部去噪机制，只说“progressively fills”。\n\n最后，图中这条流程和“少样本提示能否可靠地跟随示例”的问题是连着的。上下文里作者提出，用对 canvas 做选择性掩码得到的似然比奖励，来偏向示例支持的那种填法[6]。但要注意：选中的这段图注本身完全没有提奖励，也没有提似然比，它只是画出奖励要作用的那条 canvas；把这个联系说成图注的内容就超出了原文。\n\n阅读时有几处提取问题需要指出来，不能凭猜测补：文字缺少空白分隔（“settings.Initial canvas”）；图内文字与图注混在一起、行与行之间没有标点；“After round 1”后面紧接着就断了，这一轮的中间状态在选中片段里看不到，而后文里又出现“Workshop April 7: [M] 7 Apr / Deadline June 30: D [M] Jun”和“Workshop April 7: W 7 Apr”两种中间状态，从给定文本无法确定它们分别属于哪一轮，所以不能断言逐轮揭示的确切顺序；另外每个 [M] 是否严格对应一个 token，原文也没有明说，只能说从“W / 7 / Apr”三个输出成分推断每行有三个掩码位置，这属于合理推断而非明文。",
+      "outputStatus": "valid",
+      "diagnostics": {
+        "rawChars": 2666,
+        "recovery": "sentinel",
+        "citationEntries": 6,
+        "citationsAccepted": 6,
+        "citationsRejected": 0,
+        "finishReason": "stop",
+        "truncated": false
+      },
+      "citations": [
+        {
+          "n": 1,
+          "passageId": "selection",
+          "page": 1,
+          "quote": "yielding further gains in several settings.Initial canvas Follow the examples: Meeting January 5: M 5 Jan Review March 3: R 3 Mar Workshop April 7: [M] [M] [M] Deadline June 30: [M] [M] [M] After round 1",
+          "selection": true
+        },
+        {
+          "n": 2,
+          "passageId": "before",
+          "page": 1,
+          "quote": "We therefore introduce multi-target few-shot prompting with diffusion language models, where examples guide the infilling of multiple masked regions within a shared canvas.",
+          "selection": false
+        },
+        {
+          "n": 3,
+          "passageId": "before",
+          "page": 1,
+          "quote": "However, such edits often depend on both left and right context, making generation with causal autoregressive models awkward.",
+          "selection": false
+        },
+        {
+          "n": 4,
+          "passageId": "after",
+          "page": 1,
+          "quote": "Demonstrations map event names and dates to initials, days, and abbreviated months.",
+          "selection": false
+        },
+        {
+          "n": 5,
+          "passageId": "after",
+          "page": 1,
+          "quote": "The DLM progressively fills two masked outputs within a shared canvas; tokens revealed at one site can inform subsequent predictions at the other.",
+          "selection": false
+        },
+        {
+          "n": 6,
+          "passageId": "before",
+          "page": 1,
+          "quote": "To address the known challenge of reliably following demonstrations in few-shot prompting, we further leverage selective masking of the canvas to derive a likelihood-ratio reward that favors example-supported infills.",
+          "selection": false
+        }
+      ],
+      "rejectedCitations": 0,
+      "usage": {
+        "promptTokens": 1034,
+        "completionTokens": 4132,
+        "reasoningTokens": 3091,
+        "cachedPromptTokens": 896
+      },
+      "warnings": [],
+      "model": "deepseek-flash",
+      "provider": "deepseek",
+      "error": null
+    }
+  ],
+  "consoleIssues": []
+}

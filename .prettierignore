@@ -6,6 +6,8 @@ src-tauri/icons/
 .cache/
 # Tool-generated session memory: machine-written notes, not application source.
 .workbuddy/
+# Tool-generated workspace metadata: plans written by the editor agent, not application source.
+.trae/
 package-lock.json
 docs/screenshots/
 # Machine-written acceptance output: the verification runs rewrite these verbatim.

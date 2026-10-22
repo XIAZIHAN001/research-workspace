@@ -1,12 +1,17 @@
 import {
   ArrowLeft,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
   Lightbulb,
+  ListTree,
   Maximize2,
   Network,
   NotebookPen,
+  Redo2,
+  Search,
   Sparkles,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -19,10 +24,13 @@ import type {
   NormalizedRect,
 } from '../../domain/annotation';
 import type { DifficultySuggestion } from '../../domain/difficulty';
+import type { Bookmark as BookmarkEntry } from '../../domain/bookmark';
+import { buildNotesMarkdown, notesFileName } from '../../domain/notesMarkdown';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import type { PdfBlobStore } from '../../services/pdfStore';
 import { makeId } from '../../services/ids';
+import { downloadTextFile } from '../../services/download';
 import { readItem, writeItem } from '../../services/storage';
 import {
   PANEL_DEFAULT_WIDTH,
@@ -40,11 +48,13 @@ import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { DifficultyPanel } from './DifficultyPanel';
+import { FindBar } from './FindBar';
 import { KnowledgePanel } from './KnowledgePanel';
 import { useKnowledgeAnalysis } from './useKnowledgeAnalysis';
 import type { KnowledgeApi } from '../knowledge/useKnowledgeApi';
 import { inspectPageLayout, measureFragmentation } from './layout';
 import { NotesPanel } from './NotesPanel';
+import { OutlinePanel } from './OutlinePanel';
 import { PaperModeSwitch } from './PaperModeSwitch';
 import { PdfPage } from './PdfPage';
 import { SuggestionCard } from './SuggestionCard';
@@ -52,6 +62,7 @@ import { useDifficultyScan, type LocatedQuote } from './useDifficultyScan';
 import { usePaperMode } from './usePaperMode';
 import {
   describeSelection,
+  locateAll,
   locateAnchor,
   pageElementOf,
   pageNumberOf,
@@ -61,6 +72,8 @@ import {
 import {
   clampPage,
   fitWidthScale,
+  MAX_SCALE,
+  MIN_SCALE,
   nextScale,
   PAGE_GAP,
   pageAtOffset,
@@ -70,7 +83,14 @@ import {
   totalHeight,
 } from './readerMath';
 import { PDF_FAILURE_MESSAGE, usePdfDocument } from './usePdfDocument';
+import { usePdfOutline } from './usePdfOutline';
+import { usePdfSearch } from './usePdfSearch';
+import { useReadingHistory } from './useReadingHistory';
 import { useAiReading, type AiClient, type AiSource, type AiTurn } from './useAiReading';
+import { BookmarksPanel } from './BookmarksPanel';
+
+/** How long the reading column must hold still before a new fit-width scale is computed. */
+const RESIZE_SETTLE_MS = 120;
 
 interface ReaderViewProps {
   paper: Paper;
@@ -82,6 +102,12 @@ interface ReaderViewProps {
   onReplaceFile: () => void;
   /** Every highlight on this paper, on any of its files. */
   annotations: readonly Annotation[];
+  /** Saved places in this paper, kept across sessions. */
+  bookmarks: readonly BookmarkEntry[];
+  /** Saves the page the reader is on; an empty name falls back to the page number. */
+  onAddBookmark: (page: number, label: string) => void;
+  onRenameBookmark: (id: string, label: string) => void;
+  onDeleteBookmark: (bookmark: BookmarkEntry) => void;
   onCreateAnnotation: (
     anchor: SelectionAnchor,
     draft: { kind: AnnotationKind; note: string },
@@ -171,6 +197,10 @@ export function ReaderView({
   onReadingPosition,
   onReplaceFile,
   annotations,
+  bookmarks,
+  onAddBookmark,
+  onRenameBookmark,
+  onDeleteBookmark,
   onCreateAnnotation,
   onSaveAiNote,
   onSaveConcept,
@@ -191,6 +221,21 @@ export function ReaderView({
   const [manualScale, setManualScale] = useState(1);
   const [fitWidth, setFitWidth] = useState(true);
   const [currentPage, setCurrentPage] = useState(() => paper.reading?.page ?? 1);
+  /**
+   * Jumps made in this session, so a reader can come back from a note, a citation or an
+   * outline entry. Ordinary scrolling never writes an entry — see `useReadingHistory`.
+   */
+  const {
+    canBack,
+    canForward,
+    remember: rememberPlace,
+    back: stepBack,
+    forward: stepForward,
+  } = useReadingHistory(paper.reading?.page ?? 1);
+  const currentPageRef = useRef(currentPage);
+  useLayoutEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
   const [containerWidth, setContainerWidth] = useState(0);
   const [baseSize, setBaseSize] = useState<{ width: number; height: number } | null>(null);
   /**
@@ -227,16 +272,30 @@ export function ReaderView({
   const timers = useTimeout();
   const flashTimer = useRef<number | undefined>(undefined);
   const alive = useRef<AbortController | null>(null);
-  if (alive.current === null) alive.current = new AbortController();
   useEffect(() => {
-    const controller = alive.current;
+    // A fresh controller per effect run: StrictMode's simulated unmount aborts the first one,
+    // and reusing it would leave every poll in this reader cancelled for good.
+    const controller = new AbortController();
+    alive.current = controller;
     return () => {
-      controller?.abort();
+      controller.abort();
+      if (alive.current === controller) alive.current = null;
     };
   }, []);
   const [pendingDelete, setPendingDelete] = useState<Annotation | null>(null);
+  /** The find bar is open. The query lives in the hook, so closing and reopening keeps it. */
+  const [findOpen, setFindOpen] = useState(false);
+  /** Boxes for the find hits on one page. Only ever one page has boxes. */
+  const [findRects, setFindRects] = useState<{ page: number; rects: NormalizedRect[] } | null>(
+    null,
+  );
+  const search = usePdfSearch(state.status === 'ready' ? state.doc : null, findOpen);
+  /** The document's own table of contents, loaded when the document opens. */
+  const outline = usePdfOutline(state.status === 'ready' ? state.doc : null);
   /** Which of the side panels is showing, if any. */
-  const [panel, setPanel] = useState<'notes' | 'ai' | 'difficulty' | 'knowledge' | null>(() =>
+  const [panel, setPanel] = useState<
+    'notes' | 'ai' | 'difficulty' | 'knowledge' | 'outline' | 'bookmarks' | null
+  >(() =>
     typeof window.matchMedia === 'function' && !window.matchMedia(OVERLAY_QUERY).matches
       ? 'notes'
       : null,
@@ -456,17 +515,30 @@ export function ReaderView({
   const lastRenderedScale = useRef<number | null>(null);
 
   // The scroll container decides how wide a page may be in fit-width mode.
+  //
+  // The measurement is debounced because the column width rarely changes in one step: the
+  // sidebar slides over 230ms and the panel handle is dragged continuously. Each intermediate
+  // width used to produce a new fit-width scale, and every new scale cancels and re-renders
+  // the active PDF canvases — the page visibly zoomed and flickered all the way through the
+  // animation. One measurement after the width settles gives the same final scale with a
+  // single render.
   useEffect(() => {
     const element = scrollRef.current;
     if (element === null) return;
+    let timer = 0;
     const measure = (): void => {
       setContainerWidth(element.clientWidth);
     };
+    const schedule = (): void => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(measure, RESIZE_SETTLE_MS);
+    };
     measure();
     if (typeof ResizeObserver !== 'function') return;
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(schedule);
     observer.observe(element);
     return () => {
+      window.clearTimeout(timer);
       observer.disconnect();
     };
   }, [state.status]);
@@ -492,8 +564,12 @@ export function ReaderView({
   }, [state, baseSize]);
 
   const scrollToPage = useCallback(
-    (page: number, behavior: ScrollBehavior = 'smooth') => {
+    (page: number, behavior: ScrollBehavior = 'smooth', record = true) => {
       const target = clampPage(page, pageCount);
+      // Both ends of the jump are recorded: "back" returns to where it started, and a later
+      // jump treats this page as a real place. A history replay itself, and ordinary page
+      // stepping, pass `record: false`.
+      if (record) rememberPlace(currentPageRef.current, target);
       setCurrentPage(target);
       // The anchor moves with the jump, not after it lands: a reflow that arrives while the
       // smooth scroll is still travelling (opening a panel, resizing the column) restores from
@@ -507,8 +583,112 @@ export function ReaderView({
       if (container === null || top === undefined) return;
       container.scrollTo({ top: Math.max(0, top - PAGE_GAP), behavior });
     },
-    [pageCount],
+    [pageCount, rememberPlace],
   );
+
+  const goBack = useCallback(() => {
+    const page = stepBack();
+    if (page !== null) scrollToPage(page, 'smooth', false);
+  }, [scrollToPage, stepBack]);
+
+  const goForward = useCallback(() => {
+    const page = stepForward();
+    if (page !== null) scrollToPage(page, 'smooth', false);
+  }, [scrollToPage, stepForward]);
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setFindRects(null);
+    // Back to the page, where the keyboard already was: Esc should not leave focus inside a
+    // bar that just disappeared.
+    scrollRef.current?.focus();
+  }, []);
+
+  // The app's own find, in place of the web view's. Only the shortcut is global; once the bar
+  // is open, its keys are handled locally so they cannot trip the reader's other shortcuts.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'f') return;
+      // A dialog owns its focus and its keys; a field is where the reader is already typing.
+      if (document.querySelector('dialog[open]') !== null) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest('input, textarea, [contenteditable="true"]') !== null) return;
+      event.preventDefault();
+      setFindOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  // Alt+← / Alt+→ walk the jump history. The same guard as the find shortcut: a dialog or a
+  // text field owns its keys, and a replay must not be recorded as a new jump.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+      if (document.querySelector('dialog[open]') !== null) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target !== null && target.closest('input, textarea, [contenteditable="true"]') !== null) {
+        return;
+      }
+      event.preventDefault();
+      if (event.key === 'ArrowLeft') goBack();
+      else goForward();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [goBack, goForward]);
+
+  const findHit = search.active >= 0 ? search.hits[search.active] : undefined;
+  const visibleFindRects =
+    findOpen && findHit !== undefined && findRects !== null && findRects.page === findHit.page
+      ? findRects.rects
+      : null;
+
+  /**
+   * Follows the current result.
+   *
+   * The column only renders a window of pages, so a result on a far page cannot be measured
+   * until the scroll has brought it in. The effect scrolls first, waits for that page's text
+   * layer, and only then asks where the words are — measuring before the text exists would
+   * report "not found" for words that are plainly there.
+   */
+  useEffect(() => {
+    if (!findOpen || findHit === undefined) return;
+    let cancelled = false;
+    void (async () => {
+      scrollToPage(findHit.page, 'auto');
+      const page = await waitForRenderedPage(
+        scrollRef.current,
+        findHit.page,
+        RENDER_WAIT_MS,
+        alive.current?.signal,
+      );
+      if (cancelled || page === null) return;
+      const located = locateAll(page, search.query);
+      const chosen = located[Math.min(findHit.ordinal, located.length - 1)];
+      if (cancelled) return;
+      if (chosen === undefined) {
+        setFindRects(null);
+        return;
+      }
+      setFindRects({ page: findHit.page, rects: chosen.rects });
+      const container = scrollRef.current;
+      const top = topsRef.current[findHit.page - 1];
+      const height = heightsRef.current[findHit.page - 1];
+      const first = chosen.rects[0];
+      if (container !== null && top !== undefined && height !== undefined && first !== undefined) {
+        // A little above the words, so the toolbar does not sit on the result.
+        container.scrollTop = Math.max(0, top + first.y * height - 96);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [findOpen, findHit, search.query, scrollToPage]);
 
   // Opening the knowledge panel changes the reading column's width; in fit-width mode that
   // reflows every page and can leave the page the reader selected out of view. Put the panel's
@@ -519,7 +699,8 @@ export function ReaderView({
     const page = knowledgeAnalysis.context?.currentPage;
     if (page === undefined) return;
     const timer = window.setTimeout(() => {
-      scrollToPage(page, 'auto');
+      // A reflow put the page out of view; this is not a navigation the reader asked for.
+      scrollToPage(page, 'auto', false);
     }, 80);
     return () => {
       window.clearTimeout(timer);
@@ -985,6 +1166,44 @@ export function ReaderView({
           {paper.title}
         </h1>
 
+        <div className="reader-history" role="group" aria-label="阅读位置历史">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="回到上一个阅读位置"
+            title="上一个位置（Alt+←）"
+            disabled={!canBack}
+            onClick={goBack}
+          >
+            <Undo2 size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="前往下一个阅读位置"
+            title="下一个位置（Alt+→）"
+            disabled={!canForward}
+            onClick={goForward}
+          >
+            <Redo2 size={15} aria-hidden="true" />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="查找"
+          title="查找（Ctrl+F）"
+          aria-pressed={findOpen}
+          disabled={state.status !== 'ready'}
+          onClick={() => {
+            if (findOpen) closeFind();
+            else setFindOpen(true);
+          }}
+        >
+          <Search size={15} aria-hidden="true" />
+        </button>
+
         <div className="reader-page">
           {state.status === 'ready' ? (
             <>
@@ -994,7 +1213,7 @@ export function ReaderView({
                 aria-label="上一页"
                 disabled={currentPage <= 1}
                 onClick={() => {
-                  scrollToPage(currentPage - 1);
+                  scrollToPage(currentPage - 1, 'smooth', false);
                 }}
               >
                 <ChevronLeft size={16} aria-hidden="true" />
@@ -1022,7 +1241,7 @@ export function ReaderView({
                 aria-label="下一页"
                 disabled={currentPage >= pageCount}
                 onClick={() => {
-                  scrollToPage(currentPage + 1);
+                  scrollToPage(currentPage + 1, 'smooth', false);
                 }}
               >
                 <ChevronRight size={16} aria-hidden="true" />
@@ -1040,6 +1259,7 @@ export function ReaderView({
             type="button"
             className="icon-btn"
             aria-label="缩小"
+            disabled={scale <= MIN_SCALE + 0.001}
             onClick={() => {
               zoom('out');
             }}
@@ -1051,6 +1271,7 @@ export function ReaderView({
             type="button"
             className="icon-btn"
             aria-label="放大"
+            disabled={scale >= MAX_SCALE - 0.001}
             onClick={() => {
               zoom('in');
             }}
@@ -1071,6 +1292,23 @@ export function ReaderView({
           <PaperModeSwitch pref={paperMode.pref} onChange={paperMode.setPref} />
         </div>
       </div>
+
+      {findOpen && state.status === 'ready' && (
+        <FindBar
+          query={search.query}
+          onQuery={search.setQuery}
+          active={search.active}
+          count={search.hits.length}
+          page={findHit?.page ?? null}
+          status={search.status}
+          searching={search.searching}
+          scanned={search.scanned}
+          total={search.total}
+          onNext={search.next}
+          onPrev={search.prev}
+          onClose={closeFind}
+        />
+      )}
 
       {selectionNotice !== null && (
         <p className="reader-notice" role="status">
@@ -1149,6 +1387,11 @@ export function ReaderView({
                       annotations={byPage.get(pageNumber) ?? []}
                       flashId={flashId}
                       spotlight={spotlight?.page === pageNumber ? spotlight.rects : null}
+                      findRects={
+                        visibleFindRects !== null && findRects?.page === pageNumber
+                          ? visibleFindRects
+                          : null
+                      }
                       palette={paperMode.palette}
                       suggestions={suggestionsByPage.get(pageNumber) ?? []}
                       onSuggestionClick={(id, spot) => {
@@ -1169,6 +1412,29 @@ export function ReaderView({
              * command the reader has to find first.
              */
             <div className="reader-rail" role="group" aria-label="侧边面板">
+              <button
+                type="button"
+                className="rail-btn"
+                aria-label="打开目录"
+                title="目录"
+                onClick={() => {
+                  setPanel('outline');
+                }}
+              >
+                <ListTree size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="rail-btn"
+                aria-label="打开书签"
+                title="书签"
+                onClick={() => {
+                  setPanel('bookmarks');
+                }}
+              >
+                <Bookmark size={17} aria-hidden="true" />
+                {bookmarks.length > 0 && <span className="rail-count">{bookmarks.length}</span>}
+              </button>
               <button
                 type="button"
                 className="rail-btn"
@@ -1253,6 +1519,26 @@ export function ReaderView({
                 <button
                   type="button"
                   className="chip"
+                  aria-pressed={panel === 'outline'}
+                  onClick={() => {
+                    setPanel('outline');
+                  }}
+                >
+                  目录
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  aria-pressed={panel === 'bookmarks'}
+                  onClick={() => {
+                    setPanel('bookmarks');
+                  }}
+                >
+                  书签{bookmarks.length > 0 ? ` ${String(bookmarks.length)}` : ''}
+                </button>
+                <button
+                  type="button"
+                  className="chip"
                   aria-pressed={panel === 'ai'}
                   onClick={() => {
                     setPanel('ai');
@@ -1289,6 +1575,37 @@ export function ReaderView({
                   我的笔记{here.length > 0 ? ` ${String(here.length)}` : ''}
                 </button>
               </div>
+
+              {panel === 'outline' && (
+                <OutlinePanel
+                  outline={outline}
+                  currentPage={currentPage}
+                  onJump={(page) => {
+                    scrollToPage(page);
+                  }}
+                  onClose={() => {
+                    setPanel(null);
+                  }}
+                />
+              )}
+
+              {panel === 'bookmarks' && (
+                <BookmarksPanel
+                  bookmarks={bookmarks}
+                  currentPage={currentPage}
+                  onJump={(bookmark) => {
+                    scrollToPage(bookmark.page);
+                  }}
+                  onAdd={(label) => {
+                    onAddBookmark(currentPage, label);
+                  }}
+                  onRename={onRenameBookmark}
+                  onDelete={onDeleteBookmark}
+                  onClose={() => {
+                    setPanel(null);
+                  }}
+                />
+              )}
 
               {panel === 'ai' && (
                 <AiPanel
@@ -1337,6 +1654,13 @@ export function ReaderView({
                   onJump={jumpToAnnotation}
                   onEdit={onEditAnnotation}
                   onDelete={setPendingDelete}
+                  onExport={() => {
+                    downloadTextFile(
+                      notesFileName(paper),
+                      buildNotesMarkdown({ paper, annotations }),
+                      'text/markdown;charset=utf-8',
+                    );
+                  }}
                   onClose={() => {
                     setPanel(null);
                   }}

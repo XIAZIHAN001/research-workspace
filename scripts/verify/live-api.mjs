@@ -399,7 +399,15 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
   }
   spent += 1;
 
-  await selectSpans(page, pageNumber, { span: run.from, offset: 0 }, { span: run.to, offset: 999 });
+  const selected = await selectSpans(
+    page,
+    pageNumber,
+    { span: run.from, offset: 0 },
+    { span: run.to, offset: 999 },
+  );
+  // The browser's own selection string, not the span texts joined by hand: crossing a line
+  // boundary inserts characters that a manual join misses, and that difference is not a bug.
+  const selectedText = selected?.text ?? run.text;
   await page.mouse.move(5, 5);
   await page
     .locator(`.pdf-page[data-page="${String(pageNumber)}"]`)
@@ -407,7 +415,7 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
     .dispatchEvent('mouseup');
   const toolbar = page.getByRole('toolbar', { name: '批注' });
   await toolbar.waitFor({ timeout: 10_000 });
-  await toolbar.getByRole('button', { name: 'AI' }).click();
+  await toolbar.getByRole('button', { name: '向这段文字提问' }).click();
   const menu = page.getByRole('group', { name: '向 AI 提问' });
   await menu.waitFor({ timeout: 5_000 });
 
@@ -440,8 +448,8 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
     page: pageNumber,
     mode,
     question: question ?? null,
-    selectionChars: run.text.length,
-    selectionExcerpt: run.text.slice(0, 120),
+    selectionChars: selectedText.length,
+    selectionExcerpt: selectedText.slice(0, 120),
     /** What the application actually put in the request — not what this script meant to select. */
     sentSelection,
     status,
@@ -463,14 +471,18 @@ async function ask(page, { pageNumber, mode, run, question, label }) {
   // The one invariant that makes every other check mean anything: the passage recorded here is
   // the passage the model was given. Without it, a selector bug can pass every other check by
   // measuring its own intent — which it did, once.
-  const collapse = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
+  //
+  // Whitespace is not evidence. The application takes its quote from the page's indexed text,
+  // where line breaks between text-layer spans become spaces; the browser's own selection
+  // string joins those spans directly. Every non-whitespace character has to match.
+  const collapse = (text) => (text ?? '').replace(/\s+/g, '');
   check(
     `${label}: the passage sent is the passage selected`,
-    sentSelection !== null && collapse(sentSelection) === collapse(run.text),
+    sentSelection !== null && collapse(sentSelection) === collapse(selectedText),
     sentSelection === null
       ? 'no ask request was captured'
-      : `${String(collapse(sentSelection).length)} sent vs ${String(collapse(run.text).length)} selected` +
-          (collapse(sentSelection) === collapse(run.text)
+      : `${String(collapse(sentSelection).length)} sent vs ${String(collapse(selectedText).length)} selected` +
+          (collapse(sentSelection) === collapse(selectedText)
             ? ''
             : ` — sent ${JSON.stringify(collapse(sentSelection).slice(0, 50))}`),
   );

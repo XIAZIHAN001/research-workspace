@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -175,11 +175,23 @@ function migrateV4ToV5(payload: Record<string, unknown>): Record<string, unknown
   };
 }
 
+/**
+ * v5 → v6 added saved bookmarks (`ProjectsState.bookmarks`) and, on papers, two optional
+ * fields: tags and reading status. The paper fields need no rewriting — absent means "no
+ * tags" and "unread" — but the bookmark list is written as an empty one so the payload is
+ * self-describing.
+ */
+function migrateV5ToV6(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 6, bookmarks: [] };
+}
+
 const MIGRATIONS: Record<number, MigrationStep> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
   4: migrateV4ToV5,
+  5: migrateV5ToV6,
 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {
@@ -188,6 +200,7 @@ export function serializeProjects(state: ProjectsState): string {
     projects: state.projects,
     papers: state.papers,
     annotations: state.annotations,
+    bookmarks: state.bookmarks,
     selectedId: state.selectedId,
   });
 }

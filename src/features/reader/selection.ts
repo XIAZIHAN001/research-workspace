@@ -6,7 +6,9 @@ import {
   type AnchorMatch,
   type PageRun,
   type PageTextMap,
+  type SpanRange,
 } from './anchor';
+import { foldForFind } from './findText';
 
 /**
  * Reading a page's rendered text layer, and turning a selection into something that can be
@@ -240,11 +242,16 @@ export function locateAnchor(
   );
   if (located === null) return { match: { kind: 'missing' }, range: null, rects: [] };
 
-  const startSpan = layout.leaves[located.startSpan];
-  const endSpan = layout.leaves[located.endSpan];
-  if (startSpan === undefined || endSpan === undefined) {
-    return { match: { kind: 'missing' }, range: null, rects: [] };
-  }
+  const range = rangeFor(located, layout.leaves);
+  if (range === null) return { match: { kind: 'missing' }, range: null, rects: [] };
+  return { match, range, rects: normalizedRects(range, pageRoot) };
+}
+
+/** Builds a DOM range for a span range, or null when it cannot be represented. */
+function rangeFor(located: SpanRange, leaves: readonly HTMLElement[]): Range | null {
+  const startSpan = leaves[located.startSpan];
+  const endSpan = leaves[located.endSpan];
+  if (startSpan === undefined || endSpan === undefined) return null;
   const range = document.createRange();
   try {
     const startPoint = pointInSpan(startSpan, located.startOffset);
@@ -252,9 +259,54 @@ export function locateAnchor(
     range.setStart(startPoint.node, startPoint.offset);
     range.setEnd(endPoint.node, endPoint.offset);
   } catch {
-    return { match: { kind: 'missing' }, range: null, rects: [] };
+    return null;
   }
-  return { match, range, rects: normalizedRects(range, pageRoot) };
+  return range;
+}
+
+/** One occurrence of the query on a rendered page, with boxes to draw it on the paper. */
+export interface PageFindHit {
+  /** Offsets in the page's indexed text. */
+  start: number;
+  end: number;
+  rects: NormalizedRect[];
+}
+
+/**
+ * Finds every occurrence of `query` on one rendered page.
+ *
+ * Used only for the page the reader is looking at: the column renders a window of pages, and
+ * the other hits are represented by the count and by jumping. A match that cannot be turned
+ * into boxes (a broken text run, a detached page) is skipped rather than drawn somewhere
+ * approximate.
+ */
+export function locateAll(pageRoot: HTMLElement, query: string): PageFindHit[] {
+  const container = pageRoot.querySelector<HTMLElement>('.textLayer');
+  if (container === null) return [];
+  const layout = readPageText(container);
+  const folded = foldForFind(layout.page.text);
+  const needle = foldForFind(query).text;
+  if (needle === '') return [];
+
+  const spanTexts = layout.leaves.map((leaf) => leaf.textContent ?? '');
+  const found: PageFindHit[] = [];
+  let from = 0;
+  for (;;) {
+    const at = folded.text.indexOf(needle, from);
+    if (at === -1) break;
+    const start = folded.map[at];
+    const last = folded.map[at + needle.length - 1];
+    if (start !== undefined && last !== undefined) {
+      const located = locateSpanRange(layout.page, start, last + 1, spanTexts);
+      const range = located === null ? null : rangeFor(located, layout.leaves);
+      if (range !== null) {
+        const rects = normalizedRects(range, pageRoot);
+        if (rects.length > 0) found.push({ start, end: last + 1, rects });
+      }
+    }
+    from = at + needle.length;
+  }
+  return found;
 }
 
 function pointInSpan(span: HTMLElement, offset: number): { node: Node; offset: number } {
