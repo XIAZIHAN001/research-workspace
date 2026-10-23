@@ -32,3 +32,6 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+
+# Recovered personal data — local only, never commit
+recovered-data-2026-10-23/
