@@ -1356,6 +1356,10 @@ fn main() {
                 tauri::WebviewUrl::App("index.html".into()),
             )
             .title("Research Workspace")
+            // No native title bar: the page draws its own strip with the window controls
+            // (see `WindowBar.tsx`). Resizing and window dragging still work — Tao hit-tests
+            // the undecorated frame, and the strip is a drag region.
+            .decorations(false)
             .inner_size(1280.0, 860.0)
             .min_inner_size(960.0, 640.0)
             .center();

@@ -50,6 +50,8 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useNow } from '../ui/useNow';
 import { PROJECTS_BACKUP_KEY, PROJECTS_CORRUPT_KEY } from './config';
 import { useSidebar } from './useSidebar';
+import { WindowBar } from './WindowBar';
+import { isDesktopApp } from '../services/desktop/aiService';
 
 interface AppProps {
   store: ProjectsStore;
@@ -359,7 +361,7 @@ export function App({
     return result.ok ? null : describeEditFailure(result.failure);
   };
 
-  return (
+  const shell = (
     <div
       className="app"
       data-sidebar={sidebar.open ? 'open' : 'closed'}
@@ -834,6 +836,18 @@ export function App({
           concepts: knowledgeApi.state.concepts.length,
         }}
       />
+    </div>
+  );
+
+  // The desktop build hides the native title bar (see `decorations(false)` in Rust), so the
+  // window controls live in the page instead. In a browser there is no window to control and
+  // the strip would be a decoration with nothing behind it, so it is not rendered at all.
+  if (!isDesktopApp()) return shell;
+
+  return (
+    <div className="desktop-frame">
+      <WindowBar />
+      {shell}
     </div>
   );
 }

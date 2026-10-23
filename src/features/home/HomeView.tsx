@@ -87,7 +87,6 @@ export function HomeView({
     <section className="home" aria-label="首页">
       <header className="home-head">
         <div className="home-greeting">
-          <p className="home-kicker">Research Workspace</p>
           <h1
             className="welcome"
             aria-live="polite"

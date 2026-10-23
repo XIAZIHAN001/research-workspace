@@ -566,14 +566,6 @@ select.input {
   gap: 28px;
 }
 
-.home-kicker {
-  margin-bottom: 10px;
-  color: var(--text-3);
-  font: 600 var(--fs-micro) / 1.4 var(--font-ui);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
 .welcome {
   gap: 10px;
   max-width: min(40em, 100%);

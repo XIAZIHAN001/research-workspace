@@ -329,3 +329,67 @@
     grid-template-columns: 1fr;
   }
 }
+
+/*
+ * Frameless window trim.
+ *
+ * The native title bar is switched off in Rust, so the window controls the OS used to draw are
+ * rendered in the page instead. The strip only exists in the desktop shell: the browser build
+ * never renders it, and never needs to.
+ */
+.desktop-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.desktop-frame > .app {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.window-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  height: 34px;
+  padding-right: 6px;
+  background: var(--bg-base);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.window-bar__buttons {
+  display: flex;
+  gap: 2px;
+}
+
+.window-bar__btn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: default;
+}
+
+.window-bar__btn:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+
+.window-bar__btn--close:hover {
+  background: var(--danger);
+  color: var(--danger-ink);
+}
+
+.window-bar__btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
