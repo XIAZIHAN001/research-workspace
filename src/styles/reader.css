@@ -13,8 +13,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
-  padding: 6px 10px;
+  gap: 6px 8px;
+  padding: 5px 8px;
   border: 1px solid var(--hairline);
   border-radius: var(--r-md);
   background-color: var(--control-fill);
@@ -39,18 +39,26 @@
 .reader-zoom {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* The three right-hand tools — zoom, fit width, page colour — read as one capsule rather than
+   three separate plates; the spacing between the groups is set in apple.css. */
+.reader-zoom {
+  gap: 6px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
 }
 
 .reader-page-jump input {
-  width: 4.2rem;
-  padding: 4px 6px;
+  width: 3.3rem;
+  padding: 3px 4px;
   border: 1px solid var(--field-edge);
   border-radius: var(--r-sm);
   background: var(--input-fill);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -58,13 +66,15 @@
 .reader-page-total,
 .reader-zoom-value {
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
+/* Fixed width so the two zoom buttons never shift as the percentage gains a digit; the
+   text is centred so the value sits the same distance from each of them. */
 .reader-zoom-value {
-  min-width: 3.2rem;
-  text-align: right;
+  min-width: 1.9rem;
+  text-align: center;
 }
 
 .reader-status {
@@ -94,6 +104,9 @@
 
 .reader-column {
   position: relative;
+  /* Before the first measurement, and whenever the viewport is wider than the page, the column
+     still fills the reader. The inline width only ever grows past this. */
+  min-width: 100%;
 }
 
 .reader-slot {
@@ -129,8 +142,110 @@
    with, and that value lives in one place (paperTheme.ts). */
 
 .paper-modes {
+  position: relative;
   display: flex;
-  gap: 4px;
+  flex: none;
+}
+
+.paper-modes__trigger {
+  gap: 5px;
+}
+
+.paper-modes__trigger svg {
+  color: var(--text-3);
+}
+
+/* A small split swatch stands for the mode; auto is half warm paper, half dark paper. */
+.paper-modes__swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--field-edge);
+}
+
+.paper-modes__swatch[data-mode='auto'] {
+  background: linear-gradient(135deg, #f6f1e6 0 50%, #23262b 50% 100%);
+}
+
+.paper-modes__swatch[data-mode='original'] {
+  background: #ffffff;
+}
+
+.paper-modes__swatch[data-mode='warm'] {
+  background: #f6f1e6;
+}
+
+.paper-modes__swatch[data-mode='dark'] {
+  background: #23262b;
+}
+
+.paper-modes__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 252px;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow:
+    0 0 0 0.5px var(--card-edge),
+    0 18px 40px -18px rgb(0 0 0 / 0.35),
+    0 6px 14px -8px rgb(0 0 0 / 0.2);
+}
+
+.paper-modes__title {
+  margin: 4px 8px 6px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.paper-modes__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.paper-modes__option:hover,
+.paper-modes__option[aria-selected='true'] {
+  background: var(--row-hover);
+}
+
+.paper-modes__option .paper-modes__swatch {
+  margin-top: 2px;
+}
+
+.paper-modes__copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.paper-modes__name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.paper-modes__hint {
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
 }
 
 /* A highlight is "multiply" on white paper. On dark paper multiply would push the colour into
@@ -545,19 +660,14 @@
   width: 100%;
 }
 
+/* Six tabs do not fit on one line at the narrowest panel, so this row wraps — and a track
+   behind a wrapped row reads as a second card showing through the pills. The tabs stand on
+   the panel themselves instead; each pill carries its own edge. */
 .reader-side-tabs {
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
-  background-color: var(--control-fill);
-  background-image: linear-gradient(180deg, var(--control-sheen), transparent 72%);
-  box-shadow:
-    inset 0 1px 0 var(--inner-hi),
-    var(--control-lift);
 }
 
 /* Six tabs do not fit on one line at the narrowest panel: wrap the row, never the labels. */
@@ -941,6 +1051,13 @@
   font-size: 11px;
 }
 
+.ai-range-note {
+  margin: 0 0 6px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 .ai-range-part {
   margin-bottom: 6px;
 }
@@ -1163,13 +1280,178 @@
   color: var(--text-2);
 }
 
-.ai-busy {
+/* While the answer is on its way --------------------------------------------- */
+
+.ai-thinking {
   display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.ai-thinking-mark {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+
+.ai-thinking-mark > svg {
+  animation: ai-breathe 1.9s var(--ease-out) infinite;
+}
+
+.ai-orbit {
+  position: absolute;
+  inset: 2px;
+  border: 1px solid transparent;
+  border-top-color: color-mix(in srgb, var(--text) 38%, transparent);
+  border-radius: 50%;
+  animation: ai-orbit 1.4s linear infinite;
+}
+
+.ai-orbit-b {
+  inset: 6px;
+  animation-duration: 2.1s;
+  animation-direction: reverse;
+  opacity: 0.55;
+}
+
+.ai-thinking-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+
+.ai-thinking-stage {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  animation: ai-stage-in 260ms var(--ease-out);
+}
+
+.ai-thinking-dots {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
+}
+
+.ai-thinking-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-2);
+  animation: ai-dot 1.2s ease-in-out infinite;
+}
+
+.ai-thinking-dots i:nth-child(2) {
+  animation-delay: 180ms;
+}
+
+.ai-thinking-dots i:nth-child(3) {
+  animation-delay: 360ms;
+}
+
+.ai-thinking-track {
+  display: block;
+  overflow: hidden;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.ai-thinking-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--text) 45%, transparent);
+  transition: width 700ms var(--ease-out);
+}
+
+.ai-thinking-note {
   margin: 0;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+@keyframes ai-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes ai-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ai-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes ai-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The caret that trails the answer while it is written out. */
+.ai-typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ai-caret {
+  width: 7px;
+  height: 13px;
+  border-radius: 1px;
+  background: var(--text);
+  opacity: 0.7;
+  animation: ai-caret 1s steps(2, start) infinite;
+}
+
+@keyframes ai-caret {
+  50% {
+    opacity: 0;
+  }
 }
 
 .spin {
@@ -1183,8 +1465,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin {
+  .spin,
+  .ai-thinking-mark > svg,
+  .ai-orbit,
+  .ai-thinking-dots i,
+  .ai-thinking-stage,
+  .ai-caret {
     animation: none;
+  }
+
+  .ai-thinking-track i {
+    transition: none;
   }
 }
 
@@ -1578,7 +1869,33 @@
 .outline-scroll {
   flex: 1 1 auto;
   overflow: auto;
-  padding: 6px;
+  padding: 8px;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+/* The panel uses the same capsule scrollbar as settings: no buttons, just a track and a thumb. */
+.outline-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.outline-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.outline-scroll::-webkit-scrollbar-track {
+  margin-block: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.outline-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--scroll-thumb);
+  background-clip: padding-box;
 }
 
 .outline-note {
@@ -1604,10 +1921,10 @@
 
 .outline-toggle {
   display: grid;
-  flex: 0 0 18px;
+  flex: 0 0 22px;
   place-items: center;
-  width: 18px;
-  height: 22px;
+  width: 22px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: var(--r-sm);
@@ -1634,16 +1951,17 @@
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  padding: 3px 6px;
+  min-height: 30px;
+  padding: 5px 8px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: 7px;
   background: none;
   color: var(--text-2);
   font: inherit;
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.45;
   text-align: left;
   cursor: pointer;
 }
@@ -1662,6 +1980,13 @@
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Chapters are the spine of the list; sub-sections stay one step quieter. */
+.outline-tree[data-depth='0'] > li > .outline-row > .outline-link:not([data-active='true']) {
+  color: var(--text);
+  font-weight: 500;
 }
 
 .outline-link:disabled {
@@ -1670,16 +1995,178 @@
 }
 
 .outline-label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .outline-page {
+  flex: none;
+  min-width: 2.4em;
+  padding-left: 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* --- Bookmarks and notes inside the table of contents -------------------- */
+
+.outline-loose {
+  margin: 2px 0 8px;
+}
+
+.outline-loose-title {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.outline-marks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-mark {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--r-sm);
+}
+
+.outline-mark:hover,
+.outline-mark[data-active='true'] {
+  background: var(--row-hover);
+}
+
+.outline-mark-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-mark-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.outline-mark[data-kind='bookmark'] .outline-mark-main svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.outline-mark[data-kind='bookmark'] .outline-mark-text {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.outline-mark[data-kind='note'] .outline-mark-main svg {
+  flex: none;
+  color: var(--ok);
+}
+
+.outline-mark[data-kind='note'] .outline-mark-text {
+  color: var(--text);
+}
+
+.outline-mark-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-mark-kind {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--input-fill);
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+
+.outline-mark-page {
+  flex: none;
   margin-left: auto;
   color: var(--text-3);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.outline-mark-actions {
+  display: none;
+  flex: none;
+  padding-right: 4px;
+}
+
+.outline-mark:hover .outline-mark-actions,
+.outline-mark:focus-within .outline-mark-actions {
+  display: flex;
+}
+
+.outline-mark-actions .icon-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.outline-mark-edit {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+}
+
+.outline-mark-edit > svg {
+  flex: none;
+  color: var(--text-3);
+}
+
+.outline-mark-edit input,
+.outline-mark-edit textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--input-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.outline-mark-edit--note {
+  align-items: flex-start;
+  padding-top: 4px;
+}
+
+.outline-mark-edit textarea {
+  min-height: 44px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+@media (hover: none) {
+  .outline-mark-actions {
+    display: flex;
+  }
 }
 
 /* --- Saved bookmarks ------------------------------------------------------ */

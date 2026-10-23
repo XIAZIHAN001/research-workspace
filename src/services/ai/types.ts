@@ -37,6 +37,24 @@ export interface AiPaperRef {
   pdfSha256: string;
 }
 
+/**
+ * What the request's paper material covers.
+ *
+ * `selection` — the reader selected text; `page` — they are asking about the page they read;
+ * `document` — the whole paper was extracted locally and attached page by page. The distinction
+ * changes how the material is described to the model; citation rules are identical.
+ */
+export type AiScope = 'selection' | 'page' | 'document';
+
+/** How much of the paper actually travelled with a document-scope request. */
+export interface AiDocumentScope {
+  pagesSent: number;
+  pagesTotal: number;
+  charsSent: number;
+  /** True when the length cap (or the passage cap) left some pages behind. */
+  truncated: boolean;
+}
+
 export interface AiAskRequest {
   mode: AiMode;
   question: string;
@@ -45,14 +63,12 @@ export interface AiAskRequest {
   history?: AiHistoryTurn[];
   /** What the reader's own layout check found, stated as a measurement rather than a guess. */
   layoutNotice?: string | null;
+  scope?: AiScope;
   /**
-   * What the primary passage is.
-   *
-   * `selection` means the reader selected text; `page` means they are asking about the page as
-   * a whole. The distinction changes only how the material is described to the model — the
-   * citation rules are identical either way.
+   * Client-side bookkeeping for the disclosure. The service normalises the request and drops
+   * this field; it is never part of the prompt.
    */
-  scope?: 'selection' | 'page';
+  document?: AiDocumentScope;
 }
 
 /** A citation that survived the service's check: the page came from our own record. */

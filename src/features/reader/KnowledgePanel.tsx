@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Check,
   CircleDot,
+  Lightbulb,
   Loader2,
   Network,
   RefreshCw,
@@ -9,7 +10,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AiHealth } from '../../services/ai/types';
 import { providerDisplayLabel } from '../ai/providerLabel';
 import type {
@@ -18,6 +19,11 @@ import type {
   KnowledgeEvidence,
   KnowledgeRelationSuggestion,
 } from '../../services/ai/knowledgeTypes';
+import {
+  DIFFICULTY_KIND_LABEL,
+  LOCATION_LABEL,
+  type DifficultySuggestion,
+} from '../../domain/difficulty';
 import type { Paper } from '../../domain/papers';
 import type { Project } from '../../domain/project';
 import {
@@ -38,6 +44,7 @@ import type { KnowledgeApi } from '../knowledge/useKnowledgeApi';
 import type { LocalConceptMatch } from '../knowledge/localKnowledge';
 import { RelationHint } from '../knowledge/RelationHint';
 import type { KnowledgeAnalysisState } from './useKnowledgeAnalysis';
+import type { DifficultyScan } from './useDifficultyScan';
 import { describePlan } from './paperRetrieval';
 import type { RetrievalPlan } from './paperRetrieval';
 
@@ -52,6 +59,19 @@ interface KnowledgePanelProps {
   onJumpToQuote: (page: number, quote: string) => void;
   onOpenConceptInProject: (conceptId: string, projectId: string) => void;
   onNotice: (text: string | null) => void;
+  /**
+   * The page-level difficulty scan.
+   *
+   * Difficulties are folded into this panel rather than keeping a panel of their own: they are
+   * the model's reading of the page, and they belong next to the concepts it proposes. Optional
+   * so the panel can still be rendered on its own, without the scan, in tests and previews.
+   */
+  scan?: DifficultyScan;
+  /** True when the service is a paid one, so the enablement text can say so up front. */
+  online?: boolean;
+  currentPage?: number;
+  /** Opens the short explanation for a suggestion, near its marker when there is one. */
+  onShowDifficulty?: (suggestion: DifficultySuggestion) => void;
 }
 
 const SUPPORT_CLASS: Record<RelationSupport, string> = {
@@ -862,6 +882,212 @@ function AnalysisSuggestions({
 }
 
 /**
+ * The difficulty suggestions, drawn as a highlighted block inside the knowledge panel.
+ *
+ * It keeps the original bargain of the old difficulty panel: the first run is an explicit
+ * confirmation, a paid provider says so before anything is sent, and nothing is added to the
+ * reader's notes on its own. What it drops is the separate tab — the suggestions now sit beside
+ * the concepts, in the same reading of the same page.
+ */
+function DifficultyBlock({
+  scan,
+  online,
+  currentPage,
+  onShow,
+}: {
+  scan: DifficultyScan;
+  online: boolean;
+  currentPage: number;
+  onShow: (suggestion: DifficultySuggestion) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <section className="knowledge-difficulty" aria-label="本页难点">
+      <div className="knowledge-difficulty-head">
+        <Lightbulb size={14} aria-hidden="true" />
+        <h3>难点</h3>
+        <span className="knowledge-difficulty-meta">
+          {scan.enabled
+            ? `第 ${String(currentPage)} 页 · ${String(scan.current.length)} 条`
+            : '按页分析'}
+        </span>
+      </div>
+
+      {!scan.enabled ? (
+        <>
+          <p className="knowledge-difficulty-intro">
+            打开后，模型会读当前这一页，标出值得停下来理解的位置：核心概念、定义、定理、公式、算法步骤、前置知识。一次只分析当前页，分析过的页面会被缓存。
+          </p>
+          <p className="knowledge-difficulty-cost">
+            {online
+              ? '会调用在线模型，每一次分析都可能产生费用。'
+              : '当前是本地模拟，不产生任何费用。'}
+          </p>
+          {confirming ? (
+            <div className="knowledge-difficulty-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  scan.setEnabled(true);
+                  // Consent covers the pages that follow: without it an online scan would stop
+                  // silently after the first page with no obvious cause.
+                  if (online) scan.grantOnlineConsent();
+                  setConfirming(false);
+                }}
+              >
+                {online ? '开始分析（会调用在线模型）' : '开始分析'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-quiet"
+                onClick={() => {
+                  setConfirming(false);
+                }}
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setConfirming(true);
+              }}
+            >
+              启用难点标注
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="knowledge-difficulty-bar">
+            <label className="knowledge-difficulty-toggle">
+              <input
+                type="checkbox"
+                checked={scan.markersVisible}
+                onChange={(event) => {
+                  scan.setMarkersVisible(event.target.checked);
+                }}
+              />
+              在页面上显示标记
+            </label>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                scan.reanalyse();
+              }}
+            >
+              <RefreshCw size={13} aria-hidden="true" />
+              {online ? '重新分析（会调用在线模型）' : '重新分析'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                scan.setEnabled(false);
+              }}
+            >
+              关闭
+            </button>
+          </div>
+
+          {scan.status === 'running' && (
+            <p className="knowledge-difficulty-status" role="status">
+              <Loader2 size={13} className="spin" aria-hidden="true" />
+              正在分析第 {currentPage} 页…
+            </p>
+          )}
+          {scan.status === 'error' && (
+            <p className="knowledge-difficulty-status" role="alert">
+              <TriangleAlert size={13} aria-hidden="true" />
+              {scan.error ?? '这一页分析失败。'}阅读与批注不受影响。
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  scan.analyse(currentPage);
+                }}
+              >
+                重试
+              </button>
+            </p>
+          )}
+
+          {scan.autoPaused && (
+            <div className="knowledge-difficulty-consent" role="alert">
+              <p>
+                在线模式下，自动分析会在你停留的每一页发起一次付费请求。切换到在线模式后，之前的离线授权不算数，需要在这里重新确认。
+              </p>
+              <div className="knowledge-difficulty-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    scan.grantOnlineConsent();
+                  }}
+                >
+                  确认开启在线自动分析（会持续产生费用）
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  onClick={() => {
+                    scan.analyse(currentPage);
+                  }}
+                >
+                  只分析当前页
+                </button>
+              </div>
+            </div>
+          )}
+
+          {scan.current.length === 0 ? (
+            scan.status !== 'running' && (
+              <p className="knowledge-difficulty-empty">这一页暂时没有难点建议。</p>
+            )
+          ) : (
+            <ul className="knowledge-difficulty-list">
+              {scan.current.map((suggestion) => (
+                <li key={suggestion.id}>
+                  <button
+                    type="button"
+                    className="knowledge-difficulty-item"
+                    data-located={suggestion.location === 'found'}
+                    onClick={() => {
+                      onShow(suggestion);
+                    }}
+                  >
+                    <span className="knowledge-difficulty-kind">
+                      {DIFFICULTY_KIND_LABEL[suggestion.kind]}
+                    </span>
+                    <span className="knowledge-difficulty-title">{suggestion.title}</span>
+                    <span className="knowledge-difficulty-quick">{suggestion.quick}</span>
+                    {suggestion.location !== 'found' && (
+                      <span className="knowledge-difficulty-location">
+                        {LOCATION_LABEL[suggestion.location]}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="knowledge-difficulty-caveat">
+            这些是 AI
+            给出的理解建议，不是论文原文，也没有经过引用校验——它们的引文只保证「逐字出现在这一页」。
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
  * The reader's knowledge entry: quiet by default, explicit before any model call.
  *
  * The panel opens on local knowledge alone. The context plan is built locally and shown in
@@ -879,6 +1105,10 @@ export function KnowledgePanel({
   onJumpToQuote,
   onOpenConceptInProject,
   onNotice,
+  scan,
+  online = false,
+  currentPage = 1,
+  onShowDifficulty,
 }: KnowledgePanelProps) {
   const { context, local, phase, plan, analysis: result, report, error } = analysis;
   const state = knowledge.state;
@@ -906,7 +1136,17 @@ export function KnowledgePanel({
             <X size={15} aria-hidden="true" />
           </button>
         </div>
-        <p className="concept-hint">先在原文里选中一段文字，再点「查看相关知识」。</p>
+        <div className="knowledge-panel-scroll">
+          {scan !== undefined && (
+            <DifficultyBlock
+              scan={scan}
+              online={online}
+              currentPage={currentPage}
+              onShow={onShowDifficulty ?? (() => undefined)}
+            />
+          )}
+          <p className="concept-hint">先在原文里选中一段文字，再点「查看相关知识」。</p>
+        </div>
       </aside>
     );
   }
@@ -943,6 +1183,15 @@ export function KnowledgePanel({
       )}
 
       <div className="knowledge-panel-scroll">
+        {scan !== undefined && (
+          <DifficultyBlock
+            scan={scan}
+            online={online}
+            currentPage={currentPage}
+            onShow={onShowDifficulty ?? (() => undefined)}
+          />
+        )}
+
         <section className="knowledge-panel-block" aria-label="本地已有知识">
           <h3>本地已有知识</h3>
           <p className="concept-hint">这一部分是本地知识库里的内容，打开面板不会调用模型。</p>

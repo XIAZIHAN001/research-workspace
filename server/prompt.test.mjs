@@ -284,3 +284,71 @@ describe('a question about the page rather than a selection', () => {
     expect(buildMessages(pageAsk()).system).toBe(buildMessages(accepted(validAsk())).system);
   });
 });
+
+/**
+ * A question about the whole paper.
+ *
+ * The reader can attach every extracted page, and a question about one chapter should be answered
+ * against the whole argument. The larger allowances are specific to this scope: a request that
+ * merely forgot to declare it still faces the small selection bounds.
+ */
+describe('a question about the whole paper', () => {
+  const pagePassages = (count) =>
+    Array.from({ length: count }, (_unused, index) => ({
+      id: `p${String(index + 1)}`,
+      page: index + 1,
+      text: 'A page of the paper.',
+      selection: false,
+    }));
+  const documentAsk = () =>
+    accepted(
+      validAsk({
+        scope: 'document',
+        mode: 'ask',
+        question: '第三章在整个论证里起什么作用？',
+        passages: [
+          { id: 'selection', page: 3, text: 'The selected sentence.', selection: true },
+          ...pagePassages(20),
+        ],
+      }),
+    );
+
+  it('accepts more passages than a selection request, under its own ceiling', () => {
+    expect(documentAsk().passages).toHaveLength(21);
+    const tooMany = validAsk({
+      scope: 'document',
+      passages: [
+        { id: 'selection', page: 1, text: 'The selected sentence.', selection: true },
+        ...pagePassages(LIMITS.documentPassages),
+      ],
+    });
+    expect(normalizeAskRequest(tooMany).ok).toBe(false);
+  });
+
+  it('still refuses a single passage over its own character limit', () => {
+    const tooLong = validAsk({
+      scope: 'document',
+      passages: [
+        {
+          id: 'selection',
+          page: 1,
+          text: 'x'.repeat(LIMITS.documentPassageChars + 1),
+          selection: true,
+        },
+      ],
+    });
+    expect(normalizeAskRequest(tooLong).ok).toBe(false);
+  });
+
+  it('tells the model to read the paper before answering the question', () => {
+    const request = documentAsk();
+    const block = renderPaperBlock(request);
+    expect(block).toContain('读者上传了整篇论文');
+    expect(block).toContain('（全文中的这一页）');
+    expect(buildMessages(request).messages.at(-1).content).toContain('请先通读全文');
+  });
+
+  it('leaves the system message byte-identical', () => {
+    expect(buildMessages(documentAsk()).system).toBe(buildMessages(accepted(validAsk())).system);
+  });
+});

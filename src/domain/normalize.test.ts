@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_NAME_LENGTH, normalizeName } from './normalize';
+import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH, normalizeName, normalizeTitle } from './normalize';
 
 const NBSP = String.fromCodePoint(0x00a0);
 const IDEOGRAPHIC_SPACE = String.fromCodePoint(0x3000);
@@ -64,5 +64,39 @@ describe('normalizeName', () => {
       expect(once).not.toBeNull();
       expect(normalizeName(once ?? '')).toBe(once);
     }
+  });
+});
+
+describe('normalizeTitle', () => {
+  it('collapses whitespace like a name does', () => {
+    expect(normalizeTitle('  Attention   Is\nAll You Need ')).toBe('Attention Is All You Need');
+  });
+
+  it('returns null when nothing usable is left', () => {
+    expect(normalizeTitle(' \t\n ')).toBeNull();
+  });
+
+  it('keeps a real title that a project name would have cut', () => {
+    const title =
+      'Efficient Verification of Arithmetic Circuits with a Focus on Zero-Knowledge Proofs and Beyond';
+    expect(MAX_NAME_LENGTH).toBeLessThan(Array.from(title).length);
+    expect(normalizeTitle(title)).toBe(title);
+  });
+
+  it('still caps the title, so storage cannot grow without a bound', () => {
+    expect(normalizeTitle('a'.repeat(MAX_TITLE_LENGTH + 20))).toBe('a'.repeat(MAX_TITLE_LENGTH));
+  });
+
+  it('counts code points, so astral characters are never split', () => {
+    expect(normalizeTitle(GRINNING_FACE.repeat(MAX_TITLE_LENGTH + 1))).toHaveLength(
+      MAX_TITLE_LENGTH * 2,
+    );
+  });
+
+  it('is idempotent', () => {
+    const raw = `${'word '.repeat(60)}end`;
+    const once = normalizeTitle(raw);
+    expect(once).not.toBeNull();
+    expect(normalizeTitle(once ?? '')).toBe(once);
   });
 });

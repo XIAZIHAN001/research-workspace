@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePdfMetadata, readXmpFields } from './pdfjs';
+import { authorsFromPageText, isPlaceholderAuthor, parsePdfMetadata, readXmpFields } from './pdfjs';
 
 describe('parsePdfMetadata', () => {
   it('reads the four fields a well-formed producer writes', () => {
@@ -177,3 +177,170 @@ describe('readXmpFields', () => {
 function throwIfCalled(): never {
   throw new Error('should not be reached');
 }
+
+/** One text run, placed by an (x, y) that puts it in reading order when y descends. */
+function run(str: string, x: number, y: number) {
+  return { str, transform: [1, 0, 0, 1, x, y] };
+}
+
+/** A page laid out as lines: each line is a y, each string on that line a run. */
+function page(...lines: (readonly [number, readonly string[]])[]) {
+  return lines.flatMap(([y, runs]) => runs.map((text, index) => run(text, index * 60, y)));
+}
+
+/** A run set in a given type size, which pdf.js reports as the transform's scale. */
+function runAt(str: string, x: number, y: number, size: number) {
+  return { str, transform: [size, 0, 0, size, x, y] };
+}
+
+describe('isPlaceholderAuthor', () => {
+  it('recognises the placeholders producers write when they have no author', () => {
+    for (const name of [
+      'Anonymous Author(s)',
+      'anonymous authors',
+      'Anonymous',
+      'Unknown',
+      'Author',
+      'N/A',
+      '  ',
+    ]) {
+      expect(isPlaceholderAuthor(name), name).toBe(true);
+    }
+  });
+
+  it('leaves real names alone, including one that merely contains a keyword', () => {
+    for (const name of ['Ashish Vaswani', 'Noam Shazeer', 'Niki Parmar', 'A. Author III']) {
+      expect(isPlaceholderAuthor(name), name).toBe(false);
+    }
+  });
+});
+
+describe('authorsFromPageText', () => {
+  const TITLE = 'Attention Is All You Need';
+
+  it('reads the author line between the title and the abstract', () => {
+    const items = page(
+      [720, ['Attention Is All You Need']],
+      [700, ['Ashish Vaswani, Noam Shazeer, Niki Parmar']],
+      [690, ['Google Brain']],
+      [660, ['Abstract']],
+      [640, ['The dominant sequence transduction models are based on complex']],
+    );
+    expect(authorsFromPageText(items, TITLE)).toEqual([
+      'Ashish Vaswani',
+      'Noam Shazeer',
+      'Niki Parmar',
+    ]);
+  });
+
+  it('joins runs that belong to one line before reading them', () => {
+    const items = [
+      ...page([720, ['Attention Is All You Need']]),
+      // A name split into three runs, one of them a superscript affiliation mark.
+      run('Ashish', 10, 700),
+      run('∗', 90, 700.4),
+      run('Vaswani', 100, 700),
+      ...page([670, ['Abstract']]),
+    ];
+    expect(authorsFromPageText(items, TITLE)).toEqual(['Ashish Vaswani']);
+  });
+
+  it('drops affiliations, emails, footnotes and superscript markers', () => {
+    const items = page(
+      [720, ['Deep Residual Learning for Image Recognition']],
+      [704, ['Kaiming He1 , Xiangyu Zhang1 , Shaoqing Ren1 , Jian Sun1']],
+      [694, ['1 Microsoft Research Asia']],
+      [692, ['{kahe,xiaoz}@microsoft.com']],
+      [676, ['∗ Equal contribution']],
+      [650, ['Abstract']],
+    );
+    expect(authorsFromPageText(items, 'Deep Residual Learning for Image Recognition')).toEqual([
+      'Kaiming He',
+      'Xiangyu Zhang',
+      'Shaoqing Ren',
+      'Jian Sun',
+    ]);
+  });
+
+  it('follows a title that wraps onto a second line', () => {
+    const items = page(
+      [720, ['Scaling Laws for Neural Language Models:']],
+      [708, ['A Study of the Compute-Optimal Frontier']],
+      [690, ['Jared Kaplan, Sam McCandlish']],
+      [660, ['Abstract']],
+    );
+    expect(
+      authorsFromPageText(
+        items,
+        'Scaling Laws for Neural Language Models: A Study of the Compute-Optimal Frontier',
+      ),
+    ).toEqual(['Jared Kaplan', 'Sam McCandlish']);
+  });
+
+  it('stops at the first section heading when there is no abstract', () => {
+    const items = page(
+      [720, ['A Paper']],
+      [700, ['Jane Doe']],
+      [688, ['Some sentence that is definitely not a name at all']],
+      [676, ['1 Introduction']],
+      [664, ['John Smith']],
+    );
+    expect(authorsFromPageText(items, 'A Paper')).toEqual(['Jane Doe']);
+  });
+
+  it('reads Chinese names and keeps them whole', () => {
+    const items = page(
+      [720, ['面向论文阅读的解构方法']],
+      [700, ['张伟, 李娜, 王强']],
+      [690, ['清华大学计算机科学与技术系']],
+      [660, ['摘要']],
+      [640, ['本文提出']],
+    );
+    expect(authorsFromPageText(items, '面向论文阅读的解构方法')).toEqual(['张伟', '李娜', '王强']);
+  });
+
+  it('returns nothing rather than guessing when the page has no author block', () => {
+    const items = page(
+      [720, ['A Paper Without Authors Listed']],
+      [700, ['Abstract']],
+      [680, ['Body text begins here.']],
+    );
+    expect(authorsFromPageText(items, 'A Paper Without Authors Listed')).toEqual([]);
+  });
+
+  it('returns nothing for a page with no text at all', () => {
+    expect(authorsFromPageText([])).toEqual([]);
+  });
+
+  it('reads from the top of the page when the metadata title is unknown', () => {
+    const items = page(
+      [720, ['Some Other Title']],
+      [700, ['Ada Lovelace, Alan Turing']],
+      [670, ['Abstract']],
+    );
+    expect(authorsFromPageText(items)).toEqual(['Ada Lovelace', 'Alan Turing']);
+  });
+
+  it('anchors on the file-name title when the abstract heading sits above the title', () => {
+    const items = page(
+      [760, ['Abstract']],
+      [730, ['Dynamic Zero-Knowledge Proofs and Their Applications']],
+      [710, ['Weijie Wang']],
+      [700, ['2026']],
+      [680, ['This dissertation introduces valid source proof']],
+    );
+    expect(authorsFromPageText(items, 'Dynamic Zero Knowledge Proofs')).toEqual(['Weijie Wang']);
+  });
+
+  it('finds the title by its type when neither metadata nor file name names it', () => {
+    const items = [
+      runAt('Abstract', 0, 760, 9),
+      runAt('Dynamic Zero-Knowledge Proofs and Their Applications', 0, 730, 17),
+      runAt('Weijie Wang', 0, 710, 10),
+      runAt('2026', 0, 700, 10),
+      runAt('This dissertation introduces valid source proof', 0, 680, 10),
+      runAt('and discusses the feasibility of the approach', 0, 660, 10),
+    ];
+    expect(authorsFromPageText(items)).toEqual(['Weijie Wang']);
+  });
+});

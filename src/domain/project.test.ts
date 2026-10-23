@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_NAME_LENGTH } from './normalize';
+import { MAX_NAME_LENGTH, MAX_TITLE_LENGTH } from './normalize';
 import { createProject } from './project';
 
 describe('createProject', () => {
@@ -46,10 +46,17 @@ describe('createProject', () => {
     expect(makeId).not.toHaveBeenCalled();
   });
 
-  it('truncates over-long titles for both the name and the paper title', () => {
+  it('truncates over-long titles to their own, longer limit', () => {
     const created = createProject('t'.repeat(MAX_NAME_LENGTH + 5), sequentialIds(), 0);
+    // The project keeps a name; the paper keeps a title, and a title may be longer.
     expect(created?.project.name).toBe('t'.repeat(MAX_NAME_LENGTH));
-    expect(created?.paper.title).toBe('t'.repeat(MAX_NAME_LENGTH));
+    expect(created?.paper.title).toBe('t'.repeat(MAX_NAME_LENGTH + 5));
+  });
+
+  it('still caps the paper title, so storage cannot grow without a bound', () => {
+    const created = createProject('t'.repeat(MAX_TITLE_LENGTH + 5), sequentialIds(), 0);
+    expect(created?.project.name).toBe('t'.repeat(MAX_NAME_LENGTH));
+    expect(created?.paper.title).toBe('t'.repeat(MAX_TITLE_LENGTH));
   });
 
   it('starts with no related papers', () => {

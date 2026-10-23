@@ -2,13 +2,12 @@ import {
   BookOpenCheck,
   Check,
   Copy,
-  Loader2,
   SendHorizontal,
   Sparkles,
   TriangleAlert,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type SubmitEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { describeContext, PASSAGE_IDS } from '../../services/ai/context';
 import { mathIn, segmentAnswer } from '../../services/ai/render';
 import {
@@ -19,7 +18,11 @@ import {
 } from '../../services/ai/types';
 import { providerDisplayLabel } from '../ai/providerLabel';
 import { AiMath } from './AiMath';
+import { prefersReducedMotion, useAnswerReveal } from './useAnswerReveal';
 import type { AiSession, AiTurn } from './useAiReading';
+
+/** The passages that restate what the reader is looking at; document pages are the rest. */
+const PRIMARY_PASSAGE_IDS: readonly string[] = Object.values(PASSAGE_IDS);
 
 interface AiPanelProps {
   session: AiSession | null;
@@ -39,6 +42,13 @@ interface AiPanelProps {
   onSaveNote: (turn: AiTurn) => void;
   onJumpToCitation: (citation: AiCitation) => void;
   onClose: () => void;
+  /**
+   * True once the whole paper's text has been extracted locally.
+   *
+   * The panel says what will be sent before the first question, and "the page" and "the whole
+   * paper" are different promises. Optional so an embedder without extraction still renders.
+   */
+  documentReady?: boolean;
 }
 
 const MAX_QUESTION = 1000;
@@ -47,7 +57,8 @@ const MAX_QUESTION = 1000;
  * The openers offered before a conversation exists.
  *
  * They are questions, not modes: each one produces a normal answer with normal citation
- * checking, and each is answerable from the current page alone — which is all that is sent.
+ * checking. Once the paper's text has been extracted the whole document is attached first, so
+ * "this page" is a starting point rather than the only thing the model has seen.
  */
 const OPENERS: readonly { label: string; question: string }[] = [
   {
@@ -69,40 +80,67 @@ function AnswerBody({
   answer,
   citations,
   onJump,
+  animate,
+  onRevealed,
+  onGrow,
 }: {
   answer: string;
   citations: AiCitation[];
   onJump: (citation: AiCitation) => void;
+  /** True for an answer that has just arrived: it is written out rather than dropped in. */
+  animate: boolean;
+  onRevealed: () => void;
+  onGrow: () => void;
 }) {
-  const paragraphs = segmentAnswer(answer, citations);
+  const reveal = useAnswerReveal(answer, animate, onGrow);
+  const paragraphs = segmentAnswer(reveal.text, citations);
+
+  // The turn's own notes, actions and citations wait for the text: they hang off an answer the
+  // reader has not finished receiving yet.
+  const typing = reveal.typing;
+  useEffect(() => {
+    if (animate && !typing) onRevealed();
+  }, [animate, typing, onRevealed]);
+
   return (
-    <div className="ai-answer-body">
-      {paragraphs.map((paragraph, index) => (
-        // Paragraphs have no identity of their own; the index is the paragraph's position and
-        // never changes for a given answer, which is the whole of what the key needs to be.
-        <p key={index}>
-          {paragraph.pieces.map((piece, position) => {
-            if (piece.kind === 'math') {
-              return <AiMath key={position} latex={piece.latex} display={piece.display} />;
-            }
-            if (piece.kind === 'text') return <span key={position}>{piece.text}</span>;
-            return (
-              <button
-                key={position}
-                type="button"
-                className="ai-citation"
-                title={`第 ${String(piece.citation.page)} 页：${piece.citation.quote}`}
-                onClick={() => {
-                  onJump(piece.citation);
-                }}
-              >
-                [{piece.citation.n}] 第 {piece.citation.page} 页
-              </button>
-            );
-          })}
-        </p>
-      ))}
-    </div>
+    <>
+      <div className="ai-answer-body">
+        {paragraphs.map((paragraph, index) => (
+          // Paragraphs have no identity of their own; the index is the paragraph's position and
+          // never changes for a given answer, which is the whole of what the key needs to be.
+          <p key={index}>
+            {paragraph.pieces.map((piece, position) => {
+              if (piece.kind === 'math') {
+                return <AiMath key={position} latex={piece.latex} display={piece.display} />;
+              }
+              if (piece.kind === 'text') return <span key={position}>{piece.text}</span>;
+              return (
+                <button
+                  key={position}
+                  type="button"
+                  className="ai-citation"
+                  title={`第 ${String(piece.citation.page)} 页：${piece.citation.quote}`}
+                  onClick={() => {
+                    onJump(piece.citation);
+                  }}
+                >
+                  [{piece.citation.n}] 第 {piece.citation.page} 页
+                </button>
+              );
+            })}
+          </p>
+        ))}
+      </div>
+      {typing && (
+        <div className="ai-typing">
+          <span className="ai-caret" aria-hidden="true" />
+          {/* Nobody should have to wait for an animation to read. */}
+          <button type="button" className="btn btn-quiet" onClick={reveal.skip}>
+            跳过
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -117,15 +155,30 @@ function AnswerOrNothing({
   answer,
   citations,
   onJump,
+  animate,
+  onRevealed,
+  onGrow,
 }: {
   answer: string;
   citations: AiCitation[];
   onJump: (citation: AiCitation) => void;
+  animate: boolean;
+  onRevealed: () => void;
+  onGrow: () => void;
 }) {
   if (answer.trim() === '') {
     return <p className="ai-warn">这次没有得到可显示的回答正文。</p>;
   }
-  return <AnswerBody answer={answer} citations={citations} onJump={onJump} />;
+  return (
+    <AnswerBody
+      answer={answer}
+      citations={citations}
+      onJump={onJump}
+      animate={animate}
+      onRevealed={onRevealed}
+      onGrow={onGrow}
+    />
+  );
 }
 
 /**
@@ -139,10 +192,16 @@ function AnswerSurface({
   answer,
   onJump,
   onRetry,
+  animate,
+  onRevealed,
+  onGrow,
 }: {
   answer: AiAnswer;
   onJump: (citation: AiCitation) => void;
   onRetry: () => void;
+  animate: boolean;
+  onRevealed: () => void;
+  onGrow: () => void;
 }) {
   if (answer.status === 'malformed') {
     return (
@@ -156,7 +215,16 @@ function AnswerSurface({
       </div>
     );
   }
-  return <AnswerOrNothing answer={answer.answer} citations={answer.citations} onJump={onJump} />;
+  return (
+    <AnswerOrNothing
+      answer={answer.answer}
+      citations={answer.citations}
+      onJump={onJump}
+      animate={animate}
+      onRevealed={onRevealed}
+      onGrow={onGrow}
+    />
+  );
 }
 
 /**
@@ -259,6 +327,63 @@ function Diagnostics({ answer }: { answer: AiAnswer }) {
   );
 }
 
+/**
+ * What the assistant is doing while the request is out.
+ *
+ * The service answers in one piece, so there is no reasoning stream to show — and inventing
+ * one would be worse than showing nothing. These are the local stages of the exchange itself,
+ * named plainly, holding at the last one until the answer arrives. The sparkle mark carries
+ * the animation; the stages say what is happening, so the card is not just motion.
+ */
+const THINKING_STAGES = [
+  '读取这一页的原文',
+  '梳理问题与上下文',
+  '组织回答的要点',
+  '核对引用与措辞',
+] as const;
+
+function ThinkingChain({ onCancel }: { onCancel: () => void }) {
+  const [stage, setStage] = useState(0);
+
+  useEffect(() => {
+    // The last stage is held rather than looped: a progress card that jumps back to the start
+    // reads as a stalled job, which is exactly the impression this card exists to avoid.
+    const timer = window.setInterval(() => {
+      setStage((current) => Math.min(current + 1, THINKING_STAGES.length - 1));
+    }, 1700);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <div className="ai-thinking" role="status" aria-live="polite">
+      <span className="ai-thinking-mark" aria-hidden="true">
+        <Sparkles size={16} />
+        <i className="ai-orbit ai-orbit-a" />
+        <i className="ai-orbit ai-orbit-b" />
+      </span>
+      <div className="ai-thinking-copy">
+        <p className="ai-thinking-stage" key={stage}>
+          {THINKING_STAGES[stage]}
+          <span className="ai-thinking-dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        </p>
+        <span className="ai-thinking-track" aria-hidden="true">
+          <i style={{ width: `${((stage + 1) / THINKING_STAGES.length) * 100}%` }} />
+        </span>
+        <p className="ai-thinking-note">答案返回后会逐字显示，可随时取消。</p>
+      </div>
+      <button type="button" className="btn btn-quiet" onClick={onCancel}>
+        取消
+      </button>
+    </div>
+  );
+}
+
 export function AiPanel({
   session,
   busy,
@@ -273,12 +398,65 @@ export function AiPanel({
   onSaveNote,
   onJumpToCitation,
   onClose,
+  documentReady = false,
 }: AiPanelProps) {
   const [question, setQuestion] = useState('');
   const [showRange, setShowRange] = useState(false);
   const [showTranslation, setShowTranslation] = useState(true);
   const [saved, setSaved] = useState<number | null>(null);
+  /**
+   * The answer whose reveal has finished.
+   *
+   * Compared by identity rather than by turn: a retry replaces the answer at the same position,
+   * and it has to be written out again rather than inheriting the previous run's finished state.
+   * Seeded from whatever the panel opens with, so reopening a conversation does not replay it.
+   */
+  const [revealedAnswer, setRevealedAnswer] = useState<AiAnswer | null>(
+    () => session?.turns.at(-1)?.answer ?? null,
+  );
   const bottom = useRef<HTMLDivElement | null>(null);
+  /** False once the reader scrolls up, so the typewriter does not drag them back down. */
+  const stickToBottom = useRef(true);
+
+  const lastIndex = session === null ? -1 : session.turns.length - 1;
+  const lastAnswer = session === null ? null : (session.turns.at(-1)?.answer ?? null);
+
+  const markRevealed = useCallback(
+    (index: number, answer: AiAnswer) => {
+      if (index !== lastIndex) return;
+      setRevealedAnswer((current) => (current === answer ? current : answer));
+    },
+    [lastIndex],
+  );
+
+  /** A malformed or empty reply has no text to write out; it is shown at once. */
+  const readable = (answer: AiAnswer): boolean =>
+    answer.status !== 'malformed' && answer.answer.trim() !== '';
+
+  const animates = (index: number, answer: AiAnswer): boolean =>
+    index === lastIndex && answer !== revealedAnswer && readable(answer) && !prefersReducedMotion();
+
+  /** Finished turns show their notes, citations and actions; a turn still typing does not. */
+  const finished = (answer: AiAnswer | null): boolean => {
+    if (answer === null || answer !== lastAnswer) return true;
+    if (!readable(answer) || prefersReducedMotion()) return true;
+    return answer === revealedAnswer;
+  };
+
+  /**
+   * Keeps a growing answer in view while it writes, unless the reader has scrolled away.
+   * Yanking somebody back down mid-read is worse than a few extra lines below the fold.
+   *
+   * This runs on every animation frame while the answer is being written out, so it moves the
+   * scroll container directly. `scrollIntoView` recomputes every scrollable ancestor and
+   * re-runs scroll anchoring each time, which is what made the typewriter visibly stutter.
+   */
+  const growBottom = useCallback(() => {
+    if (!stickToBottom.current) return;
+    const area = bottom.current?.parentElement;
+    if (area === null || area === undefined) return;
+    area.scrollTop = area.scrollHeight;
+  }, []);
 
   // A new answer is the thing the reader is waiting for; keep it in view.
   useEffect(() => {
@@ -334,7 +512,9 @@ export function AiPanel({
           <div className="ai-empty">
             <p>可以直接问这一页的任何问题。在原文里选中一段再提问，回答就能精确回到那段文字。</p>
             <p className="ai-hint">
-              现在只会带上第 {currentPage} 页的正文，不会发送整篇论文，也不会保存对话记录。
+              {documentReady
+                ? '提问时会先带上已提取的整篇论文正文，回答里的引用会标出页码；对话不会保存。'
+                : `现在只会带上第 ${String(currentPage)} 页的正文，不会保存对话记录。`}
             </p>
           </div>
           <div className="ai-quick" role="group" aria-label="可以这样问">
@@ -353,7 +533,13 @@ export function AiPanel({
           </div>
         </div>
       ) : (
-        <div className="ai-scroll">
+        <div
+          className="ai-scroll"
+          onScroll={(event) => {
+            const area = event.currentTarget;
+            stickToBottom.current = area.scrollHeight - area.scrollTop - area.clientHeight < 48;
+          }}
+        >
           <section className="ai-source" aria-label="本次的原文范围">
             <button
               type="button"
@@ -366,8 +552,8 @@ export function AiPanel({
               第 {session.source.page} 页
               {session.source.anchor === null
                 ? '整页'
-                : `，选中 ${String(session.source.anchor.quote.length)} 字`}{' '}
-              —— 查看会发送的范围
+                : `，选中 ${String(session.source.anchor.quote.length)} 字`}
+              {session.turns[0]?.request.scope === 'document' && '（整篇论文）'} —— 查看会发送的范围
             </button>
             {/* Said before anything is sent, not buried inside the disclosure: if the selection
                 is a formula broken into single glyphs, the reader should know that the model is
@@ -389,179 +575,209 @@ export function AiPanel({
                     {session.turns[0].request.layoutNotice}
                   </p>
                 )}
-                {session.turns[0]?.request.passages.map((passage) => (
-                  <div key={passage.id} className="ai-range-part">
-                    <span className="ai-range-label">
-                      {passage.id === PASSAGE_IDS.selection
-                        ? '选中的原文'
-                        : passage.id === PASSAGE_IDS.page
-                          ? '这一页的原文'
-                          : passage.id === PASSAGE_IDS.before
-                            ? '同页上文'
-                            : '同页下文'}
-                    </span>
-                    <p>{passage.text}</p>
-                  </div>
-                ))}
+                {session.turns[0]?.request.scope === 'document' && (
+                  <p className="ai-range-note">
+                    整篇论文已按页发送
+                    {session.turns[0].request.document != null
+                      ? `（${String(session.turns[0].request.document.pagesSent)}/${String(session.turns[0].request.document.pagesTotal)} 页${session.turns[0].request.document.truncated ? '，超长部分未发送' : ''}）`
+                      : ''}
+                    ；这里只展开提问所依据的原文，引用会标出页码。
+                  </p>
+                )}
+                {session.turns[0]?.request.passages
+                  .filter(
+                    (passage) =>
+                      session.turns[0]?.request.scope !== 'document' ||
+                      PRIMARY_PASSAGE_IDS.includes(passage.id),
+                  )
+                  .map((passage) => (
+                    <div key={passage.id} className="ai-range-part">
+                      <span className="ai-range-label">
+                        {passage.id === PASSAGE_IDS.selection
+                          ? '选中的原文'
+                          : passage.id === PASSAGE_IDS.page
+                            ? '这一页的原文'
+                            : passage.id === PASSAGE_IDS.before
+                              ? '同页上文'
+                              : passage.id === PASSAGE_IDS.after
+                                ? '同页下文'
+                                : `第 ${String(passage.page)} 页`}
+                      </span>
+                      <p>{passage.text}</p>
+                    </div>
+                  ))}
               </div>
             )}
           </section>
 
-          {session.turns.map((turn, index) => (
-            <section
-              // A turn is identified by its position in this session, which never changes.
-              key={index}
-              className="ai-turn"
-              data-turn={index}
-            >
-              <p className="ai-turn-mode">{AI_MODE_LABEL[turn.mode]}</p>
+          {session.turns.map((turn, index) => {
+            const answer = turn.answer;
+            return (
+              <section
+                // A turn is identified by its position in this session, which never changes.
+                key={index}
+                className="ai-turn"
+                data-turn={index}
+              >
+                <p className="ai-turn-mode">{AI_MODE_LABEL[turn.mode]}</p>
 
-              {index > 0 && turn.question !== '' && <p className="ai-question">{turn.question}</p>}
+                {index > 0 && turn.question !== '' && (
+                  <p className="ai-question">{turn.question}</p>
+                )}
 
-              {turn.mode === 'translate' && turn.answer !== null && (
-                <div className="ai-parallel">
-                  <div className="ai-original">
-                    <span className="ai-range-label">英文原文</span>
-                    <p>{session.source.anchor?.quote ?? ''}</p>
-                  </div>
-                  <div className="ai-translation" data-hidden={!showTranslation}>
-                    <div className="ai-translation-head">
-                      <span className="ai-range-label">中文译文</span>
-                      <button
-                        type="button"
-                        className="btn btn-quiet"
-                        aria-pressed={showTranslation}
-                        onClick={() => {
-                          setShowTranslation((value) => !value);
-                        }}
-                      >
-                        {showTranslation ? '隐藏译文' : '显示译文'}
-                      </button>
+                {turn.mode === 'translate' && turn.answer !== null && (
+                  <div className="ai-parallel">
+                    <div className="ai-original">
+                      <span className="ai-range-label">英文原文</span>
+                      <p>{session.source.anchor?.quote ?? ''}</p>
                     </div>
-                    {showTranslation && (
-                      <AnswerSurface
-                        answer={turn.answer}
-                        onJump={onJumpToCitation}
-                        onRetry={onRetry}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {turn.answer !== null && turn.mode !== 'translate' && (
-                <AnswerSurface answer={turn.answer} onJump={onJumpToCitation} onRetry={onRetry} />
-              )}
-
-              {turn.answer !== null && <AnswerStatusNotes answer={turn.answer} />}
-
-              {turn.answer !== null && (
-                <>
-                  {turn.answer.groundedInText === false && (
-                    <p className="ai-warn" role="status">
-                      <TriangleAlert size={13} aria-hidden="true" />
-                      模型自己认为提供的原文不足以完整回答这个问题。这是它的自述，不是被核对过的事实，
-                      请注意分辨哪些是补充内容。
-                    </p>
-                  )}
-                  {turn.answer.warnings.map((warning) => (
-                    <p className="ai-warn" key={warning}>
-                      <TriangleAlert size={13} aria-hidden="true" />
-                      {warning}
-                    </p>
-                  ))}
-                  <Diagnostics answer={turn.answer} />
-                  <p className="ai-foot">
-                    出处：第 {session.source.page} 页 ·{' '}
-                    {providerDisplayLabel(turn.answer.providerLabel)}
-                    {turn.answer.usage?.completionTokens != null &&
-                      ` · 输出 ${String(turn.answer.usage.completionTokens)} tokens`}
-                    {turn.answer.usage?.reasoningTokens != null &&
-                      `（其中推理 ${String(turn.answer.usage.reasoningTokens)}）`}
-                  </p>
-                  {/* Nothing to save or copy when there is no answer text to speak of. */}
-                  {turn.answer.status !== 'malformed' && (
-                    <div className="ai-turn-actions">
-                      <button
-                        type="button"
-                        className="btn btn-quiet"
-                        disabled={!canSaveNote}
-                        title={
-                          canSaveNote
-                            ? undefined
-                            : '整页提问没有可锚定的原文；选中一段再提问即可保存为笔记'
-                        }
-                        onClick={() => {
-                          onSaveNote(turn);
-                          setSaved(index);
-                        }}
-                      >
-                        {saved === index ? (
-                          <Check size={14} aria-hidden="true" />
-                        ) : (
-                          <BookOpenCheck size={14} aria-hidden="true" />
-                        )}
-                        {saved === index ? '已保存为笔记' : '保存为笔记'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-quiet"
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(turn.answer?.answer ?? '');
-                        }}
-                      >
-                        <Copy size={14} aria-hidden="true" />
-                        复制
-                      </button>
+                    <div className="ai-translation" data-hidden={!showTranslation}>
+                      <div className="ai-translation-head">
+                        <span className="ai-range-label">中文译文</span>
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          aria-pressed={showTranslation}
+                          onClick={() => {
+                            setShowTranslation((value) => !value);
+                          }}
+                        >
+                          {showTranslation ? '隐藏译文' : '显示译文'}
+                        </button>
+                      </div>
+                      {showTranslation && (
+                        <AnswerSurface
+                          answer={turn.answer}
+                          onJump={onJumpToCitation}
+                          onRetry={onRetry}
+                          animate={answer !== null && animates(index, answer)}
+                          onRevealed={() => {
+                            if (answer !== null) markRevealed(index, answer);
+                          }}
+                          onGrow={growBottom}
+                        />
+                      )}
                     </div>
-                  )}
-                  {turn.answer.citations.length > 0 && (
-                    <>
-                      <ul className="ai-citations">
-                        {turn.answer.citations.map((citation) => (
-                          <li key={citation.n}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onJumpToCitation(citation);
-                              }}
-                            >
-                              [{citation.n}] 第 {citation.page} 页
-                            </button>
-                            <span>{citation.quote}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {/* Saying exactly what was checked, because "verified" is easy to over-read. */}
-                      <p className="ai-caveat">
-                        以上引用已核对：引文确实逐字来自本次发送给模型的原文。
-                        引文是否支持这里的结论、以及结论本身是否正确，不在这道校验的范围内。
+                  </div>
+                )}
+
+                {turn.answer !== null && turn.mode !== 'translate' && (
+                  <AnswerSurface
+                    answer={turn.answer}
+                    onJump={onJumpToCitation}
+                    onRetry={onRetry}
+                    animate={answer !== null && animates(index, answer)}
+                    onRevealed={() => {
+                      if (answer !== null) markRevealed(index, answer);
+                    }}
+                    onGrow={growBottom}
+                  />
+                )}
+
+                {turn.answer !== null && finished(turn.answer) && (
+                  <AnswerStatusNotes answer={turn.answer} />
+                )}
+
+                {turn.answer !== null && finished(turn.answer) && (
+                  <>
+                    {turn.answer.groundedInText === false && (
+                      <p className="ai-warn" role="status">
+                        <TriangleAlert size={13} aria-hidden="true" />
+                        模型自己认为提供的原文不足以完整回答这个问题。这是它的自述，不是被核对过的事实，
+                        请注意分辨哪些是补充内容。
                       </p>
-                    </>
-                  )}
-                </>
-              )}
+                    )}
+                    {turn.answer.warnings.map((warning) => (
+                      <p className="ai-warn" key={warning}>
+                        <TriangleAlert size={13} aria-hidden="true" />
+                        {warning}
+                      </p>
+                    ))}
+                    <Diagnostics answer={turn.answer} />
+                    <p className="ai-foot">
+                      出处：第 {session.source.page} 页 ·{' '}
+                      {providerDisplayLabel(turn.answer.providerLabel)}
+                      {turn.answer.usage?.completionTokens != null &&
+                        ` · 输出 ${String(turn.answer.usage.completionTokens)} tokens`}
+                      {turn.answer.usage?.reasoningTokens != null &&
+                        `（其中推理 ${String(turn.answer.usage.reasoningTokens)}）`}
+                    </p>
+                    {/* Nothing to save or copy when there is no answer text to speak of. */}
+                    {turn.answer.status !== 'malformed' && (
+                      <div className="ai-turn-actions">
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          disabled={!canSaveNote}
+                          title={
+                            canSaveNote
+                              ? undefined
+                              : '整页提问没有可锚定的原文；选中一段再提问即可保存为笔记'
+                          }
+                          onClick={() => {
+                            onSaveNote(turn);
+                            setSaved(index);
+                          }}
+                        >
+                          {saved === index ? (
+                            <Check size={14} aria-hidden="true" />
+                          ) : (
+                            <BookOpenCheck size={14} aria-hidden="true" />
+                          )}
+                          {saved === index ? '已保存为笔记' : '保存为笔记'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(turn.answer?.answer ?? '');
+                          }}
+                        >
+                          <Copy size={14} aria-hidden="true" />
+                          复制
+                        </button>
+                      </div>
+                    )}
+                    {turn.answer.citations.length > 0 && (
+                      <>
+                        <ul className="ai-citations">
+                          {turn.answer.citations.map((citation) => (
+                            <li key={citation.n}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onJumpToCitation(citation);
+                                }}
+                              >
+                                [{citation.n}] 第 {citation.page} 页
+                              </button>
+                              <span>{citation.quote}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {/* Saying exactly what was checked, because "verified" is easy to over-read. */}
+                        <p className="ai-caveat">
+                          以上引用已核对：引文确实逐字来自本次发送给模型的原文。
+                          引文是否支持这里的结论、以及结论本身是否正确，不在这道校验的范围内。
+                        </p>
+                      </>
+                    )}
+                  </>
+                )}
 
-              {turn.failure !== null && (
-                <div className="ai-failure" role="alert">
-                  <p>{turn.failure.message}</p>
-                  <button type="button" className="btn" onClick={onRetry}>
-                    重试
-                  </button>
-                </div>
-              )}
-            </section>
-          ))}
+                {turn.failure !== null && (
+                  <div className="ai-failure" role="alert">
+                    <p>{turn.failure.message}</p>
+                    <button type="button" className="btn" onClick={onRetry}>
+                      重试
+                    </button>
+                  </div>
+                )}
+              </section>
+            );
+          })}
 
-          {busy && (
-            <p className="ai-busy" role="status">
-              <Loader2 size={14} aria-hidden="true" className="spin" />
-              正在请求模型…
-              <button type="button" className="btn btn-quiet" onClick={onCancel}>
-                取消
-              </button>
-            </p>
-          )}
+          {busy && <ThinkingChain onCancel={onCancel} />}
           <div ref={bottom} />
         </div>
       )}

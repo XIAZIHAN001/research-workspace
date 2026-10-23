@@ -4,6 +4,8 @@ import {
   buildHistory,
   CONTEXT_WINDOW,
   describeContext,
+  MAX_DOCUMENT_PASSAGES,
+  MAX_DOCUMENT_PASSAGE_CHARS,
   MAX_HISTORY_CHARS,
   MAX_PASSAGE_CHARS,
   PASSAGE_IDS,
@@ -217,6 +219,101 @@ describe('buildAskContext: a question about the page', () => {
     const request = pageAsk({ start: 4, end: 4 });
     expect(request.scope).toBe('page');
     expect(request.passages[0]?.id).toBe(PASSAGE_IDS.page);
+  });
+});
+
+describe('buildAskContext: the whole paper', () => {
+  const document = [
+    { page: 1, text: 'FIRST PAGE' },
+    { page: 2, text: 'SECOND PAGE' },
+    { page: 3, text: 'CURRENT PAGE' },
+  ];
+
+  const pageAsk = (overrides: Partial<Parameters<typeof buildAskContext>[0]> = {}): AiAskRequest =>
+    buildAskContext({
+      paperId: 'paper-1',
+      title: 'A Paper',
+      pdfSha256: 'a'.repeat(64),
+      page: 3,
+      pageText: 'CURRENT PAGE',
+      mode: 'ask',
+      question: '第三章讲了什么？',
+      documentPages: document,
+      ...overrides,
+    });
+
+  it('adds the paper’s pages after the primary passage, in reading order', () => {
+    const request = pageAsk();
+    expect(request.scope).toBe('document');
+    expect(request.passages[0]?.id).toBe(PASSAGE_IDS.page);
+    expect(
+      request.passages.slice(1).map((passage) => [passage.id, passage.page, passage.selection]),
+    ).toEqual([
+      ['p1', 1, false],
+      ['p2', 2, false],
+    ]);
+    // The current page is the primary passage already, so the document half omits it — but it is
+    // still part of what the model reads, so the summary counts all three.
+    expect(request.document).toEqual({
+      pagesSent: 3,
+      pagesTotal: 3,
+      charsSent: 21,
+      truncated: false,
+    });
+  });
+
+  it('keeps the current page inside the document when the question is about a selection', () => {
+    const request = pageAsk({ start: 0, end: 7 });
+    expect(request.scope).toBe('document');
+    expect(request.passages.map((passage) => passage.id)).toContain('p3');
+    expect(request.document?.pagesSent).toBe(3);
+  });
+
+  it('skips blank pages rather than sending an empty passage the service would refuse', () => {
+    const request = pageAsk({
+      documentPages: [
+        { page: 1, text: 'FIRST PAGE' },
+        { page: 2, text: '   ' },
+        { page: 3, text: 'CURRENT PAGE' },
+      ],
+    });
+    expect(request.passages.map((passage) => passage.id)).toEqual([PASSAGE_IDS.page, 'p1']);
+    // Page 2 is blank and never sent; the current page brings the total of sent pages to two.
+    expect(request.document?.pagesSent).toBe(2);
+    expect(request.document?.truncated).toBe(false);
+  });
+
+  it('trims a pathological page instead of dropping it', () => {
+    const request = pageAsk({
+      documentPages: [{ page: 1, text: 'x'.repeat(MAX_DOCUMENT_PASSAGE_CHARS + 50) }],
+    });
+    expect(request.passages[1]?.text).toHaveLength(MAX_DOCUMENT_PASSAGE_CHARS);
+    expect(request.document?.truncated).toBe(true);
+  });
+
+  it('stops at the passage ceiling and says the paper was cut short', () => {
+    const request = pageAsk({
+      documentPages: Array.from({ length: MAX_DOCUMENT_PASSAGES + 4 }, (_unused, index) => ({
+        page: index + 1,
+        text: 'word',
+      })),
+    });
+    // The ceiling bounds document passages; the primary passage for the current page always goes.
+    expect(request.document?.pagesSent).toBe(MAX_DOCUMENT_PASSAGES + 1);
+    expect(request.document?.truncated).toBe(true);
+  });
+
+  it('falls back to the page alone when extraction produced nothing', () => {
+    const request = pageAsk({ documentPages: [] });
+    expect(request.scope).toBe('page');
+    expect(request.passages).toHaveLength(1);
+    expect(request.document).toBeUndefined();
+  });
+
+  it('describes the whole paper, including how many pages made it', () => {
+    expect(describeContext(pageAsk())).toContain('整篇文档 3/3 页');
+    // The primary passage is included in the total: 12 characters of page plus 21 of the paper.
+    expect(describeContext(pageAsk())).toContain('合计 33 字');
   });
 });
 

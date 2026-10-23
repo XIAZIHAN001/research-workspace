@@ -1,5 +1,5 @@
 import type { PaperPdf } from '../../domain/pdfFile';
-import { normalizeName } from '../../domain/normalize';
+import { normalizeTitle } from '../../domain/normalize';
 import {
   resolvePaperIdentity,
   type AddPaperOutcome,
@@ -87,7 +87,7 @@ export function commitImport(
   pdf: PaperPdf,
 ): ImportCommit {
   // Checked before anything else so a blank title cannot reach the store at all.
-  if (normalizeName(fields.title) === null)
+  if (normalizeTitle(fields.title) === null)
     return { status: 'refused', message: '请填写论文标题。' };
 
   if (intent.kind === 'attach-file') {

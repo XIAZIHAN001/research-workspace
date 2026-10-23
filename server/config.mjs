@@ -96,12 +96,23 @@ export const REASONING_EFFORTS = ['none', 'low', 'high', 'max'];
 /** The effort used when thinking is on and nothing was configured: enough to help, bounded. */
 export const DEFAULT_REASONING_EFFORT = 'low';
 
-/** Bounds on what a single request may carry. Deliberately far below "a whole paper". */
+/** Bounds on what a single request may carry. */
 export const LIMITS = {
-  bodyBytes: 256 * 1024,
+  bodyBytes: 2 * 1024 * 1024,
   passages: 8,
   passageChars: 2000,
   totalContextChars: 6000,
+  /**
+   * Document scope: the reader attached the whole paper, one passage per page.
+   *
+   * These are separate from the selection limits on purpose. A question about one passage should
+   * stay small and cheap; an explicit "read the whole paper" request is the one case where the
+   * reader asked for a large input and should get it. 350k characters leaves room for the primary
+   * passage plus the 340k-character document cap the reader applies.
+   */
+  documentPassages: 200,
+  documentPassageChars: 12_000,
+  documentContextChars: 350_000,
   questionChars: 1000,
   historyTurns: 6,
   historyChars: 2000,
