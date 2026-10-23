@@ -57,10 +57,12 @@ export const MODE_NAMES = Object.keys(MODES);
  * What the primary passage is.
  *
  * `selection` — the reader selected text. `page` — they asked about the page they are reading,
- * with nothing selected. It changes one label in the prompt and nothing else: the citation
- * rules are identical, because the passages are the same kind of thing either way.
+ * with nothing selected. `document` — the whole paper was extracted locally and attached page by
+ * page, so the answer can place one chapter inside the paper's whole argument. It changes the
+ * range sentence and the passage labels; the citation rules are identical, because the passages
+ * are the same kind of thing either way.
  */
-export const SCOPES = ['selection', 'page'];
+export const SCOPES = ['selection', 'page', 'document'];
 
 /**
  * The line that separates the answer from its citation block.
@@ -108,9 +110,11 @@ const GUARDRAILS = [
 function modeInstruction(mode, question, scope) {
   const chosen = MODES[mode];
   const lead =
-    scope === 'page'
-      ? '读者没有选中特定文字，问的是他正在读的这一页。缺少依据时请直说，不要假设整篇论文的内容。\n'
-      : '';
+    scope === 'document'
+      ? '读者上传了整篇论文，问题可能针对其中一个大章节。请先通读全文，把这一章放回论文的整体论证中再回答；缺少依据时直说，不要假装读到了没有提供的部分。\n'
+      : scope === 'page'
+        ? '读者没有选中特定文字，问的是他正在读的这一页。缺少依据时请直说，不要假设整篇论文的内容。\n'
+        : '';
   if (mode !== 'ask') return `${lead}读者的请求：${chosen.instruction}`;
   return `${lead}读者的请求：${chosen.instruction}\n读者的问题是：${question}`;
 }
@@ -169,11 +173,26 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
     return { ok: false, message: 'paper.pdfSha256 不是文件哈希。' };
   }
 
+  const scope = raw.scope === undefined ? 'selection' : raw.scope;
+  if (!SCOPES.includes(scope)) {
+    return { ok: false, message: 'scope 必须是 selection / page / document。' };
+  }
+  // Document scope is the one request that is allowed to be large. Everything else keeps the
+  // small selection bounds, so an accidental whole-paper payload is still refused.
+  const bounds =
+    scope === 'document'
+      ? {
+          passages: limits.documentPassages ?? limits.passages,
+          passageChars: limits.documentPassageChars ?? limits.passageChars,
+          totalContextChars: limits.documentContextChars ?? limits.totalContextChars,
+        }
+      : limits;
+
   if (!Array.isArray(raw.passages) || raw.passages.length === 0) {
     return { ok: false, message: '缺少 passages。' };
   }
-  if (raw.passages.length > limits.passages) {
-    return { ok: false, message: `passages 最多 ${String(limits.passages)} 段。` };
+  if (raw.passages.length > bounds.passages) {
+    return { ok: false, message: `passages 最多 ${String(bounds.passages)} 段。` };
   }
 
   const passages = [];
@@ -189,27 +208,22 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
     if (seen.has(id)) return { ok: false, message: `段落 id ${id} 重复。` };
     seen.add(id);
     if (!Number.isInteger(page) || page < 1) return { ok: false, message: '段落 page 不合法。' };
-    const body = boundedText(text, limits.passageChars);
+    const body = boundedText(text, bounds.passageChars);
     if (body === null || body.trim() === '') {
       return {
         ok: false,
-        message: `段落 ${id} 的文字为空或超过 ${String(limits.passageChars)} 字。`,
+        message: `段落 ${id} 的文字为空或超过 ${String(bounds.passageChars)} 字。`,
       };
     }
     if (typeof selection !== 'boolean') return { ok: false, message: '段落缺少 selection 标记。' };
     total += body.length;
     passages.push({ id, page, text: body, selection });
   }
-  if (total > limits.totalContextChars) {
-    return { ok: false, message: `上下文合计超过 ${String(limits.totalContextChars)} 字。` };
+  if (total > bounds.totalContextChars) {
+    return { ok: false, message: `上下文合计超过 ${String(bounds.totalContextChars)} 字。` };
   }
   if (passages.filter((passage) => passage.selection).length !== 1) {
     return { ok: false, message: '必须且只能有一段被标记为 selection。' };
-  }
-
-  const scope = raw.scope === undefined ? 'selection' : raw.scope;
-  if (!SCOPES.includes(scope)) {
-    return { ok: false, message: 'scope 必须是 selection 或 page。' };
   }
 
   const question =
@@ -252,13 +266,17 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
 /** The block of untrusted material, exactly as the model will see it. */
 export function renderPaperBlock(request) {
   const pageScope = request.scope === 'page';
+  const documentScope = request.scope === 'document';
+  const pages = new Set(request.passages.map((passage) => passage.page));
   const lines = [
     OPEN,
     `论文标题：${request.paper.title}`,
     `当前页：第 ${String(request.paper.page)} 页`,
-    pageScope
-      ? '阅读范围：读者正在读这一页，没有选中特定文字；下面提供的是这一页的正文。'
-      : '阅读范围：读者选中了下面这段原文，另外附了同页的上下文。',
+    documentScope
+      ? `阅读范围：读者上传了整篇论文，下面按页提供正文（共 ${String(pages.size)} 页）。请先通读全文，再回答问题。`
+      : pageScope
+        ? '阅读范围：读者正在读这一页，没有选中特定文字；下面提供的是这一页的正文。'
+        : '阅读范围：读者选中了下面这段原文，另外附了同页的上下文。',
   ];
   if (request.layoutNotice !== null && request.layoutNotice !== '') {
     lines.push(`排版提示（由阅读器测出，不是模型推断）：${request.layoutNotice}`);
@@ -271,7 +289,9 @@ export function renderPaperBlock(request) {
           ? pageScope
             ? '（这一页的正文）'
             : '（读者选中的原文）'
-          : '（同页上下文）'
+          : documentScope
+            ? '（全文中的这一页）'
+            : '（同页上下文）'
       }`,
     );
     lines.push(neutraliseDelimiters(passage.text));

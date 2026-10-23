@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { askAi, fetchAiHealth, type AiClientOptions } from '../../services/ai/client';
-import { buildAskContext, buildHistory } from '../../services/ai/context';
+import { buildAskContext, buildHistory, type DocumentPageText } from '../../services/ai/context';
 import type {
   AiAnswer,
   AiAskRequest,
@@ -45,6 +45,14 @@ export interface AiSource {
    * because that is when the rendered page it describes is still on screen.
    */
   fragmentation: SelectionFragmentation | null;
+  /**
+   * The whole paper's extracted text, page by page, when it is ready.
+   *
+   * This is what lets a question about one chapter be answered against the whole argument. It is
+   * extracted once per document locally; empty means the paper's text layer could not be read, in
+   * which case the request falls back to the current page alone.
+   */
+  documentPages: readonly DocumentPageText[];
 }
 
 export interface AiTurn {
@@ -103,6 +111,7 @@ export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
         question,
         history: historyOf(previous),
         layoutNotice: source.layoutNotice,
+        documentPages: source.documentPages,
       });
 
       const blank: AiTurn = { mode, question, request, answer: null, failure: null };

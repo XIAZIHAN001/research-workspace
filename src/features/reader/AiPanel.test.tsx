@@ -58,6 +58,7 @@ function session(overrides: Partial<AiTurn> = {}, mode: AiTurn['mode'] = 'explai
     pageText: 'the rotated attention mechanism which lets us drop position embeddings',
     layoutNotice: null,
     fragmentation: null,
+    documentPages: [],
   };
   const request = buildAskContext({
     paperId: source.paperId,

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { LIMITS } from './config.mjs';
 import { postJson, rawRequest, startTestService, validAsk } from './testing.mjs';
 
 /** Every test gets its own service, so rate limits and concurrency never leak between them. */
@@ -188,7 +189,7 @@ describe('POST /api/ai/ask', () => {
 
   it('refuses a body that exceeds the size cap', async () => {
     const { base } = await service();
-    const response = await postJson(base, '/api/ai/ask', 'x'.repeat(300 * 1024));
+    const response = await postJson(base, '/api/ai/ask', 'x'.repeat(LIMITS.bodyBytes + 1));
     expect(response.status).toBe(413);
   });
 });
@@ -372,7 +373,7 @@ describe('the service as a boundary for money', () => {
   it('refuses an oversized body without calling the provider', async () => {
     const { calls, provider } = countingProvider();
     const { base } = await service({ provider, config: LIVE });
-    await postJson(base, '/api/ai/ask', 'x'.repeat(300 * 1024));
+    await postJson(base, '/api/ai/ask', 'x'.repeat(LIMITS.bodyBytes + 1));
     expect(calls).toHaveLength(0);
   });
 

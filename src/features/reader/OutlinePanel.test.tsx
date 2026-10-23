@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { createAnnotation } from '../../domain/annotation';
+import { createBookmark } from '../../domain/bookmark';
 import { OutlinePanel } from './OutlinePanel';
 import type { OutlineEntry, PdfOutlineState } from './usePdfOutline';
 
@@ -63,5 +65,61 @@ describe('OutlinePanel', () => {
     renderPanel({ status: 'ready', items }, 1);
     const row = screen.getByRole('button', { name: /外部链接/ });
     expect(row).toHaveProperty('disabled', true);
+  });
+
+  it('lists bookmarks and notes under the chapter that contains them', () => {
+    const onJump = vi.fn();
+    const onAddBookmark = vi.fn();
+    const bookmark = createBookmark(
+      { paperId: 'paper-1', page: 3, label: '方法在这里' },
+      () => 'b1',
+      1000,
+    );
+    const note = createAnnotation(
+      {
+        paperId: 'paper-1',
+        pdfSha256: 'a'.repeat(64),
+        page: 2,
+        quote: 'The proof reduces the protocol to a polynomial commitment.',
+        prefix: '',
+        suffix: '',
+        rects: [{ x: 0.1, y: 0.1, width: 0.2, height: 0.02 }],
+        kind: 'question',
+        note: '这一步为什么成立？',
+      },
+      () => 'n1',
+      2000,
+    );
+    if (bookmark === null || note === null) throw new Error('fixtures must be valid');
+
+    render(
+      <OutlinePanel
+        outline={outline}
+        currentPage={3}
+        onJump={onJump}
+        onClose={vi.fn()}
+        bookmarks={[bookmark]}
+        annotations={[note]}
+        onAddBookmark={onAddBookmark}
+        onRenameBookmark={vi.fn()}
+        onDeleteBookmark={vi.fn()}
+        onJumpToNote={vi.fn()}
+        onEditNote={vi.fn()}
+        onDeleteNote={vi.fn()}
+      />,
+    );
+
+    // The row's own title is unique; its aria-label is empty because the row reads as text.
+    const bookmarkRow = screen.getByTitle('方法在这里');
+    expect(bookmarkRow.closest('.outline-mark')?.getAttribute('data-kind')).toBe('bookmark');
+    fireEvent.click(bookmarkRow);
+    expect(onJump).toHaveBeenCalledWith(3);
+
+    const noteRow = screen.getByTitle('这一步为什么成立？');
+    expect(noteRow.closest('.outline-mark')?.getAttribute('data-kind')).toBe('note');
+    expect(screen.getByText('疑问')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '为第 3 页添加书签' }));
+    expect(onAddBookmark).toHaveBeenCalledWith('');
   });
 });

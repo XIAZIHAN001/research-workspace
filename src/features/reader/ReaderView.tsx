@@ -1,13 +1,10 @@
 import {
   ArrowLeft,
-  Bookmark,
   ChevronLeft,
   ChevronRight,
-  Lightbulb,
   ListTree,
   Maximize2,
   Network,
-  NotebookPen,
   Redo2,
   Search,
   Sparkles,
@@ -46,13 +43,11 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
-import { DifficultyPanel } from './DifficultyPanel';
 import { FindBar } from './FindBar';
 import { KnowledgePanel } from './KnowledgePanel';
 import { useKnowledgeAnalysis } from './useKnowledgeAnalysis';
 import type { KnowledgeApi } from '../knowledge/useKnowledgeApi';
 import { inspectPageLayout, measureFragmentation } from './layout';
-import { NotesPanel } from './NotesPanel';
 import { OutlinePanel } from './OutlinePanel';
 import { PaperModeSwitch } from './PaperModeSwitch';
 import { PdfPage } from './PdfPage';
@@ -83,11 +78,11 @@ import {
   totalHeight,
 } from './readerMath';
 import { PDF_FAILURE_MESSAGE, usePdfDocument } from './usePdfDocument';
+import { useDocumentText } from './useDocumentText';
 import { usePdfOutline } from './usePdfOutline';
 import { usePdfSearch } from './usePdfSearch';
 import { useReadingHistory } from './useReadingHistory';
 import { useAiReading, type AiClient, type AiSource, type AiTurn } from './useAiReading';
-import { BookmarksPanel } from './BookmarksPanel';
 
 /** How long the reading column must hold still before a new fit-width scale is computed. */
 const RESIZE_SETTLE_MS = 120;
@@ -295,11 +290,9 @@ export function ReaderView({
   /** The document's own table of contents, loaded when the document opens. */
   const outline = usePdfOutline(state.status === 'ready' ? state.doc : null);
   /** Which of the side panels is showing, if any. */
-  const [panel, setPanel] = useState<
-    'notes' | 'ai' | 'difficulty' | 'knowledge' | 'outline' | 'bookmarks' | null
-  >(() =>
+  const [panel, setPanel] = useState<'ai' | 'knowledge' | 'outline' | null>(() =>
     typeof window.matchMedia === 'function' && !window.matchMedia(OVERLAY_QUERY).matches
-      ? 'notes'
+      ? 'outline'
       : null,
   );
   /**
@@ -361,6 +354,11 @@ export function ReaderView({
   const ai = useAiReading(aiClient);
 
   const pdfSha256 = paper.pdf?.sha256 ?? null;
+  // Read in the background, once per file: the assistant answers from the whole paper, not the page.
+  const documentText = useDocumentText(
+    state.status === 'ready' ? state.doc : null,
+    pdfSha256 === null ? null : `pdf:${pdfSha256}`,
+  );
   const here = useMemo(
     () => annotations.filter((annotation) => annotation.pdfSha256 === pdfSha256),
     [annotations, pdfSha256],
@@ -942,6 +940,7 @@ export function ReaderView({
       layoutNotice: inspectPageLayout(pageRoot).notice,
       // Measured here, while the rendered page that the numbers describe is still on screen.
       fragmentation: anchor === null ? null : measureFragmentation(pageRoot, anchor),
+      documentPages: documentText.pages,
     };
   };
 
@@ -1106,7 +1105,7 @@ export function ReaderView({
   // the model name for its cache key, and it keeps working after the panel is closed.
   useEffect(() => {
     if (health !== null) return;
-    if (panel !== 'ai' && panel !== 'difficulty' && panel !== 'knowledge' && !scan.enabled) return;
+    if (panel !== 'ai' && panel !== 'knowledge' && !scan.enabled) return;
     let cancelled = false;
     let retry: number | undefined;
     const load = async (): Promise<void> => {
@@ -1428,25 +1427,16 @@ export function ReaderView({
               <button
                 type="button"
                 className="rail-btn"
-                aria-label="打开目录"
-                title="目录"
+                aria-label="打开目录、书签和笔记"
+                title="目录 · 书签 · 笔记"
                 onClick={() => {
                   setPanel('outline');
                 }}
               >
                 <ListTree size={17} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="rail-btn"
-                aria-label="打开书签"
-                title="书签"
-                onClick={() => {
-                  setPanel('bookmarks');
-                }}
-              >
-                <Bookmark size={17} aria-hidden="true" />
-                {bookmarks.length > 0 && <span className="rail-count">{bookmarks.length}</span>}
+                {bookmarks.length + here.length > 0 && (
+                  <span className="rail-count">{bookmarks.length + here.length}</span>
+                )}
               </button>
               <button
                 type="button"
@@ -1462,35 +1452,12 @@ export function ReaderView({
               <button
                 type="button"
                 className="rail-btn"
-                aria-label="打开相关知识"
-                title="相关知识"
+                aria-label="打开相关知识与难点"
+                title="相关知识 · 难点"
                 onClick={showKnowledgePanel}
               >
                 <Network size={17} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="rail-btn"
-                aria-label="打开智能难点"
-                title="智能难点"
-                onClick={() => {
-                  setPanel('difficulty');
-                }}
-              >
-                <Lightbulb size={17} aria-hidden="true" />
                 {scan.all.length > 0 && <span className="rail-count">{scan.all.length}</span>}
-              </button>
-              <button
-                type="button"
-                className="rail-btn"
-                aria-label="打开我的笔记"
-                title="我的笔记"
-                onClick={() => {
-                  setPanel('notes');
-                }}
-              >
-                <NotebookPen size={17} aria-hidden="true" />
-                {here.length > 0 && <span className="rail-count">{here.length}</span>}
               </button>
             </div>
           ) : (
@@ -1536,16 +1503,9 @@ export function ReaderView({
                   }}
                 >
                   目录
-                </button>
-                <button
-                  type="button"
-                  className="chip"
-                  aria-pressed={panel === 'bookmarks'}
-                  onClick={() => {
-                    setPanel('bookmarks');
-                  }}
-                >
-                  书签{bookmarks.length > 0 ? ` ${String(bookmarks.length)}` : ''}
+                  {bookmarks.length + here.length > 0
+                    ? ` ${String(bookmarks.length + here.length)}`
+                    : ''}
                 </button>
                 <button
                   type="button"
@@ -1563,27 +1523,7 @@ export function ReaderView({
                   aria-pressed={panel === 'knowledge'}
                   onClick={showKnowledgePanel}
                 >
-                  知识
-                </button>
-                <button
-                  type="button"
-                  className="chip"
-                  aria-pressed={panel === 'difficulty'}
-                  onClick={() => {
-                    setPanel('difficulty');
-                  }}
-                >
-                  难点{scan.all.length > 0 ? ` ${String(scan.all.length)}` : ''}
-                </button>
-                <button
-                  type="button"
-                  className="chip"
-                  aria-pressed={panel === 'notes'}
-                  onClick={() => {
-                    setPanel('notes');
-                  }}
-                >
-                  我的笔记{here.length > 0 ? ` ${String(here.length)}` : ''}
+                  知识{scan.all.length > 0 ? ` ${String(scan.all.length)}` : ''}
                 </button>
               </div>
 
@@ -1597,23 +1537,25 @@ export function ReaderView({
                   onClose={() => {
                     setPanel(null);
                   }}
-                />
-              )}
-
-              {panel === 'bookmarks' && (
-                <BookmarksPanel
                   bookmarks={bookmarks}
-                  currentPage={currentPage}
-                  onJump={(bookmark) => {
-                    scrollToPage(bookmark.page);
-                  }}
-                  onAdd={(label) => {
+                  annotations={here}
+                  activeNoteId={activeAnnotationId}
+                  onAddBookmark={(label) => {
                     onAddBookmark(currentPage, label);
                   }}
-                  onRename={onRenameBookmark}
-                  onDelete={onDeleteBookmark}
-                  onClose={() => {
-                    setPanel(null);
+                  onRenameBookmark={onRenameBookmark}
+                  onDeleteBookmark={onDeleteBookmark}
+                  onJumpToNote={jumpToAnnotation}
+                  onEditNote={(id, note) => {
+                    onEditAnnotation(id, { note });
+                  }}
+                  onDeleteNote={setPendingDelete}
+                  onExportNotes={() => {
+                    downloadTextFile(
+                      notesFileName(paper),
+                      buildNotesMarkdown({ paper, annotations }),
+                      'text/markdown;charset=utf-8',
+                    );
                   }}
                 />
               )}
@@ -1634,6 +1576,7 @@ export function ReaderView({
                   canSaveNote={ai.session?.source.anchor != null}
                   onSaveNote={saveAiNote}
                   onJumpToCitation={jumpToCitation}
+                  documentReady={documentText.ready && documentText.pages.length > 0}
                   onClose={() => {
                     setPanel(null);
                   }}
@@ -1654,39 +1597,10 @@ export function ReaderView({
                   onJumpToQuote={jumpToQuote}
                   onOpenConceptInProject={onOpenConceptInProject}
                   onNotice={setSelectionNotice}
-                />
-              )}
-
-              {panel === 'notes' && (
-                <NotesPanel
-                  annotations={annotations}
-                  currentPdfSha256={pdfSha256}
-                  activeId={activeAnnotationId}
-                  onJump={jumpToAnnotation}
-                  onEdit={onEditAnnotation}
-                  onDelete={setPendingDelete}
-                  onExport={() => {
-                    downloadTextFile(
-                      notesFileName(paper),
-                      buildNotesMarkdown({ paper, annotations }),
-                      'text/markdown;charset=utf-8',
-                    );
-                  }}
-                  onClose={() => {
-                    setPanel(null);
-                  }}
-                />
-              )}
-
-              {panel === 'difficulty' && (
-                <DifficultyPanel
                   scan={scan}
                   online={health?.online === true}
                   currentPage={currentPage}
-                  onShow={showSuggestion}
-                  onClose={() => {
-                    setPanel(null);
-                  }}
+                  onShowDifficulty={showSuggestion}
                 />
               )}
             </div>

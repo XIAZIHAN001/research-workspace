@@ -1238,31 +1238,91 @@ button.row-main:active {
 /* ---------- settings ---------- */
 /* A large settings window with a category rail, like the desktop settings surfaces. */
 .dialog:has(.settings) {
+  display: flex;
+  flex-direction: column;
   width: min(1080px, calc(100vw - 32px));
+  /* One height for every section: switching tabs must not resize the sheet. This is the middle
+     between the tallest sections (个人, AI 服务) and the shortest (外观), so neither jumps. */
+  height: min(604px, 88vh);
   max-height: min(88vh, 900px);
-  overflow-y: auto;
+  /* The sheet itself never scrolls: the title stays put and only the settings column moves. */
+  overflow: hidden;
   background: var(--color-bg-panel);
 }
 
 .dialog:has(.settings) .dialog-body {
-  padding: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 0;
+  min-height: 0;
+  padding: 0;
 }
 
 .dialog:has(.settings) .dialog-head {
+  flex: none;
   padding: 16px 20px 0;
 }
 
 .dialog:has(.settings) .settings {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 12px 20px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /*
+   * WebView2 falls back to the system scrollbar — complete with its arrow buttons — as soon as
+   * `scrollbar-width`/`scrollbar-color` are set, which is exactly what put the arrows outside
+   * the capsule. Reset both here and paint the whole scrollbar with the legacy pseudo-elements.
+   */
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.dialog:has(.settings) .settings::-webkit-scrollbar {
+  width: 12px;
+}
+
+/* No native arrow buttons: the track and thumb are one continuous capsule. */
+.dialog:has(.settings) .settings::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.dialog:has(.settings) .settings::-webkit-scrollbar-track {
+  margin-block: 6px;
+  border-radius: 999px;
+  background: var(--row-hover);
+}
+
+.dialog:has(.settings) .settings::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+
+.dialog:has(.settings) .settings::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--scroll-thumb) 72%, var(--text));
+}
+
+.dialog:has(.settings) .settings::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .settings {
   display: grid;
   grid-template-columns: 170px minmax(0, 1fr);
   gap: 28px;
-  width: min(860px, 100%);
+  /*
+   * 866 is six pixels wider than the old 860: half of the 12px scrollbar, which used to make the
+   * cards jump narrower on sections that scroll. The stable gutter then reserves that space on
+   * every section, so all cards land on the same width.
+   */
+  width: min(866px, 100%);
   margin: 0 auto;
+  scrollbar-gutter: stable;
 }
 
 .settings-nav {

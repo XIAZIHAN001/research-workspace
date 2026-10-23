@@ -21,6 +21,9 @@ import { AiMath } from './AiMath';
 import { prefersReducedMotion, useAnswerReveal } from './useAnswerReveal';
 import type { AiSession, AiTurn } from './useAiReading';
 
+/** The passages that restate what the reader is looking at; document pages are the rest. */
+const PRIMARY_PASSAGE_IDS: readonly string[] = Object.values(PASSAGE_IDS);
+
 interface AiPanelProps {
   session: AiSession | null;
   busy: boolean;
@@ -39,6 +42,13 @@ interface AiPanelProps {
   onSaveNote: (turn: AiTurn) => void;
   onJumpToCitation: (citation: AiCitation) => void;
   onClose: () => void;
+  /**
+   * True once the whole paper's text has been extracted locally.
+   *
+   * The panel says what will be sent before the first question, and "the page" and "the whole
+   * paper" are different promises. Optional so an embedder without extraction still renders.
+   */
+  documentReady?: boolean;
 }
 
 const MAX_QUESTION = 1000;
@@ -47,7 +57,8 @@ const MAX_QUESTION = 1000;
  * The openers offered before a conversation exists.
  *
  * They are questions, not modes: each one produces a normal answer with normal citation
- * checking, and each is answerable from the current page alone — which is all that is sent.
+ * checking. Once the paper's text has been extracted the whole document is attached first, so
+ * "this page" is a starting point rather than the only thing the model has seen.
  */
 const OPENERS: readonly { label: string; question: string }[] = [
   {
@@ -387,6 +398,7 @@ export function AiPanel({
   onSaveNote,
   onJumpToCitation,
   onClose,
+  documentReady = false,
 }: AiPanelProps) {
   const [question, setQuestion] = useState('');
   const [showRange, setShowRange] = useState(false);
@@ -500,7 +512,9 @@ export function AiPanel({
           <div className="ai-empty">
             <p>可以直接问这一页的任何问题。在原文里选中一段再提问，回答就能精确回到那段文字。</p>
             <p className="ai-hint">
-              现在只会带上第 {currentPage} 页的正文，不会发送整篇论文，也不会保存对话记录。
+              {documentReady
+                ? '提问时会先带上已提取的整篇论文正文，回答里的引用会标出页码；对话不会保存。'
+                : `现在只会带上第 ${String(currentPage)} 页的正文，不会保存对话记录。`}
             </p>
           </div>
           <div className="ai-quick" role="group" aria-label="可以这样问">
@@ -538,8 +552,8 @@ export function AiPanel({
               第 {session.source.page} 页
               {session.source.anchor === null
                 ? '整页'
-                : `，选中 ${String(session.source.anchor.quote.length)} 字`}{' '}
-              —— 查看会发送的范围
+                : `，选中 ${String(session.source.anchor.quote.length)} 字`}
+              {session.turns[0]?.request.scope === 'document' && '（整篇论文）'} —— 查看会发送的范围
             </button>
             {/* Said before anything is sent, not buried inside the disclosure: if the selection
                 is a formula broken into single glyphs, the reader should know that the model is
@@ -561,20 +575,37 @@ export function AiPanel({
                     {session.turns[0].request.layoutNotice}
                   </p>
                 )}
-                {session.turns[0]?.request.passages.map((passage) => (
-                  <div key={passage.id} className="ai-range-part">
-                    <span className="ai-range-label">
-                      {passage.id === PASSAGE_IDS.selection
-                        ? '选中的原文'
-                        : passage.id === PASSAGE_IDS.page
-                          ? '这一页的原文'
-                          : passage.id === PASSAGE_IDS.before
-                            ? '同页上文'
-                            : '同页下文'}
-                    </span>
-                    <p>{passage.text}</p>
-                  </div>
-                ))}
+                {session.turns[0]?.request.scope === 'document' && (
+                  <p className="ai-range-note">
+                    整篇论文已按页发送
+                    {session.turns[0].request.document != null
+                      ? `（${String(session.turns[0].request.document.pagesSent)}/${String(session.turns[0].request.document.pagesTotal)} 页${session.turns[0].request.document.truncated ? '，超长部分未发送' : ''}）`
+                      : ''}
+                    ；这里只展开提问所依据的原文，引用会标出页码。
+                  </p>
+                )}
+                {session.turns[0]?.request.passages
+                  .filter(
+                    (passage) =>
+                      session.turns[0]?.request.scope !== 'document' ||
+                      PRIMARY_PASSAGE_IDS.includes(passage.id),
+                  )
+                  .map((passage) => (
+                    <div key={passage.id} className="ai-range-part">
+                      <span className="ai-range-label">
+                        {passage.id === PASSAGE_IDS.selection
+                          ? '选中的原文'
+                          : passage.id === PASSAGE_IDS.page
+                            ? '这一页的原文'
+                            : passage.id === PASSAGE_IDS.before
+                              ? '同页上文'
+                              : passage.id === PASSAGE_IDS.after
+                                ? '同页下文'
+                                : `第 ${String(passage.page)} 页`}
+                      </span>
+                      <p>{passage.text}</p>
+                    </div>
+                  ))}
               </div>
             )}
           </section>
