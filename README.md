@@ -1,3 +1,5 @@
+<img src="src-tauri/app-icon.png" alt="Research Workspace" width="120" align="right">
+
 # Research Workspace
 
 面向论文精读的本地优先研究工作台：把 PDF 阅读、笔记、书签、知识关系与可核验的 AI 解读放在同一个桌面应用里。
