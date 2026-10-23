@@ -1,5 +1,5 @@
 import { useState, type SubmitEvent } from 'react';
-import { MAX_NAME_LENGTH } from '../../domain/normalize';
+import { MAX_TITLE_LENGTH } from '../../domain/normalize';
 import {
   paperStatus,
   READING_STATUSES,
@@ -76,7 +76,7 @@ function EditForm({
         <input
           className="input"
           value={title}
-          maxLength={MAX_NAME_LENGTH * 2}
+          maxLength={MAX_TITLE_LENGTH}
           data-autofocus
           onChange={(event) => {
             setTitle(event.target.value);

@@ -1,6 +1,6 @@
-import { useRef, useState, type SubmitEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { FileText, Upload } from 'lucide-react';
-import { MAX_NAME_LENGTH } from '../../domain/normalize';
+import { MAX_TITLE_LENGTH } from '../../domain/normalize';
 import type { Paper, PaperInput } from '../../domain/papers';
 import type { PaperPdf, PdfBytes } from '../../domain/pdfFile';
 import type { Project } from '../../domain/project';
@@ -16,7 +16,7 @@ import type { ImportCommit, ImportIntent } from './importPaperFlow';
  * Injectable for the same reason `probe` is: the tests need a deterministic answer without
  * building a real PDF. Consumes the bytes it is given, like `probe`.
  */
-export type ReadPdfMetadata = (bytes: PdfBytes) => Promise<PdfMetadata>;
+export type ReadPdfMetadata = (bytes: PdfBytes, titleHint?: string) => Promise<PdfMetadata>;
 
 interface ImportPaperDialogProps {
   open: boolean;
@@ -55,6 +55,18 @@ function titleFromFile(name: string): string {
     .replace(/\.[^.]+$/, '')
     .replace(/[_-]+/g, ' ')
     .trim();
+}
+
+/**
+ * A paper title short enough to sit inside a button.
+ *
+ * The full title goes in the tooltip and the sentence above the buttons; the button itself only
+ * has to say which paper is meant. Counted in code points so an emoji or a CJK title is never
+ * cut mid-character.
+ */
+function shortTitle(title: string, max = 24): string {
+  const characters = Array.from(title);
+  return characters.length <= max ? title : `${characters.slice(0, max).join('')}…`;
 }
 
 function ImportForm({
@@ -102,6 +114,19 @@ function ImportForm({
    * the moment the field is edited by hand.
    */
   const titleIsFromFile = useRef(false);
+  /**
+   * The duplicate confirmation, brought into view when it appears.
+   *
+   * It is appended after the form's fields, so in a short window it can land below the dialog's
+   * visible area — the reader answered "which file?" and got no visible question back. Scrolling
+   * it into view is the minimum that makes the choice reachable without hunting for it.
+   */
+  const pendingRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (pending === null) return;
+    pendingRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [pending]);
 
   const fields = (): PaperInput => {
     const parsedYear = year.trim() === '' ? undefined : Number(year);
@@ -131,7 +156,9 @@ function ImportForm({
     try {
       const bytes = new Uint8Array(await chosen.arrayBuffer());
       if (token !== metaToken.current) return;
-      const meta = await readMetadata(bytes);
+      // The file name is often the paper's own title, and it anchors the first-page author
+      // scan when the PDF carries no title in its metadata.
+      const meta = await readMetadata(bytes, titleFromFile(chosen.name));
       if (token !== metaToken.current) return;
 
       if (meta.title !== undefined && meta.title !== '') {
@@ -309,7 +336,7 @@ function ImportForm({
         <input
           className="input"
           value={title}
-          maxLength={MAX_NAME_LENGTH * 2}
+          maxLength={MAX_TITLE_LENGTH}
           placeholder="例如 Attention Is All You Need"
           onChange={(event) => {
             setTitle(event.target.value);
@@ -390,7 +417,7 @@ function ImportForm({
       </label>
 
       {pending !== null && (
-        <div className="hint" role="status">
+        <div ref={pendingRef} className="hint" role="status">
           <p>
             这个文件和《{pending.duplicateOf.title}
             》用的是同一份文件（内容哈希相同）。同一份文件不代表同一篇论文。
@@ -408,11 +435,13 @@ function ImportForm({
             <button
               type="button"
               className="btn btn-primary"
+              aria-label={`加入《${pending.duplicateOf.title}》`}
+              title={`加入《${pending.duplicateOf.title}》`}
               onClick={() => {
                 write(pending.pdf, pending.duplicateOf);
               }}
             >
-              加入《{pending.duplicateOf.title}》
+              加入《{shortTitle(pending.duplicateOf.title)}》
             </button>
           </div>
         </div>

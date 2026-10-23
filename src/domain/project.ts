@@ -30,7 +30,9 @@ export function createProject(
   const name = normalizeName(rawTitle);
   if (name === null) return null;
 
-  const paper = createPaper({ title: name }, makeId, now);
+  // The project keeps a name; the paper it is built around keeps the full title. They are the
+  // same words at creation, but a title is allowed to be longer than a name.
+  const paper = createPaper({ title: rawTitle }, makeId, now);
   // Unreachable: `name` is already normalized, so createPaper cannot reject it.
   if (paper === null) return null;
 

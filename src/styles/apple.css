@@ -1117,15 +1117,6 @@ select.input {
   border-radius: var(--r-xl);
 }
 
-.reader-side-tabs {
-  padding: 3px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background-color: var(--tile);
-  background-image: none;
-  box-shadow: none;
-}
-
 .reader-side-tabs .chip {
   height: 28px;
   padding: 0 12px;

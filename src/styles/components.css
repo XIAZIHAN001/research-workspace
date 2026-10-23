@@ -688,8 +688,21 @@ button.row-main:active {
 
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* A dialog button whose label carries a title can be wider than the dialog. Wrapping the row
+   keeps the buttons inside it; letting the label wrap is the last resort before clipping. */
+.dialog-actions .btn {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  padding-block: 6px;
+  white-space: normal;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .form {
@@ -860,6 +873,7 @@ button.row-main:active {
 .hint {
   color: var(--text-3);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .hint-error {

@@ -1,4 +1,4 @@
-import { normalizeName } from './normalize';
+import { normalizeTitle } from './normalize';
 import type { PaperPdf, PaperReading } from './pdfFile';
 
 /** Where a paper is in the reading queue. Absence on a paper means `unread`. */
@@ -169,7 +169,7 @@ function cleanAuthors(authors: readonly string[]): string[] {
  * DOI can never match a later import, so keeping it would only look like a working link.
  */
 export function createPaper(input: PaperInput, makeId: () => string, now: number): Paper | null {
-  const title = normalizeName(input.title);
+  const title = normalizeTitle(input.title);
   if (title === null) return null;
 
   const paper: Paper = {
@@ -213,7 +213,7 @@ export function applyPaperEdit(
   const updated: Paper = { ...current };
 
   if (edit.title !== undefined) {
-    const title = normalizeName(edit.title);
+    const title = normalizeTitle(edit.title);
     if (title === null) return { ok: false, failure: { reason: 'blank-title' } };
     updated.title = title;
   }

@@ -75,6 +75,7 @@ import {
   MIN_SCALE,
   nextScale,
   PAGE_GAP,
+  PAGE_GUTTER,
   pageAtOffset,
   pageTops,
   previousScale,
@@ -247,6 +248,8 @@ export function ReaderView({
    * its own entry, and the column re-renders from the merged map.
    */
   const [pageHeights, setPageHeights] = useState<ReadonlyMap<number, number>>(() => new Map());
+  /** The widest page seen so far, at scale 1. Only ever grows, so the column never jitters. */
+  const [widestPage, setWidestPage] = useState<number | null>(null);
   const [pageDraft, setPageDraft] = useState<string | null>(null);
   const restored = useRef(false);
   /** Set while a jump is being scrolled to, so interim positions are ignored. */
@@ -473,6 +476,9 @@ export function ReaderView({
       next.set(pageNumber, size.height);
       return next;
     });
+    // A paper is usually one page size, but a landscape figure page is not, and the column has
+    // to be wide enough for the widest page the reader can scroll to.
+    setWidestPage((prev) => (prev === null || size.width > prev ? size.width : prev));
   }, []);
   const tops = useMemo(() => pageTops(heights), [heights]);
   // Read by the scroll handler, which needs the current column rather than the one from
@@ -777,6 +783,9 @@ export function ReaderView({
     // and any constant term here would be lost again on every one of them — the view drifted
     // a step per reflow and landed pages away from where the reader was.
     container.scrollTop = Math.max(0, top + viewAnchor.current.fraction * height);
+    // Horizontally the page stays centred, which is where it sits whenever it fits: zooming in
+    // from fit-width would otherwise hand the reader the page's left edge instead of its middle.
+    container.scrollLeft = Math.max(0, (container.scrollWidth - container.clientWidth) / 2);
   }, [scale, tops, heights]);
 
   const windowRange = renderWindow(currentPage, pageCount);
@@ -1351,7 +1360,23 @@ export function ReaderView({
               setPendingSelection(null);
             }}
           >
-            <div className="reader-column" style={{ height: `${totalHeight(heights)}px` }}>
+            {/*
+              The column is as wide as the page it holds, not as wide as the viewport. The
+              slots are centred absolutely inside it, so a column fixed to the viewport width
+              let a zoomed-in page overflow on both sides — and a left-to-right scroll container
+              can only scroll towards its end, which left the overflow on the left permanently
+              unreachable (the paper's own line numbers on the left never showed).
+            */}
+            <div
+              className="reader-column"
+              style={{
+                height: `${totalHeight(heights)}px`,
+                width: `${Math.max(
+                  containerWidth,
+                  (widestPage ?? baseSize?.width ?? 600) * scale + PAGE_GUTTER * 2,
+                )}px`,
+              }}
+            >
               {Array.from({ length: pageCount }, (_, index) => {
                 const pageNumber = index + 1;
                 const active = pageNumber >= windowRange.first && pageNumber <= windowRange.last;

@@ -62,9 +62,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Fixed width so the two zoom buttons never shift as the percentage gains a digit; the
+   text is centred so the value sits the same distance from each of them. */
 .reader-zoom-value {
-  min-width: 3.2rem;
-  text-align: right;
+  min-width: 2rem;
+  text-align: center;
 }
 
 .reader-status {
@@ -94,6 +96,9 @@
 
 .reader-column {
   position: relative;
+  /* Before the first measurement, and whenever the viewport is wider than the page, the column
+     still fills the reader. The inline width only ever grows past this. */
+  min-width: 100%;
 }
 
 .reader-slot {
@@ -545,19 +550,14 @@
   width: 100%;
 }
 
+/* Six tabs do not fit on one line at the narrowest panel, so this row wraps — and a track
+   behind a wrapped row reads as a second card showing through the pills. The tabs stand on
+   the panel themselves instead; each pill carries its own edge. */
 .reader-side-tabs {
   display: flex;
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
-  background-color: var(--control-fill);
-  background-image: linear-gradient(180deg, var(--control-sheen), transparent 72%);
-  box-shadow:
-    inset 0 1px 0 var(--inner-hi),
-    var(--control-lift);
 }
 
 /* Six tabs do not fit on one line at the narrowest panel: wrap the row, never the labels. */
@@ -1163,13 +1163,178 @@
   color: var(--text-2);
 }
 
-.ai-busy {
+/* While the answer is on its way --------------------------------------------- */
+
+.ai-thinking {
   display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.ai-thinking-mark {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+
+.ai-thinking-mark > svg {
+  animation: ai-breathe 1.9s var(--ease-out) infinite;
+}
+
+.ai-orbit {
+  position: absolute;
+  inset: 2px;
+  border: 1px solid transparent;
+  border-top-color: color-mix(in srgb, var(--text) 38%, transparent);
+  border-radius: 50%;
+  animation: ai-orbit 1.4s linear infinite;
+}
+
+.ai-orbit-b {
+  inset: 6px;
+  animation-duration: 2.1s;
+  animation-direction: reverse;
+  opacity: 0.55;
+}
+
+.ai-thinking-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+
+.ai-thinking-stage {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  animation: ai-stage-in 260ms var(--ease-out);
+}
+
+.ai-thinking-dots {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
+}
+
+.ai-thinking-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-2);
+  animation: ai-dot 1.2s ease-in-out infinite;
+}
+
+.ai-thinking-dots i:nth-child(2) {
+  animation-delay: 180ms;
+}
+
+.ai-thinking-dots i:nth-child(3) {
+  animation-delay: 360ms;
+}
+
+.ai-thinking-track {
+  display: block;
+  overflow: hidden;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.ai-thinking-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--text) 45%, transparent);
+  transition: width 700ms var(--ease-out);
+}
+
+.ai-thinking-note {
   margin: 0;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+@keyframes ai-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes ai-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ai-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes ai-stage-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The caret that trails the answer while it is written out. */
+.ai-typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ai-caret {
+  width: 7px;
+  height: 13px;
+  border-radius: 1px;
+  background: var(--text);
+  opacity: 0.7;
+  animation: ai-caret 1s steps(2, start) infinite;
+}
+
+@keyframes ai-caret {
+  50% {
+    opacity: 0;
+  }
 }
 
 .spin {
@@ -1183,8 +1348,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin {
+  .spin,
+  .ai-thinking-mark > svg,
+  .ai-orbit,
+  .ai-thinking-dots i,
+  .ai-thinking-stage,
+  .ai-caret {
     animation: none;
+  }
+
+  .ai-thinking-track i {
+    transition: none;
   }
 }
 

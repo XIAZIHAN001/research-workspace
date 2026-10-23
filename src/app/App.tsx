@@ -18,7 +18,7 @@ import {
   describeEditFailure,
   type ImportCommit,
 } from '../features/library/importPaperFlow';
-import { probePdf } from '../features/reader/pdfjs';
+import { probePdf, readPdfMetadata } from '../features/reader/pdfjs';
 import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
@@ -38,6 +38,7 @@ import { makeId } from '../services/ids';
 import type { Project } from '../domain/project';
 import type { ProjectsState } from '../domain/projectsState';
 import { daysBetween } from '../domain/time';
+import { MAX_NAME_LENGTH } from '../domain/normalize';
 import type { ProjectsStore } from '../services/projectsStore';
 import { createPdfBlobStore, type PdfBlobStore } from '../services/pdfStore';
 import type { LoadIssue } from '../services/storage';
@@ -151,6 +152,41 @@ export function App({
       ),
     [papers],
   );
+  /**
+   * Repairs titles that the old 80-character rule cut short.
+   *
+   * Before 0.12.1 a paper's title was normalized with the project-name limit, so a long title was
+   * already stored truncated. The rule is fixed for new imports; existing records still hold the
+   * cut string, while the PDF's own metadata has the whole title. A record is replaced only when
+   * its title is exactly the old limit, is a prefix of the PDF's title, and the PDF's title is
+   * longer — the strongest evidence both name the same paper. Best effort: an unreadable file
+   * leaves the record untouched.
+   */
+  const titleRepairs = useRef(new Set<string>());
+  useEffect(() => {
+    for (const paper of Object.values(papers)) {
+      const pdf = paper.pdf;
+      if (pdf === undefined || titleRepairs.current.has(paper.id)) continue;
+      if (Array.from(paper.title).length !== MAX_NAME_LENGTH) continue;
+      titleRepairs.current.add(paper.id);
+      const stored = paper.title;
+      void (async () => {
+        try {
+          const bytes = await blobStore.get(pdf.sha256);
+          if (bytes === null) return;
+          const meta = await readPdfMetadata(bytes);
+          const title = meta.title?.replace(/\s+/g, ' ').trim();
+          if (title === undefined || title === '') return;
+          if (Array.from(title).length <= Array.from(stored).length) return;
+          if (!title.toLowerCase().startsWith(stored.toLowerCase())) return;
+          actions.updatePaper(paper.id, { title });
+        } catch {
+          // A stored file that cannot be read is not a reason to rewrite the record.
+        }
+      })();
+    }
+  }, [actions, blobStore, papers]);
+
   /** Which papers have notes, for the library's "有笔记" filter. */
   const annotatedPaperIds = useMemo(
     () => new Set(annotations.map((annotation) => annotation.paperId)),
