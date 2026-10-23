@@ -239,6 +239,67 @@
   gap: 10px;
 }
 
+/* Two controls on one row: the input takes the space, its button keeps its own width. */
+.ai-settings__row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ai-settings__row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-settings__row .btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Model names can be long, so suggestions wrap and the list scrolls rather than widening. */
+.ai-model-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.ai-model-chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px 9px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--r-sm);
+  background: var(--input-fill);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.ai-model-chip:hover:not(:disabled) {
+  border-color: var(--select-edge);
+  color: var(--text);
+}
+
+.ai-model-chip[data-active='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.ai-model-chip:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .ai-settings__note {
   margin: 4px 0 0;
   padding: 8px 10px;

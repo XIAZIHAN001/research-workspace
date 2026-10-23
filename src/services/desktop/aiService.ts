@@ -35,6 +35,21 @@ export interface AiCredentialStatus {
   error: string | null;
 }
 
+/**
+ * One row of the provider table. The shell owns the list (`src-tauri/src/providers.rs`), so the
+ * settings page never has to guess an endpoint or a default model, and a new provider ships with
+ * one Rust change.
+ */
+export interface AiProviderPreset {
+  id: string;
+  label: string;
+  baseUrl: string;
+  defaultModel: string;
+  models: string[];
+  /** Whether the endpoint understands DeepSeek's `thinking` / `reasoningEffort` pair. */
+  supportsThinking: boolean;
+}
+
 export interface AiBudgetSettings {
   requests: number;
   tokensPerRequest: number;
@@ -44,9 +59,11 @@ export interface AiBudgetSettings {
 /** The documented thinking levels. `none` disables thinking entirely. */
 export type AiReasoningEffort = 'none' | 'low' | 'high' | 'max';
 
-/** How a model call is made: which model, how hard it thinks, and what it may spend. */
+/** How a model call is made: which provider and endpoint, which model, and what it may spend. */
 export interface AiSettings {
   budget: AiBudgetSettings;
+  provider: string;
+  baseUrl: string;
   model: string;
   reasoningEffort: AiReasoningEffort;
 }
@@ -54,6 +71,8 @@ export interface AiSettings {
 /** A save changes only the section it belongs to; the shell merges it with the rest. */
 export interface AiSettingsPatch {
   budget?: AiBudgetSettings;
+  provider?: string;
+  baseUrl?: string;
   model?: string;
   reasoningEffort?: AiReasoningEffort;
 }
@@ -89,11 +108,24 @@ export async function restartDesktopAiService(): Promise<DesktopAiStatus | null>
   }
 }
 
-/** Whether a key is stored. The value itself has no IPC path back to the page. */
-export async function getAiCredentialStatus(): Promise<AiCredentialStatus | null> {
+/**
+ * The provider table. Falls back to the one provider every build has, so the form still renders
+ * (with a note) if an older shell answers without the command.
+ */
+export async function getAiProviders(): Promise<AiProviderPreset[]> {
+  if (!isDesktopApp()) return [];
+  try {
+    return await invoke<AiProviderPreset[]>('ai_providers');
+  } catch {
+    return [];
+  }
+}
+
+/** Whether a key is stored for one provider. The value itself has no IPC path back to the page. */
+export async function getAiCredentialStatus(provider: string): Promise<AiCredentialStatus | null> {
   if (!isDesktopApp()) return null;
   try {
-    return await invoke<AiCredentialStatus>('ai_credentials_status');
+    return await invoke<AiCredentialStatus>('ai_credentials_status', { provider });
   } catch (error) {
     return {
       configured: false,
@@ -104,13 +136,16 @@ export async function getAiCredentialStatus(): Promise<AiCredentialStatus | null
 
 /**
  * Sends a key to Rust once. The caller must drop its own copy afterwards; this module never
- * keeps it, and Rust never returns it.
+ * keeps it, and Rust never returns it. Each provider has its own entry in the store.
  */
-export async function setAiApiKey(key: string): Promise<AiCredentialStatus | null> {
+export async function setAiApiKey(
+  provider: string,
+  key: string,
+): Promise<AiCredentialStatus | null> {
   if (!isDesktopApp()) return null;
   try {
-    await invoke('set_ai_api_key', { key });
-    return await invoke<AiCredentialStatus>('ai_credentials_status');
+    await invoke('set_ai_api_key', { provider, key });
+    return await invoke<AiCredentialStatus>('ai_credentials_status', { provider });
   } catch (error) {
     return {
       configured: false,
@@ -119,14 +154,45 @@ export async function setAiApiKey(key: string): Promise<AiCredentialStatus | nul
   }
 }
 
-export async function deleteAiApiKey(): Promise<CredentialMutation> {
+export async function deleteAiApiKey(provider: string): Promise<CredentialMutation> {
   if (!isDesktopApp()) return { ok: false, message: '只有桌面版可以管理系统凭据。' };
   try {
-    const status = await invoke<DesktopAiStatus>('delete_ai_api_key');
+    const status = await invoke<DesktopAiStatus>('delete_ai_api_key', { provider });
     notifyAiModeChanged();
     return { ok: true, status };
   } catch (error) {
     return { ok: false, message: typeof error === 'string' ? error : '删除 API Key 失败。' };
+  }
+}
+
+/** The result of asking a provider for its model catalogue. */
+export type AiModelList = { ok: true; models: string[] } | { ok: false; message: string };
+
+/**
+ * Asks the provider what models the account can use. The key is optional: an empty value means
+ * "use the one already stored for this provider", so the page never has to hold it.
+ */
+export async function listAiModels({
+  provider,
+  baseUrl,
+  apiKey,
+}: {
+  provider: string;
+  baseUrl: string;
+  apiKey?: string;
+}): Promise<AiModelList> {
+  if (!isDesktopApp()) {
+    return { ok: false, message: '只有桌面版可以向模型服务请求模型列表。' };
+  }
+  try {
+    const models = await invoke<string[]>('list_ai_models', {
+      provider,
+      baseUrl: baseUrl.trim() === '' ? null : baseUrl.trim(),
+      apiKey: apiKey === undefined || apiKey.trim() === '' ? null : apiKey.trim(),
+    });
+    return { ok: true, models };
+  } catch (error) {
+    return { ok: false, message: typeof error === 'string' ? error : '获取模型列表失败。' };
   }
 }
 

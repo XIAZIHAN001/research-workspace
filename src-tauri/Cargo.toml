@@ -1,6 +1,6 @@
 [package]
 name = "research-workspace"
-version = "0.11.0"
+version = "0.12.0"
 description = "Local-first research paper reading workspace"
 authors = ["Research Workspace"]
 edition = "2021"
@@ -15,6 +15,9 @@ tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+# Model discovery only: one GET {base}/models when the reader asks for the list. It never
+# carries a request body or a prompt, and it is the only outbound call the shell itself makes.
+reqwest = { version = "0.12", features = ["json"] }
 
 [target.'cfg(windows)'.dependencies]
 # Windows Credential Manager, called directly instead of through a wrapper crate: the surface

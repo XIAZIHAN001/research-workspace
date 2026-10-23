@@ -6,8 +6,8 @@
  * a page cannot point it at another host, another model, or another account.
  *
  * Two settings decide whether a request can cost money, and both must be set deliberately:
- * `AI_PROVIDER=deepseek` and a `DEEPSEEK_API_KEY`. The default is the offline mock provider, so
- * merely running the app cannot start a billable call.
+ * `AI_PROVIDER` naming a real provider and an API key for it. The default is the offline mock
+ * provider, so merely running the app cannot start a billable call.
  */
 
 /**
@@ -19,8 +19,22 @@ export const LOOPBACK_HOST = '127.0.0.1';
 
 export const DEFAULT_PORT = 8787;
 
-/** Providers this build knows how to talk to. */
-export const PROVIDER_NAMES = ['mock', 'deepseek'];
+/**
+ * Providers this build knows how to talk to.
+ *
+ * The ids match `src-tauri/src/providers.rs`, which owns the display names, preset endpoints and
+ * default models. Only `deepseek` has a dialect of its own (the `thinking` pair); every other id,
+ * including `custom`, is sent an ordinary OpenAI-compatible chat-completions request.
+ */
+export const PROVIDER_NAMES = [
+  'mock',
+  'deepseek',
+  'openai',
+  'moonshot',
+  'zhipu',
+  'dashscope',
+  'custom',
+];
 
 /** Endpoints that exist. Everything else is a 404, so this cannot act as a general proxy. */
 export const ROUTES = {
@@ -134,9 +148,24 @@ export function isValidModelName(value) {
   return (
     typeof value === 'string' &&
     value !== '' &&
-    value.length <= 64 &&
-    /^[A-Za-z0-9._-]+$/.test(value)
+    value.length <= 128 &&
+    /^[A-Za-z0-9._:/@-]+$/.test(value)
   );
+}
+
+/** The first non-empty string among the candidates, or undefined. */
+function firstFilled(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+  return undefined;
+}
+
+/** https anywhere; plain http only for a model server on this machine. */
+function isAllowedBaseUrl(value) {
+  if (typeof value !== 'string' || value === '') return false;
+  if (/^https:\/\/[^\s]+$/i.test(value)) return true;
+  return /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/.*)?$/i.test(value);
 }
 
 /**
@@ -153,16 +182,12 @@ export function isLoopbackOrigin(origin) {
 
 export function readConfig(
   env = process.env,
-  {
-    forceOffline = false,
-    allowEphemeralPort = false,
-    deferredKey = false,
-    requireOfficialEndpoint = false,
-  } = {},
+  { forceOffline = false, allowEphemeralPort = false, deferredKey = false } = {},
 ) {
   // `--offline` is not a preference, it is a wall: a machine that happens to have a key in its
   // environment must still be able to start a service that cannot spend anything.
-  const provider = forceOffline ? 'mock' : env.AI_PROVIDER === 'deepseek' ? 'deepseek' : 'mock';
+  const requestedProvider = typeof env.AI_PROVIDER === 'string' ? env.AI_PROVIDER.trim() : '';
+  const provider = forceOffline ? 'mock' : requestedProvider === '' ? 'mock' : requestedProvider;
   const extraOrigins = (env.AI_ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((value) => value.trim())
@@ -170,11 +195,30 @@ export function readConfig(
 
   // An effort that enables thinking would contradict a disabled thinking mode, so the two are
   // resolved here rather than sent upstream as a request that means two different things.
-  const thinking = env.DEEPSEEK_THINKING === 'disabled' ? 'disabled' : 'enabled';
-  const requestedEffort = REASONING_EFFORTS.includes(env.DEEPSEEK_REASONING_EFFORT)
-    ? env.DEEPSEEK_REASONING_EFFORT
-    : DEFAULT_REASONING_EFFORT;
-  const reasoningEffort = thinking === 'disabled' ? 'none' : requestedEffort;
+  const thinking =
+    firstFilled(env.AI_THINKING, env.DEEPSEEK_THINKING) === 'disabled' ? 'disabled' : 'enabled';
+  const requestedEffort = firstFilled(env.AI_REASONING_EFFORT, env.DEEPSEEK_REASONING_EFFORT);
+  const reasoningEffort =
+    thinking === 'disabled'
+      ? 'none'
+      : REASONING_EFFORTS.includes(requestedEffort)
+        ? requestedEffort
+        : DEFAULT_REASONING_EFFORT;
+
+  // The `DEEPSEEK_*` names are the pre-multi-provider spelling. They are still read so an
+  // existing launcher, script or test keeps working; the shell now writes the generic names.
+  const requestedBaseUrl = firstFilled(env.AI_BASE_URL, env.DEEPSEEK_BASE_URL);
+  const baseUrl = (requestedBaseUrl ?? DEFAULT_DEEPSEEK_BASE_URL).replace(/\/+$/, '');
+  const requestedModel = firstFilled(env.AI_MODEL, env.DEEPSEEK_MODEL);
+  const model = isValidModelName(requestedModel)
+    ? requestedModel
+    : // The mock provider never calls a model, and DeepSeek is the one provider whose default
+      // model this build knows by name. Any other paid provider with no model is a configuration
+      // problem rather than a guess that would be sent upstream.
+      provider === 'mock' || provider === 'deepseek'
+      ? KNOWN_DEEPSEEK_MODELS[0]
+      : '';
+  const apiKeyEnv = firstFilled(env.AI_API_KEY, env.DEEPSEEK_API_KEY) ?? '';
 
   return {
     port: readInt(env.AI_PORT, DEFAULT_PORT, { min: allowEphemeralPort ? 0 : 1, max: 65535 }),
@@ -198,24 +242,16 @@ export function readConfig(
     desktopMode: env.AI_DESKTOP_MODE === 'online' ? 'online' : 'mock',
     provider,
     /**
-     * Set only for the deepseek provider; the mock provider ignores it entirely.
+     * Set only for a paid provider; the mock provider ignores it entirely.
      *
      * The desktop does not put the key in the environment at all. It starts the sidecar with
      * `deferredKey: true` and sends the key over stdin once the process exists. Until that line
      * arrives, the service refuses to listen for model calls.
      */
-    apiKey:
-      forceOffline || typeof env.DEEPSEEK_API_KEY !== 'string' ? '' : env.DEEPSEEK_API_KEY.trim(),
+    apiKey: forceOffline ? '' : apiKeyEnv,
     deferredKey,
-    baseUrl: (env.DEEPSEEK_BASE_URL ?? DEFAULT_DEEPSEEK_BASE_URL).replace(/\/+$/, ''),
-    /**
-     * A local simulator is allowed only when the launcher says so *and* the address is
-     * loopback. The desktop release never sets this flag; it is used by the offline integration
-     * harness, which stands in for api.deepseek.com without reaching it.
-     */
-    allowLoopbackUpstream: env.AI_ALLOW_LOOPBACK_UPSTREAM === '1',
-    requireOfficialEndpoint,
-    model: isValidModelName(env.DEEPSEEK_MODEL) ? env.DEEPSEEK_MODEL : KNOWN_DEEPSEEK_MODELS[0],
+    baseUrl,
+    model,
     thinking,
     reasoningEffort,
     timeoutMs: readInt(env.AI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, { min: 1000, max: 600_000 }),
@@ -251,23 +287,24 @@ export function configProblems(config) {
   if (!PROVIDER_NAMES.includes(config.provider)) {
     problems.push(`未知的 AI_PROVIDER：${config.provider}`);
   }
-  if (config.provider === 'deepseek' && config.apiKey === '' && config.deferredKey !== true) {
-    problems.push('AI_PROVIDER=deepseek 需要同时设置 DEEPSEEK_API_KEY（只从环境变量读取）。');
+
+  const paid = config.provider !== 'mock';
+  if (paid && config.apiKey === '' && config.deferredKey !== true) {
+    problems.push(
+      `AI_PROVIDER=${config.provider} 需要同时提供一个 API Key（只从环境变量或桌面凭据通道读取）。`,
+    );
   }
-  const loopbackUpstream =
-    config.allowLoopbackUpstream === true &&
-    /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(config.baseUrl);
-  if (config.requireOfficialEndpoint === true) {
-    // The desktop product talks to exactly one address. A test harness may stand a simulator on
-    // loopback, but nothing a page or a stray environment variable does can point the paid
-    // provider elsewhere.
-    if (config.baseUrl !== DEFAULT_DEEPSEEK_BASE_URL && !loopbackUpstream) {
+  if (paid) {
+    // The endpoint is the reader's choice, so the rule is about transport, not about a named
+    // vendor: https anywhere, plain http only on loopback where nothing leaves the machine.
+    if (!isAllowedBaseUrl(config.baseUrl)) {
       problems.push(
-        `桌面版只允许官方 DeepSeek 端点 ${DEFAULT_DEEPSEEK_BASE_URL}，当前是 ${config.baseUrl}`,
+        `API 地址必须是 https，或者本机（127.0.0.1 / localhost）的 http 地址，当前是 ${config.baseUrl}`,
       );
     }
-  } else if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(config.baseUrl) && !loopbackUpstream) {
-    problems.push(`DEEPSEEK_BASE_URL 必须是 https 地址，当前是 ${config.baseUrl}`);
+    if (!isValidModelName(config.model)) {
+      problems.push(`模型名称无效或缺失：${config.model === '' ? '（空）' : config.model}`);
+    }
   }
   // A short desktop credential is not a credential. The shell generates 32 random bytes; this
   // bound refuses a hand-written placeholder rather than accepting it as protection.

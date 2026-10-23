@@ -22,6 +22,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod credentials;
+mod providers;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -68,13 +69,6 @@ impl AiMode {
         }
     }
 
-    fn provider(self) -> &'static str {
-        match self {
-            Self::Mock => "mock",
-            Self::Online => "deepseek",
-        }
-    }
-
     fn expects_online(self) -> bool {
         matches!(self, Self::Online)
     }
@@ -115,25 +109,30 @@ impl BudgetSettings {
     }
 }
 
-/// Model names this build offers. They match `KNOWN_DEEPSEEK_MODELS` in `server/config.mjs`;
-/// the sidecar would accept any syntactically valid name, but a free-text field in the interface
-/// would turn a typo into a failed paid request.
-const KNOWN_MODELS: [&str; 2] = ["deepseek-flash", "deepseek-v4-pro"];
 /// The documented thinking levels. `none` disables thinking; the other three enable it.
+/// Only a provider with `supports_thinking` receives them; the setting is kept for every provider
+/// so switching back to DeepSeek does not lose the reader's choice.
 const REASONING_EFFORTS: [&str; 4] = ["none", "low", "high", "max"];
-const DEFAULT_MODEL: &str = "deepseek-flash";
 const DEFAULT_REASONING_EFFORT: &str = "low";
 
+fn default_provider() -> String {
+    providers::DEFAULT_PROVIDER.to_string()
+}
+
+fn default_base_url() -> String {
+    providers::DEFAULT_BASE_URL.to_string()
+}
+
 fn default_model() -> String {
-    DEFAULT_MODEL.to_string()
+    providers::DEFAULT_MODEL.to_string()
 }
 
 fn default_reasoning_effort() -> String {
     DEFAULT_REASONING_EFFORT.to_string()
 }
 
-/// Everything the interface may change about how a model call is made: the model, how hard it
-/// thinks, and the spending caps. None of it is a secret.
+/// Everything the interface may change about how a model call is made: which provider and
+/// endpoint, the model, how hard it thinks, and the spending caps. None of it is a secret.
 ///
 /// The sidecar reads these from its environment at spawn time, so a change takes effect by
 /// restarting it — unlike the API key, there is no live channel for them.
@@ -142,6 +141,10 @@ fn default_reasoning_effort() -> String {
 struct AiSettings {
     #[serde(default)]
     budget: BudgetSettings,
+    #[serde(default = "default_provider")]
+    provider: String,
+    #[serde(default = "default_base_url")]
+    base_url: String,
     #[serde(default = "default_model")]
     model: String,
     #[serde(default = "default_reasoning_effort")]
@@ -152,6 +155,8 @@ impl Default for AiSettings {
     fn default() -> Self {
         Self {
             budget: BudgetSettings::default(),
+            provider: default_provider(),
+            base_url: default_base_url(),
             model: default_model(),
             reasoning_effort: default_reasoning_effort(),
         }
@@ -161,12 +166,27 @@ impl Default for AiSettings {
 impl AiSettings {
     fn validate(&self) -> Result<(), String> {
         self.budget.validate()?;
-        if !KNOWN_MODELS.contains(&self.model.as_str()) {
+        if providers::find(&self.provider).is_none() {
             return Err(format!(
-                "未知的模型：{}。可选：{}。",
-                self.model,
-                KNOWN_MODELS.join(" / ")
+                "未知的模型提供方：{}。可选：{}。",
+                self.provider,
+                providers::all()
+                    .iter()
+                    .map(|preset| preset.id)
+                    .collect::<Vec<_>>()
+                    .join(" / ")
             ));
+        }
+        // Empty values are allowed while the reader is still filling the form; they become an
+        // error only when an online start is attempted. What is present must be well formed.
+        if !self.model.is_empty() && !providers::is_valid_model_name(&self.model) {
+            return Err(format!(
+                "模型名称不合法：{}。只能包含字母、数字和 . _ - : / @，最长 128 个字符。",
+                self.model
+            ));
+        }
+        if !self.base_url.is_empty() {
+            providers::validate_base_url(&self.base_url)?;
         }
         if !REASONING_EFFORTS.contains(&self.reasoning_effort.as_str()) {
             return Err(format!(
@@ -178,10 +198,36 @@ impl AiSettings {
         Ok(())
     }
 
+    /// The extra conditions for a call that can reach a paid endpoint.
+    fn online_ready(&self) -> Result<(), String> {
+        self.validate()?;
+        if self.provider == "custom" && self.base_url.is_empty() {
+            return Err("自定义供应商需要先填写 API 地址。".to_string());
+        }
+        if self.base_url.is_empty() {
+            return Err("请先填写 API 地址。".to_string());
+        }
+        if self.model.is_empty() {
+            return Err("请先填写或获取模型名称。".to_string());
+        }
+        Ok(())
+    }
+
     /// A hand-edited preferences file must not stop the application from starting.
     fn sanitized(mut self) -> Self {
-        if !KNOWN_MODELS.contains(&self.model.as_str()) {
-            self.model = default_model();
+        let preset = providers::find(&self.provider);
+        if preset.is_none() {
+            self.provider = default_provider();
+        }
+        let preset = providers::find(&self.provider);
+        let base_url = providers::normalize_base_url(&self.base_url);
+        self.base_url = if providers::validate_base_url(&base_url).is_ok() {
+            base_url
+        } else {
+            preset.map(|value| value.base_url.to_string()).unwrap_or_default()
+        };
+        if !providers::is_valid_model_name(&self.model) {
+            self.model = preset.map(|value| value.default_model.to_string()).unwrap_or_default();
         }
         if !REASONING_EFFORTS.contains(&self.reasoning_effort.as_str()) {
             self.reasoning_effort = default_reasoning_effort();
@@ -195,6 +241,8 @@ impl AiSettings {
 #[serde(rename_all = "camelCase")]
 struct AiSettingsPatch {
     budget: Option<BudgetSettings>,
+    provider: Option<String>,
+    base_url: Option<String>,
     model: Option<String>,
     reasoning_effort: Option<String>,
 }
@@ -304,7 +352,11 @@ fn current_status(manager: &AiManager) -> AiServiceStatus {
         }
         status
     };
-    status.credential_configured = credentials::status().configured;
+    let provider = {
+        let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        runtime.settings.provider.clone()
+    };
+    status.credential_configured = credentials::status_for(&provider).configured;
     status
 }
 
@@ -313,15 +365,23 @@ fn ai_service_info(manager: State<'_, AiManager>) -> AiServiceStatus {
     current_status(manager.inner())
 }
 
+/// The provider table the settings page renders. One source of truth: the same ids are used for
+/// credential targets, for the sidecar's environment and for the preferences file.
 #[tauri::command]
-fn ai_credentials_status() -> credentials::CredentialStatus {
-    credentials::status()
+fn ai_providers() -> Vec<providers::ProviderPreset> {
+    providers::all().to_vec()
+}
+
+#[tauri::command]
+fn ai_credentials_status(provider: String) -> credentials::CredentialStatus {
+    credentials::status_for(&provider)
 }
 
 #[tauri::command]
 fn set_ai_api_key(
     app: AppHandle,
     manager: State<'_, AiManager>,
+    provider: String,
     key: String,
 ) -> Result<AiServiceStatus, String> {
     let mut candidate = key.trim().to_string();
@@ -338,17 +398,18 @@ fn set_ai_api_key(
         ));
     }
 
-    let written = credentials::set(&candidate);
+    let written = credentials::set_for(&provider, &candidate);
     // This local copy exists only for the duration of the call. The IPC argument itself is
     // owned by Tauri and is not persisted or logged by this shell.
     wipe_string(&mut candidate);
     written?;
 
     // A key change while online takes effect by restarting with the new value. The old
-    // sidecar is stopped, so it cannot keep using the previous key.
+    // sidecar is stopped, so it cannot keep using the previous key. Only a change to the
+    // provider actually in use needs that restart.
     let restart = {
         let runtime = manager.0.lock().expect("AI runtime lock poisoned");
-        runtime.mode == AiMode::Online
+        runtime.mode == AiMode::Online && runtime.settings.provider == provider
     };
     if restart {
         start_service(&app, manager.inner());
@@ -360,15 +421,24 @@ fn set_ai_api_key(
 fn delete_ai_api_key(
     app: AppHandle,
     manager: State<'_, AiManager>,
+    provider: String,
 ) -> Result<AiServiceStatus, String> {
-    credentials::delete()?;
-    // Removing the key must also remove the ability to use it: stop the online child and
-    // return to mock in the same action.
-    {
+    credentials::delete_for(&provider)?;
+    // Removing the key of the provider in use must also remove the ability to use it: stop the
+    // online child and return to mock in the same action. A key belonging to some other provider
+    // does not affect the running service.
+    let affected = {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-        runtime.mode = AiMode::Mock;
+        if runtime.mode == AiMode::Online && runtime.settings.provider == provider {
+            runtime.mode = AiMode::Mock;
+            true
+        } else {
+            false
+        }
+    };
+    if affected {
+        start_service(&app, manager.inner());
     }
-    start_service(&app, manager.inner());
     Ok(current_status(manager.inner()))
 }
 
@@ -380,8 +450,20 @@ fn set_ai_mode(
 ) -> Result<AiServiceStatus, String> {
     let next = AiMode::parse(&mode)
         .ok_or_else(|| "未知的 AI 模式；只能是 mock 或 online。".to_string())?;
-    if next == AiMode::Online && !credentials::status().configured {
-        return Err("还没有配置 API Key，不能进入在线模式。".to_string());
+    if next == AiMode::Online {
+        let settings = {
+            let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+            runtime.settings.clone()
+        };
+        settings.online_ready()?;
+        if !credentials::status_for(&settings.provider).configured {
+            return Err(format!(
+                "还没有配置 {} 的 API Key，不能进入在线模式。",
+                providers::find(&settings.provider)
+                    .map(|preset| preset.label)
+                    .unwrap_or("当前供应商")
+            ));
+        }
     }
     {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
@@ -413,13 +495,24 @@ fn update_ai_settings(
         if let Some(budget) = patch.budget {
             next.budget = budget;
         }
+        if let Some(provider) = patch.provider {
+            next.provider = provider;
+        }
+        if let Some(base_url) = patch.base_url {
+            next.base_url = providers::normalize_base_url(&base_url);
+        }
         if let Some(model) = patch.model {
-            next.model = model;
+            next.model = model.trim().to_string();
         }
         if let Some(effort) = patch.reasoning_effort {
             next.reasoning_effort = effort;
         }
-        next.validate()?;
+        // A save while online must not leave the running service with settings it cannot use.
+        if runtime.mode == AiMode::Online {
+            next.online_ready()?;
+        } else {
+            next.validate()?;
+        }
         runtime.settings = next.clone();
         next
     };
@@ -434,6 +527,165 @@ fn update_ai_settings(
 fn restart_ai_service(app: AppHandle, manager: State<'_, AiManager>) -> AiServiceStatus {
     start_service(&app, manager.inner());
     current_status(manager.inner())
+}
+
+/// How much of a `/models` reply is read. A model list is a few kilobytes; anything larger is
+/// not a model list.
+const MODELS_RESPONSE_LIMIT: usize = 2 * 1024 * 1024;
+/// A catalogue larger than this is not worth a dropdown.
+const MODEL_LIST_LIMIT: usize = 500;
+
+/// Asks the provider what models the account can use.
+///
+/// The key never goes to the webview: the page either names a key it is about to save, or asks
+/// the shell to use the stored one. The request is made here, over https (or a loopback address),
+/// with redirects disabled so the Authorization header cannot be forwarded somewhere else.
+#[tauri::command]
+async fn list_ai_models(
+    manager: State<'_, AiManager>,
+    provider: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
+    let preset = providers::find(&provider)
+        .ok_or_else(|| format!("未知的模型提供方：{provider}。"))?;
+    let (stored_provider, stored_base_url) = {
+        let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        (
+            runtime.settings.provider.clone(),
+            runtime.settings.base_url.clone(),
+        )
+    };
+
+    let requested = providers::normalize_base_url(base_url.as_deref().unwrap_or(""));
+    let base = if !requested.is_empty() {
+        requested
+    } else {
+        let stored = providers::normalize_base_url(&stored_base_url);
+        // The stored endpoint belongs to the stored provider; asking a different provider for its
+        // catalogue must not borrow someone else's address.
+        if stored_provider == provider && !stored.is_empty() {
+            stored
+        } else {
+            preset.base_url.to_string()
+        }
+    };
+    if base.is_empty() {
+        return Err("请先填写 API 地址。".to_string());
+    }
+    providers::validate_base_url(&base)?;
+
+    let mut key = match api_key {
+        Some(value) if !value.trim().is_empty() => {
+            let candidate = value.trim().to_string();
+            let valid = candidate.chars().count() >= credentials::KEY_MIN_CHARS
+                && candidate.chars().count() <= credentials::KEY_MAX_CHARS
+                && candidate.chars().all(|value| ('!'..='~').contains(&value));
+            if !valid {
+                let mut candidate = candidate;
+                wipe_string(&mut candidate);
+                return Err(format!(
+                    "API Key 的长度必须在 {} 到 {} 个字符之间，并且不能包含空格或非 ASCII 字符。",
+                    credentials::KEY_MIN_CHARS,
+                    credentials::KEY_MAX_CHARS
+                ));
+            }
+            candidate
+        }
+        _ => credentials::get_for(&provider)?
+            .ok_or_else(|| "还没有保存这个提供方的 API Key，可以先保存再获取模型列表。".to_string())?,
+    };
+
+    let outcome = fetch_models(&base, &key).await;
+    wipe_string(&mut key);
+    outcome
+}
+
+async fn fetch_models(base: &str, key: &str) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        // A redirect could carry the key to a host the reader never configured.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| format!("无法初始化网络请求：{error}"))?;
+
+    let response = client
+        .get(format!("{base}/models"))
+        .header("Accept", "application/json")
+        .bearer_auth(key)
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                "请求模型列表超时（20 秒）。".to_string()
+            } else {
+                "连接不上模型服务，请检查地址、网络或代理设置。".to_string()
+            }
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        // The body may quote the request back; it is not read and not reported.
+        return Err(match status.as_u16() {
+            401 | 403 => "模型服务拒绝了这次请求（API Key 无效或没有权限）。".to_string(),
+            404 => "这个服务没有提供 GET /models 接口，请手动填写模型名称。".to_string(),
+            429 => "模型服务的频率限制已触发，请稍后再试。".to_string(),
+            code => format!("模型服务返回了错误（HTTP {code}）。"),
+        });
+    }
+    if let Some(length) = response.content_length() {
+        if length > MODELS_RESPONSE_LIMIT as u64 {
+            return Err("模型列表的响应过大，已放弃读取。".to_string());
+        }
+    }
+    let text = response
+        .text()
+        .await
+        .map_err(|_| "读取模型列表的响应失败。".to_string())?;
+    if text.len() > MODELS_RESPONSE_LIMIT {
+        return Err("模型列表的响应过大，已放弃读取。".to_string());
+    }
+    parse_models(&text)
+}
+
+/// Reads the model ids out of the shapes in use: `{"data": [{"id": …}]}` (OpenAI and most
+/// gateways), `{"models": [{"name": …}]}` (Ollama's native shape) or a bare array of strings.
+fn parse_models(text: &str) -> Result<Vec<String>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|_| "模型服务返回的不是 JSON。".to_string())?;
+
+    let mut found: Vec<String> = Vec::new();
+    let entries = value
+        .get("data")
+        .or_else(|| value.get("models"))
+        .and_then(|list| list.as_array())
+        .or_else(|| value.as_array());
+
+    if let Some(entries) = entries {
+        for entry in entries {
+            let id = entry
+                .as_str()
+                .or_else(|| entry.get("id").and_then(|value| value.as_str()))
+                .or_else(|| entry.get("name").and_then(|value| value.as_str()));
+            let Some(id) = id else { continue };
+            let id = id.trim();
+            if !providers::is_valid_model_name(id) {
+                continue;
+            }
+            if !found.iter().any(|existing| existing == id) {
+                found.push(id.to_string());
+            }
+            if found.len() >= MODEL_LIST_LIMIT {
+                break;
+            }
+        }
+    }
+
+    if found.is_empty() {
+        return Err("模型服务没有返回可用的模型名称。".to_string());
+    }
+    found.sort();
+    Ok(found)
 }
 
 fn random_token() -> String {
@@ -643,6 +895,12 @@ fn spawn_child(
         ));
     }
 
+    let provider = if mode.expects_online() {
+        settings.provider.as_str()
+    } else {
+        "mock"
+    };
+
     let mut command = Command::new(&node);
     command
         .arg(&launcher)
@@ -655,7 +913,8 @@ fn spawn_child(
         .env("AI_SESSION_TOKEN", token)
         .env("AI_DESKTOP_INSTANCE", instance)
         .env("AI_DESKTOP_MODE", mode.as_str())
-        .env("AI_PROVIDER", mode.provider())
+        .env("AI_PROVIDER", provider)
+        .env("AI_BASE_URL", &settings.base_url)
         .env("AI_PARENT_PID", std::process::id().to_string())
         .env("AI_PORT", "0")
         .env("AI_LOG_REQUESTS", "0")
@@ -668,18 +927,19 @@ fn spawn_child(
             "AI_BUDGET_TOKENS_SESSION",
             settings.budget.tokens_per_session.to_string(),
         )
-        .env("DEEPSEEK_MODEL", &settings.model)
+        .env("AI_MODEL", &settings.model)
         // `none` means no thinking at all; the service resolves a disabled thinking mode to
-        // effort `none` itself, so both variables are always sent and always agree.
+        // effort `none` itself, so both variables are always sent and always agree. Only the
+        // DeepSeek dialect sends them upstream; the others ignore the pair.
         .env(
-            "DEEPSEEK_THINKING",
+            "AI_THINKING",
             if settings.reasoning_effort == "none" {
                 "disabled"
             } else {
                 "enabled"
             },
         )
-        .env("DEEPSEEK_REASONING_EFFORT", &settings.reasoning_effort)
+        .env("AI_REASONING_EFFORT", &settings.reasoning_effort)
         // Windows serves the built front end from http://tauri.localhost; Linux and macOS use
         // the custom tauri://localhost scheme. All three are listed so the same sidecar
         // configuration works on every desktop target.
@@ -689,14 +949,14 @@ fn spawn_child(
         );
 
     // Test-only upstream simulation. It exists in debug builds so the offline integration run
-    // can stand a fake DeepSeek on loopback; a release build has no such branch, so the shipped
-    // application can only talk to the official endpoint. The value comes from the process
-    // environment, never from a page or from an IPC call.
+    // can stand a fake provider on loopback; a release build has no such branch, so the shipped
+    // application can only talk to the address it was configured with. The value comes from the
+    // process environment, never from a page or from an IPC call.
     #[cfg(debug_assertions)]
     {
         if let Ok(value) = std::env::var("RW_AI_TEST_UPSTREAM") {
             if is_loopback_http(&value) {
-                command.env("DEEPSEEK_BASE_URL", value);
+                command.env("AI_BASE_URL", value);
                 command.env("AI_ALLOW_LOOPBACK_UPSTREAM", "1");
             }
         }
@@ -764,6 +1024,8 @@ fn monitor_service(
     instance: String,
     token: String,
     expected_mode: AiMode,
+    expected_provider: String,
+    expected_credential: bool,
 ) {
     let (ready_tx, ready_rx) = mpsc::channel::<Option<ReadyLine>>();
     thread::spawn(move || {
@@ -823,7 +1085,7 @@ fn monitor_service(
             value.port != 0
                 && value.desktop_instance == instance
                 && value.instance_id.len() >= 8
-                && value.provider == expected_mode.provider()
+                && value.provider == expected_provider
                 && value.online == expected_mode.expects_online()
                 && !value.model.trim().is_empty()
         })
@@ -833,8 +1095,9 @@ fn monitor_service(
         stop_child(&mut runtime);
         let reason = if ready.is_some() {
             format!(
-                "本地 AI 服务返回的身份或模式不匹配（期望 {}），已停止该进程。",
-                expected_mode.as_str()
+                "本地 AI 服务返回的身份或模式不匹配（期望 {} / {}），已停止该进程。",
+                expected_mode.as_str(),
+                expected_provider
             )
         } else {
             "本地 AI 服务没有在限定时间内就绪。".to_string()
@@ -849,7 +1112,7 @@ fn monitor_service(
             model: None,
             online: false,
             instance_id: None,
-            credential_configured: credentials::status().configured,
+            credential_configured: expected_credential,
             error: Some(error),
         };
         let status = runtime.status.clone();
@@ -869,7 +1132,7 @@ fn monitor_service(
         model: Some(value.model),
         online: value.online,
         instance_id: Some(value.instance_id),
-        credential_configured: credentials::status().configured,
+        credential_configured: expected_credential,
         error: None,
     };
     let ready_status = runtime.status.clone();
@@ -905,13 +1168,28 @@ fn monitor_service(
             model: None,
             online: false,
             instance_id: None,
-            credential_configured: credentials::status().configured,
+            credential_configured: expected_credential,
             error: Some(error),
         };
         let failed = runtime.status.clone();
         drop(runtime);
         emit_status(&app, &failed);
         return;
+    }
+}
+
+fn failed_status(mode: AiMode, credential_configured: bool, error: String) -> AiServiceStatus {
+    AiServiceStatus {
+        state: STATUS_FAILED.to_string(),
+        mode: mode.as_str().to_string(),
+        base_url: None,
+        token: None,
+        provider: None,
+        model: None,
+        online: false,
+        instance_id: None,
+        credential_configured,
+        error: Some(error),
     }
 }
 
@@ -924,18 +1202,35 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
     let instance = Uuid::new_v4().to_string();
     let mode = runtime.mode;
     let settings = runtime.settings.clone();
+    let expected_provider = if mode.expects_online() {
+        settings.provider.clone()
+    } else {
+        "mock".to_string()
+    };
+    let credential_configured = credentials::status_for(&settings.provider).configured;
     let stderr_sink = Arc::new(Mutex::new(VecDeque::new()));
     runtime.stderr = stderr_sink.clone();
     runtime.status = AiServiceStatus::empty(STATUS_STARTING, mode);
-    runtime.status.credential_configured = credentials::status().configured;
+    runtime.status.credential_configured = credential_configured;
     let starting = runtime.status.clone();
+
+    if mode == AiMode::Online {
+        if let Err(error) = settings.online_ready() {
+            let failed = failed_status(mode, credential_configured, error);
+            runtime.status = failed.clone();
+            drop(runtime);
+            emit_status(app, &failed);
+            return;
+        }
+    }
 
     match spawn_child(app, mode, &token, &instance, &settings, stderr_sink) {
         Ok((mut child, mut stdin, stdout)) => {
             if mode == AiMode::Online {
                 // Read the key only now, after the child exists. An absent or unreadable key is
                 // a failed start, not a quiet fallback to a different service.
-                match credentials::get() {
+                let read = credentials::get_for(&settings.provider);
+                match read {
                     Ok(Some(mut key)) => {
                         let handed = match stdin.as_mut() {
                             Some(pipe) => write_secret(pipe, &key),
@@ -945,19 +1240,8 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
                         if let Err(error) = handed {
                             let _ = child.kill();
                             let _ = child.wait();
-                            runtime.status = AiServiceStatus {
-                                state: STATUS_FAILED.to_string(),
-                                mode: mode.as_str().to_string(),
-                                base_url: None,
-                                token: None,
-                                provider: None,
-                                model: None,
-                                online: false,
-                                instance_id: None,
-                                credential_configured: credentials::status().configured,
-                                error: Some(error),
-                            };
-                            let failed = runtime.status.clone();
+                            let failed = failed_status(mode, credential_configured, error);
+                            runtime.status = failed.clone();
                             drop(runtime);
                             emit_status(app, &failed);
                             return;
@@ -966,21 +1250,15 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
                     Ok(None) => {
                         let _ = child.kill();
                         let _ = child.wait();
-                        runtime.status = AiServiceStatus {
-                            state: STATUS_FAILED.to_string(),
-                            mode: mode.as_str().to_string(),
-                            base_url: None,
-                            token: None,
-                            provider: None,
-                            model: None,
-                            online: false,
-                            instance_id: None,
-                            credential_configured: false,
-                            error: Some(
-                                "没有找到已保存的 API Key，在线服务没有启动。".to_string(),
-                            ),
-                        };
-                        let failed = runtime.status.clone();
+                        let label = providers::find(&settings.provider)
+                            .map(|preset| preset.label)
+                            .unwrap_or("当前供应商");
+                        let failed = failed_status(
+                            mode,
+                            false,
+                            format!("没有找到 {label} 的 API Key，在线服务没有启动。"),
+                        );
+                        runtime.status = failed.clone();
                         drop(runtime);
                         emit_status(app, &failed);
                         return;
@@ -988,19 +1266,8 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
                     Err(error) => {
                         let _ = child.kill();
                         let _ = child.wait();
-                        runtime.status = AiServiceStatus {
-                            state: STATUS_FAILED.to_string(),
-                            mode: mode.as_str().to_string(),
-                            base_url: None,
-                            token: None,
-                            provider: None,
-                            model: None,
-                            online: false,
-                            instance_id: None,
-                            credential_configured: false,
-                            error: Some(error),
-                        };
-                        let failed = runtime.status.clone();
+                        let failed = failed_status(mode, false, error);
+                        runtime.status = failed.clone();
                         drop(runtime);
                         emit_status(app, &failed);
                         return;
@@ -1023,24 +1290,15 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
                     instance,
                     token,
                     mode,
+                    expected_provider,
+                    credential_configured,
                 );
             });
         }
         Err(error) => {
             let error = with_details(error, &runtime);
-            runtime.status = AiServiceStatus {
-                state: STATUS_FAILED.to_string(),
-                mode: mode.as_str().to_string(),
-                base_url: None,
-                token: None,
-                provider: None,
-                model: None,
-                online: false,
-                instance_id: None,
-                credential_configured: credentials::status().configured,
-                error: Some(error),
-            };
-            let failed = runtime.status.clone();
+            let failed = failed_status(mode, credential_configured, error);
+            runtime.status = failed.clone();
             drop(runtime);
             emit_status(app, &failed);
         }
@@ -1069,12 +1327,14 @@ fn main() {
         .manage(manager)
         .invoke_handler(tauri::generate_handler![
             ai_service_info,
+            ai_providers,
             ai_credentials_status,
             set_ai_api_key,
             delete_ai_api_key,
             set_ai_mode,
             get_ai_settings,
             update_ai_settings,
+            list_ai_models,
             restart_ai_service
         ])
         .setup(|app| {

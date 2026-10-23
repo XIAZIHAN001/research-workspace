@@ -18,15 +18,18 @@ import {
   AI_MODE_EVENT,
   deleteAiApiKey,
   getAiCredentialStatus,
+  getAiProviders,
   getAiSettings,
   getDesktopAiStatus,
   isDesktopApp,
+  listAiModels,
   onDesktopAiStatus,
   setAiApiKey,
   setDesktopAiMode,
   updateAiSettings,
   type AiBudgetSettings,
   type AiCredentialStatus,
+  type AiProviderPreset,
   type AiReasoningEffort,
   type AiSettings,
   type DesktopAiStatus,
@@ -40,8 +43,34 @@ const DEFAULT_BUDGET: AiBudgetSettings = {
   tokensPerSession: 200_000,
 };
 
+const DEFAULT_PROVIDER = 'deepseek';
+const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEFAULT_MODEL = 'deepseek-flash';
 const DEFAULT_EFFORT: AiReasoningEffort = 'low';
+
+/**
+ * The table is served by the shell. These two rows exist only so the form still renders if an
+ * older shell answers without the command; the custom row is the one every future provider can
+ * be reached through anyway.
+ */
+const FALLBACK_PROVIDERS: readonly AiProviderPreset[] = [
+  {
+    id: DEFAULT_PROVIDER,
+    label: 'DeepSeek',
+    baseUrl: DEFAULT_BASE_URL,
+    defaultModel: DEFAULT_MODEL,
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
+    supportsThinking: true,
+  },
+  {
+    id: 'custom',
+    label: '自定义（OpenAI 兼容）',
+    baseUrl: '',
+    defaultModel: '',
+    models: [],
+    supportsThinking: false,
+  },
+];
 
 const EFFORT_LABELS: Record<AiReasoningEffort, string> = {
   none: '关闭（最快，不思考）',
@@ -50,16 +79,17 @@ const EFFORT_LABELS: Record<AiReasoningEffort, string> = {
   max: '最高（最慢，消耗最多）',
 };
 
-const MODEL_OPTIONS: readonly ChoiceOption<string>[] = [
-  { value: 'deepseek-flash', label: 'DeepSeek Flash' },
-  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-];
-
 const EFFORT_OPTIONS: readonly ChoiceOption<AiReasoningEffort>[] = (
   Object.keys(EFFORT_LABELS) as AiReasoningEffort[]
 ).map((value) => ({ value, label: EFFORT_LABELS[value] }));
 
-type ModelDraft = { model: string; reasoningEffort: AiReasoningEffort };
+/** The editable copy of the model section: provider, endpoint and model travel together. */
+type ModelDraft = {
+  provider: string;
+  baseUrl: string;
+  model: string;
+  reasoningEffort: AiReasoningEffort;
+};
 
 interface ChoiceOption<T extends string> {
   value: T;
@@ -218,6 +248,8 @@ function formatCny(value: number): string {
 
 function sameSettings(a: AiSettings, b: AiSettings): boolean {
   return (
+    a.provider === b.provider &&
+    a.baseUrl === b.baseUrl &&
     a.model === b.model &&
     a.reasoningEffort === b.reasoningEffort &&
     a.budget.requests === b.budget.requests &&
@@ -227,11 +259,12 @@ function sameSettings(a: AiSettings, b: AiSettings): boolean {
 }
 
 /**
- * Settings › AI service: the one place a key is entered, and the place the cost rules live.
+ * Settings › AI service: the one place a key is entered, the provider and model are chosen, and
+ * the cost rules live.
  *
- * The interface never names the upstream vendor. The mode and every explanation say only
- * "online model" or "offline simulation", so the same screen is accurate whether the desktop
- * shell is pointed at the offline provider or at the configured online endpoint.
+ * The provider list comes from the shell, so the screen and the sidecar agree on ids, endpoints
+ * and default models. The model field is free text on purpose — a gateway can serve names this
+ * build has never heard of — with "获取可用模型" filling it from the provider's own catalogue.
  *
  * Two boundaries are visible in the markup rather than only in the documentation:
  * - the key input is write-only. There is no "show saved key" control because there is no call
@@ -242,15 +275,24 @@ function sameSettings(a: AiSettings, b: AiSettings): boolean {
 export function AiSettingsPanel() {
   const [desktop] = useState(() => isDesktopApp());
   const [service, setService] = useState<DesktopAiStatus | null>(null);
+  const [providers, setProviders] = useState<readonly AiProviderPreset[]>(FALLBACK_PROVIDERS);
+  /** The key state of the provider currently being edited. */
   const [credential, setCredential] = useState<AiCredentialStatus | null>(null);
+  /** The key state of the provider the running service is configured with. */
+  const [activeCredential, setActiveCredential] = useState<AiCredentialStatus | null>(null);
   const [health, setHealth] = useState<AiHealth | null>(null);
   const [settings, setSettings] = useState<AiSettings | null>(null);
   const [budget, setBudget] = useState<AiBudgetSettings>(DEFAULT_BUDGET);
   const [draft, setDraft] = useState<AiBudgetSettings>(DEFAULT_BUDGET);
   const [modelDraft, setModelDraft] = useState<ModelDraft>({
+    provider: DEFAULT_PROVIDER,
+    baseUrl: DEFAULT_BASE_URL,
     model: DEFAULT_MODEL,
     reasoningEffort: DEFAULT_EFFORT,
   });
+  /** What the provider's `/models` endpoint returned, if it has been asked this session. */
+  const [fetchedModels, setFetchedModels] = useState<readonly string[]>([]);
+  const [modelNote, setModelNote] = useState<Note | null>(null);
   const [keyInput, setKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -258,6 +300,8 @@ export function AiSettingsPanel() {
   const [confirmOnline, setConfirmOnline] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const alive = useRef(true);
+  /** Prefix for the two plain field ids below; the listbox has its own. */
+  const fieldId = useId();
 
   useEffect(() => {
     alive.current = true;
@@ -267,6 +311,19 @@ export function AiSettingsPanel() {
   }, []);
 
   const settingsRef = useRef<AiSettings | null>(null);
+  /** Which provider the key section is showing, readable from the polling callback. */
+  const draftProviderRef = useRef(DEFAULT_PROVIDER);
+  useEffect(() => {
+    draftProviderRef.current = modelDraft.provider;
+  }, [modelDraft.provider]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    void getAiProviders().then((list) => {
+      if (!alive.current) return;
+      if (list.length > 0) setProviders(list);
+    });
+  }, [desktop]);
 
   /**
    * Adopts settings from the shell, but only when they actually changed.
@@ -282,20 +339,36 @@ export function AiSettingsPanel() {
     setSettings(next);
     setBudget(next.budget);
     setDraft(next.budget);
-    setModelDraft({ model: next.model, reasoningEffort: next.reasoningEffort });
+    setModelDraft({
+      provider: next.provider,
+      baseUrl: next.baseUrl,
+      model: next.model,
+      reasoningEffort: next.reasoningEffort,
+    });
+    setFetchedModels([]);
   }, []);
 
   const refresh = useCallback(async () => {
-    const [nextService, nextCredential, nextSettings, nextHealth] = await Promise.all([
+    // Read the saved settings first: the two credential lookups below depend on which provider
+    // is active, and that answer comes with them.
+    const nextSettings = await getAiSettings();
+    if (!alive.current) return;
+    if (nextSettings !== null) applySettings(nextSettings);
+
+    const draftProvider = draftProviderRef.current;
+    const activeProvider = nextSettings?.provider ?? draftProvider;
+    const [nextService, nextCredential, nextActiveCredential, nextHealth] = await Promise.all([
       getDesktopAiStatus(),
-      getAiCredentialStatus(),
-      getAiSettings(),
+      getAiCredentialStatus(draftProvider),
+      activeProvider === draftProvider
+        ? Promise.resolve(null)
+        : getAiCredentialStatus(activeProvider),
       fetchAiHealth(),
     ]);
     if (!alive.current) return;
     setService(nextService);
     setCredential(nextCredential);
-    if (nextSettings !== null) applySettings(nextSettings);
+    setActiveCredential(nextActiveCredential ?? nextCredential);
     setHealth(nextHealth);
   }, [applySettings]);
 
@@ -336,7 +409,8 @@ export function AiSettingsPanel() {
     }
     setBusy('key');
     setNote(null);
-    const result = await setAiApiKey(candidate);
+    const provider = modelDraft.provider;
+    const result = await setAiApiKey(provider, candidate);
     // Drop the page's copy whether or not the write succeeded.
     setKeyInput('');
     setShowKey(false);
@@ -355,12 +429,12 @@ export function AiSettingsPanel() {
       text: 'API Key 已保存到系统凭据存储。应用不会把它写进浏览器存储、备份或日志。',
     });
     void refresh();
-  }, [keyInput, refresh]);
+  }, [keyInput, modelDraft.provider, refresh]);
 
   const removeKey = useCallback(async () => {
     setBusy('delete');
     setNote(null);
-    const result = await deleteAiApiKey();
+    const result = await deleteAiApiKey(modelDraft.provider);
     if (!alive.current) return;
     setBusy(null);
     setConfirmDelete(false);
@@ -371,15 +445,15 @@ export function AiSettingsPanel() {
     setService(result.status);
     setNote({
       kind: 'success',
-      text: '已删除系统凭据并停止在线服务；此前的密钥不会再被使用。',
+      text: '已删除这个供应商的系统凭据；如果它正是在用的供应商，在线服务也已停止。',
     });
     void refresh();
-  }, [refresh]);
+  }, [modelDraft.provider, refresh]);
 
   const switchMode = useCallback(
     async (mode: 'mock' | 'online') => {
-      if (mode === 'online' && credential?.configured !== true) {
-        setNote({ kind: 'warning', text: '还没有配置 API Key，不能进入在线模式。' });
+      if (mode === 'online' && activeCredential?.configured !== true) {
+        setNote({ kind: 'warning', text: '当前供应商还没有配置 API Key，不能进入在线模式。' });
         return;
       }
       if (mode === 'online') {
@@ -399,7 +473,7 @@ export function AiSettingsPanel() {
       setNote({ kind: 'success', text: '已切换到离线模拟。不会发起在线调用。' });
       void refresh();
     },
-    [credential, refresh],
+    [activeCredential, refresh],
   );
 
   const confirmSwitchOnline = useCallback(async () => {
@@ -442,8 +516,11 @@ export function AiSettingsPanel() {
   const saveModel = useCallback(async () => {
     setBusy('model');
     setNote(null);
+    setModelNote(null);
     const result = await updateAiSettings({
-      model: modelDraft.model,
+      provider: modelDraft.provider,
+      baseUrl: modelDraft.baseUrl.trim(),
+      model: modelDraft.model.trim(),
       reasoningEffort: modelDraft.reasoningEffort,
     });
     if (!alive.current) return;
@@ -455,10 +532,92 @@ export function AiSettingsPanel() {
     applySettings(result.settings);
     setNote({
       kind: 'success',
-      text: '模型设置已保存。AI 服务已重启；下一次提问就会使用新的模型和思考强度。',
+      text: '供应商与模型设置已保存。AI 服务已重启；下一次提问就会使用新的设置。',
     });
     void refresh();
   }, [applySettings, modelDraft, refresh]);
+
+  const chooseProvider = useCallback(
+    (id: string) => {
+      const preset = providers.find((candidate) => candidate.id === id);
+      if (preset === undefined) return;
+      const saved = settingsRef.current;
+      setModelNote(null);
+      setKeyInput('');
+      setShowKey(false);
+      setConfirmDelete(false);
+      setModelDraft((current) => {
+        // Going back to the provider that is already saved should show what is actually in use,
+        // including an endpoint the reader had edited by hand.
+        if (saved !== null && saved.provider === id) {
+          return {
+            provider: id,
+            baseUrl: saved.baseUrl,
+            model: saved.model,
+            reasoningEffort: saved.reasoningEffort,
+          };
+        }
+        return {
+          provider: id,
+          baseUrl: preset.baseUrl,
+          model: preset.defaultModel,
+          reasoningEffort: current.reasoningEffort,
+        };
+      });
+      setFetchedModels([]);
+      // The key section belongs to the provider being edited, so ask about that one right away
+      // instead of waiting for the next poll.
+      void getAiCredentialStatus(id).then((status) => {
+        if (alive.current) setCredential(status);
+      });
+    },
+    [providers],
+  );
+
+  const requestModels = useCallback(async () => {
+    const baseUrl = modelDraft.baseUrl.trim();
+    if (baseUrl === '') {
+      setModelNote({ kind: 'warning', text: '请先填写 API 地址，再获取模型列表。' });
+      return;
+    }
+    setBusy('models');
+    setModelNote(null);
+    // An empty key means "use the one already stored for this provider"; the shell reads it.
+    const result = await listAiModels({
+      provider: modelDraft.provider,
+      baseUrl,
+      apiKey: '',
+    });
+    if (!alive.current) return;
+    setBusy(null);
+    if (!result.ok) {
+      setModelNote({ kind: 'error', text: result.message });
+      return;
+    }
+    setFetchedModels(result.models);
+    setModelNote({
+      kind: 'success',
+      text: `查询到 ${String(result.models.length)} 个可用模型，点选即可填入。`,
+    });
+  }, [modelDraft.baseUrl, modelDraft.provider]);
+
+  /** Undoes unsaved edits in the model section, including a provider switch. */
+  const resetModel = useCallback(() => {
+    const saved = settingsRef.current;
+    setModelNote(null);
+    setFetchedModels([]);
+    setKeyInput('');
+    setConfirmDelete(false);
+    setModelDraft({
+      provider: saved?.provider ?? DEFAULT_PROVIDER,
+      baseUrl: saved?.baseUrl ?? DEFAULT_BASE_URL,
+      model: saved?.model ?? DEFAULT_MODEL,
+      reasoningEffort: saved?.reasoningEffort ?? DEFAULT_EFFORT,
+    });
+    void getAiCredentialStatus(saved?.provider ?? DEFAULT_PROVIDER).then((status) => {
+      if (alive.current) setCredential(status);
+    });
+  }, []);
 
   const mode = service?.mode ?? 'mock';
   const online = service?.online === true;
@@ -466,13 +625,28 @@ export function AiSettingsPanel() {
   const usage = health?.usage;
   const pricing = health?.pricing;
   const credentialReady = credential?.configured === true;
+  const activeCredentialReady = activeCredential?.configured === true;
+
+  const currentProvider = providers.find((preset) => preset.id === modelDraft.provider);
+  const currentProviderLabel = currentProvider?.label ?? modelDraft.provider;
+  const supportsThinking = currentProvider?.supportsThinking === true;
+  const activeProvider = providers.find((preset) => preset.id === settings?.provider);
+  const activeProviderLabel = activeProvider?.label ?? settings?.provider ?? '在线模型';
+  const providerOptions: readonly ChoiceOption<string>[] = providers.map((preset) => ({
+    value: preset.id,
+    label: preset.label,
+  }));
+  // The preset's suggestions come first; whatever the account actually has is appended to them.
+  const suggestedModels = Array.from(
+    new Set([...(currentProvider?.models ?? []), ...fetchedModels]),
+  );
 
   const statusText = pending
     ? 'AI 服务正在按新模式重启…'
     : service?.state === 'failed'
       ? `服务不可用：${service.error ?? '未知原因'}`
       : online
-        ? `当前：${providerModeLabel(true)}`
+        ? `当前：${providerModeLabel(true)} · ${activeProviderLabel} ${settings?.model ?? ''}`.trim()
         : `当前：${providerModeLabel(false)}`;
 
   return (
@@ -519,7 +693,7 @@ export function AiSettingsPanel() {
                 className="settings-choice"
                 data-active={mode === 'online'}
                 aria-pressed={mode === 'online'}
-                disabled={!credentialReady || busy !== null || pending}
+                disabled={!activeCredentialReady || busy !== null || pending}
                 onClick={() => {
                   void switchMode('online');
                 }}
@@ -573,7 +747,7 @@ export function AiSettingsPanel() {
 
           <section className="settings-section" aria-labelledby="ai-key-title">
             <h3 id="ai-key-title" className="settings-section-title">
-              <KeyRound size={15} aria-hidden="true" /> API Key
+              <KeyRound size={15} aria-hidden="true" /> API Key · {currentProviderLabel}
             </h3>
             <p className="ai-settings__credential" data-configured={credentialReady}>
               {credential?.error !== null && credential?.error !== undefined ? (
@@ -582,12 +756,13 @@ export function AiSettingsPanel() {
                 </>
               ) : credentialReady ? (
                 <>
-                  <ShieldCheck size={14} aria-hidden="true" /> 已配置：保存在 Windows
-                  凭据管理器，应用无法读回明文。
+                  <ShieldCheck size={14} aria-hidden="true" /> {currentProviderLabel} 已配置：
+                  保存在 Windows 凭据管理器，应用无法读回明文。
                 </>
               ) : (
                 <>
-                  <ShieldOff size={14} aria-hidden="true" /> 未配置 API Key。
+                  <ShieldOff size={14} aria-hidden="true" /> {currentProviderLabel} 还没有配置 API
+                  Key。
                 </>
               )}
             </p>
@@ -673,37 +848,120 @@ export function AiSettingsPanel() {
 
           <section className="settings-section" aria-labelledby="ai-model-title">
             <h3 id="ai-model-title" className="settings-section-title">
-              模型与思考强度
+              供应商与模型
             </h3>
             <p className="ai-settings__hint">
-              更强的模型和更高的思考强度更慢，也可能更贵；关闭思考最快。离线模拟不会调用模型，
+              供应商决定调用哪家服务；API 地址和模型名称都可以手动填写。也可以先保存密钥，
+              再用「获取可用模型」读取这个账号实际可用的模型列表。离线模拟不会调用模型，
               但这里的设置会保留，切换到在线模式后生效。
             </p>
             <div className="ai-settings__budget">
               <Choice
-                label="模型"
-                value={modelDraft.model}
-                options={MODEL_OPTIONS}
+                label="供应商"
+                value={modelDraft.provider}
+                options={providerOptions}
                 disabled={busy !== null}
-                onChange={(model) => {
-                  setModelDraft({ ...modelDraft, model });
-                }}
+                onChange={chooseProvider}
               />
-              <Choice
-                label="思考强度"
-                value={modelDraft.reasoningEffort}
-                options={EFFORT_OPTIONS}
-                disabled={busy !== null}
-                onChange={(reasoningEffort) => {
-                  setModelDraft({ ...modelDraft, reasoningEffort });
-                }}
-              />
+              {supportsThinking && (
+                <Choice
+                  label="思考强度"
+                  value={modelDraft.reasoningEffort}
+                  options={EFFORT_OPTIONS}
+                  disabled={busy !== null}
+                  onChange={(reasoningEffort) => {
+                    setModelDraft({ ...modelDraft, reasoningEffort });
+                  }}
+                />
+              )}
             </div>
+            <div className="ai-settings__field">
+              <label htmlFor={`${fieldId}-base-url`}>API 地址</label>
+              <div className="ai-settings__row">
+                <input
+                  id={`${fieldId}-base-url`}
+                  type="url"
+                  value={modelDraft.baseUrl}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="https://api.example.com/v1"
+                  onChange={(event) => {
+                    setModelDraft({ ...modelDraft, baseUrl: event.target.value });
+                    setFetchedModels([]);
+                    setModelNote(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={
+                    busy !== null || currentProvider === undefined || currentProvider.baseUrl === ''
+                  }
+                  onClick={() => {
+                    setModelDraft({ ...modelDraft, baseUrl: currentProvider?.baseUrl ?? '' });
+                    setFetchedModels([]);
+                    setModelNote(null);
+                  }}
+                >
+                  恢复默认
+                </button>
+              </div>
+            </div>
+            <div className="ai-settings__field">
+              <label htmlFor={`${fieldId}-model`}>模型名称</label>
+              <div className="ai-settings__row">
+                <input
+                  id={`${fieldId}-model`}
+                  type="text"
+                  value={modelDraft.model}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="例如 deepseek-flash 或 gpt-4o-mini"
+                  onChange={(event) => {
+                    setModelDraft({ ...modelDraft, model: event.target.value });
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    void requestModels();
+                  }}
+                >
+                  {busy === 'models' ? <Loader2 size={14} className="spin" /> : null}
+                  获取可用模型
+                </button>
+              </div>
+            </div>
+            {suggestedModels.length > 0 && (
+              <div className="ai-model-picker" role="group" aria-label="可选模型">
+                {suggestedModels.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className="ai-model-chip"
+                    data-active={id === modelDraft.model}
+                    disabled={busy !== null}
+                    onClick={() => {
+                      setModelDraft({ ...modelDraft, model: id });
+                    }}
+                  >
+                    {id}
+                  </button>
+                ))}
+              </div>
+            )}
+            {modelNote !== null && (
+              <p className="ai-settings__note" data-kind={modelNote.kind} role="status">
+                {modelNote.text}
+              </p>
+            )}
             <p className="ai-settings__state" data-online={online}>
               {health === null
                 ? 'AI 服务当前不可用，读不到生效值。'
                 : health.online
-                  ? `当前生效：${health.model} · ${health.reasoning ?? '未知'}`
+                  ? `当前生效：${health.provider} · ${health.model} · ${health.reasoning ?? '未知'}`
                   : '离线模拟不使用模型；保存的设置会在切换到在线模式后生效。'}
             </p>
             <div className="ai-settings__actions">
@@ -722,12 +980,7 @@ export function AiSettingsPanel() {
                 type="button"
                 className="btn btn-quiet"
                 disabled={busy !== null}
-                onClick={() => {
-                  setModelDraft({
-                    model: settings?.model ?? DEFAULT_MODEL,
-                    reasoningEffort: settings?.reasoningEffort ?? DEFAULT_EFFORT,
-                  });
-                }}
+                onClick={resetModel}
               >
                 还原为当前设置
               </button>

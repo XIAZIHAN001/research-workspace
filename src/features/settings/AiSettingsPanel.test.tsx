@@ -3,15 +3,47 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AiSettingsPanel } from './AiSettingsPanel';
 
-const { savedSettings, updateAiSettings, getAiSettings } = vi.hoisted(() => ({
-  savedSettings: {
-    budget: { requests: 50, tokensPerRequest: 8192, tokensPerSession: 200_000 },
-    model: 'deepseek-flash',
-    reasoningEffort: 'low',
+const PROVIDERS = [
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-flash',
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
+    supportsThinking: true,
   },
-  updateAiSettings: vi.fn(),
-  getAiSettings: vi.fn(),
-}));
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o-mini',
+    models: ['gpt-4o-mini', 'gpt-4o'],
+    supportsThinking: false,
+  },
+  {
+    id: 'custom',
+    label: '自定义（OpenAI 兼容）',
+    baseUrl: '',
+    defaultModel: '',
+    models: [],
+    supportsThinking: false,
+  },
+];
+
+const { savedSettings, updateAiSettings, getAiSettings, getAiCredentialStatus, listAiModels } =
+  vi.hoisted(() => ({
+    savedSettings: {
+      budget: { requests: 50, tokensPerRequest: 8192, tokensPerSession: 200_000 },
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-flash',
+      reasoningEffort: 'low',
+    },
+    updateAiSettings: vi.fn(),
+    getAiSettings: vi.fn(),
+    getAiCredentialStatus: vi.fn(),
+    listAiModels: vi.fn(),
+  }));
 
 vi.mock('../../services/desktop/aiService', () => ({
   AI_MODE_EVENT: 'rw-ai-mode-changed',
@@ -29,12 +61,14 @@ vi.mock('../../services/desktop/aiService', () => ({
     error: null,
   }),
   onDesktopAiStatus: async () => () => {},
-  getAiCredentialStatus: async () => ({ configured: false, error: null }),
+  getAiProviders: async () => PROVIDERS,
+  getAiCredentialStatus,
   getAiSettings,
   updateAiSettings,
   setAiApiKey: vi.fn(),
   deleteAiApiKey: vi.fn(),
   setDesktopAiMode: vi.fn(),
+  listAiModels,
 }));
 
 vi.mock('../../services/ai/client', () => ({
@@ -44,12 +78,23 @@ vi.mock('../../services/ai/client', () => ({
 beforeEach(() => {
   updateAiSettings.mockReset();
   getAiSettings.mockReset();
+  getAiCredentialStatus.mockReset();
+  listAiModels.mockReset();
   getAiSettings.mockResolvedValue(savedSettings);
+  getAiCredentialStatus.mockResolvedValue({ configured: false, error: null });
+  listAiModels.mockResolvedValue({ ok: true, models: ['gpt-4o-mini', 'gpt-4o'] });
   updateAiSettings.mockImplementation(
-    async (patch: { model?: string; reasoningEffort?: string }) => ({
+    async (patch: {
+      provider?: string;
+      baseUrl?: string;
+      model?: string;
+      reasoningEffort?: string;
+    }) => ({
       ok: true,
       settings: {
         ...savedSettings,
+        provider: patch.provider ?? savedSettings.provider,
+        baseUrl: patch.baseUrl ?? savedSettings.baseUrl,
         model: patch.model ?? savedSettings.model,
         reasoningEffort: patch.reasoningEffort ?? savedSettings.reasoningEffort,
       },
@@ -58,20 +103,17 @@ beforeEach(() => {
 });
 
 describe('AiSettingsPanel model controls', () => {
-  it('saves the model and the thinking effort together', async () => {
+  it('saves the provider, endpoint, model and thinking effort together', async () => {
     const user = userEvent.setup();
     render(<AiSettingsPanel />);
 
-    const model = await screen.findByRole('combobox', { name: '模型' });
+    const model = await screen.findByLabelText('模型名称');
     await waitFor(() => {
-      expect(model).toHaveTextContent('DeepSeek Flash');
+      expect(model).toHaveValue('deepseek-flash');
     });
-    // The model's name is the whole label: no speed note after it.
-    expect(model).not.toHaveTextContent('快速');
 
-    await user.click(model);
-    await user.click(screen.getByRole('option', { name: 'DeepSeek V4 Pro' }));
-    expect(model).toHaveTextContent('DeepSeek V4 Pro');
+    await user.clear(model);
+    await user.type(model, 'deepseek-v4-pro');
 
     const effort = screen.getByRole('combobox', { name: '思考强度' });
     await user.click(effort);
@@ -80,23 +122,65 @@ describe('AiSettingsPanel model controls', () => {
 
     await waitFor(() => {
       expect(updateAiSettings).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        baseUrl: 'https://api.deepseek.com',
         model: 'deepseek-v4-pro',
         reasoningEffort: 'high',
       });
     });
-    expect(await screen.findByText(/模型设置已保存/)).toBeInTheDocument();
+    expect(await screen.findByText(/供应商与模型设置已保存/)).toBeInTheDocument();
+  });
+
+  it('switching provider adopts its endpoint and default model, and hides the thinking choice', async () => {
+    const user = userEvent.setup();
+    render(<AiSettingsPanel />);
+
+    const provider = await screen.findByRole('combobox', { name: '供应商' });
+    await waitFor(() => {
+      expect(provider).toHaveTextContent('DeepSeek');
+    });
+    expect(screen.getByRole('combobox', { name: '思考强度' })).toBeInTheDocument();
+
+    await user.click(provider);
+    await user.click(screen.getByRole('option', { name: 'OpenAI' }));
+
+    expect(screen.getByLabelText('API 地址')).toHaveValue('https://api.openai.com/v1');
+    expect(screen.getByLabelText('模型名称')).toHaveValue('gpt-4o-mini');
+    expect(screen.queryByRole('combobox', { name: '思考强度' })).not.toBeInTheDocument();
+  });
+
+  it('fills the model from the catalogue the provider returns', async () => {
+    const user = userEvent.setup();
+    render(<AiSettingsPanel />);
+
+    const model = await screen.findByLabelText('模型名称');
+    await waitFor(() => {
+      expect(model).toHaveValue('deepseek-flash');
+    });
+
+    await user.click(screen.getByRole('button', { name: '获取可用模型' }));
+    await waitFor(() => {
+      expect(listAiModels).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: '',
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'gpt-4o' }));
+    expect(model).toHaveValue('gpt-4o');
   });
 
   it('keeps an unsaved choice when the next poll returns the same saved settings', async () => {
     const user = userEvent.setup();
     render(<AiSettingsPanel />);
 
-    const model = await screen.findByRole('combobox', { name: '模型' });
+    const model = await screen.findByLabelText('模型名称');
     await waitFor(() => {
       expect(getAiSettings).toHaveBeenCalled();
     });
-    await user.click(model);
-    await user.click(screen.getByRole('option', { name: 'DeepSeek V4 Pro' }));
+    await user.clear(model);
+    await user.type(model, 'my-gateway/model-1');
 
     // The panel polls every three seconds; a no-change response must not overwrite the draft.
     await waitFor(
@@ -105,6 +189,6 @@ describe('AiSettingsPanel model controls', () => {
       },
       { timeout: 5000 },
     );
-    expect(model).toHaveTextContent('DeepSeek V4 Pro');
+    expect(model).toHaveValue('my-gateway/model-1');
   });
 });

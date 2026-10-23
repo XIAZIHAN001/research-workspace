@@ -1,32 +1,44 @@
-//! Persistent storage for the DeepSeek API key.
+//! Persistent storage for API keys.
 //!
-//! The key belongs to the operating system's credential store, not to this application's data
+//! Keys belong to the operating system's credential store, not to this application's data
 //! directory and not to the webview. On Windows that is the Credential Manager: a generic
-//! credential scoped to the current user, addressed by a fixed target name. The front end can
-//! learn whether a key exists; it can never read it back.
+//! credential scoped to the current user, addressed by a target name that carries the provider
+//! id. The front end can learn whether a key exists for a provider; it can never read one back.
 //!
 //! On other platforms the interface exists but refuses, and says so. Claiming Linux support
 //! before it has been built and run there would be worse than an honest error.
 
 use serde::Serialize;
 
-/// The Credential Manager target. Stable across versions: changing it would orphan existing
-/// keys rather than migrate them.
+/// The target naming scheme. Stable across versions: changing it would orphan existing keys
+/// rather than migrate them.
 ///
-/// The development build uses its own target for the same reason it has its own application
+/// The development build uses its own suffix for the same reason it has its own application
 /// identifier: a developer running acceptance tests must not be able to overwrite or delete the
 /// key belonging to the installed application.
 #[cfg(debug_assertions)]
-pub const CREDENTIAL_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey.dev";
+fn target_name(provider: &str) -> String {
+    format!("ResearchWorkspace/Provider/{provider}.dev")
+}
 
 #[cfg(not(debug_assertions))]
-pub const CREDENTIAL_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey";
+fn target_name(provider: &str) -> String {
+    format!("ResearchWorkspace/Provider/{provider}")
+}
 
-/// The minimum and maximum lengths accepted before anything is written. DeepSeek keys are
-/// longer than this in practice; the bounds exist to reject an empty or absurd value, not to
-/// encode a vendor's current format.
+/// The single-provider target earlier versions wrote. Read as a fallback for DeepSeek so an
+/// upgrade does not silently sign the reader out; every new write goes to the per-provider name.
+#[cfg(debug_assertions)]
+const LEGACY_DEEPSEEK_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey.dev";
+
+#[cfg(not(debug_assertions))]
+const LEGACY_DEEPSEEK_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey";
+
+/// The minimum and maximum lengths accepted before anything is written. Vendor keys are longer
+/// than this in practice; the bounds exist to reject an empty or absurd value, not to encode a
+/// vendor's current format.
 pub const KEY_MIN_CHARS: usize = 8;
-pub const KEY_MAX_CHARS: usize = 512;
+pub const KEY_MAX_CHARS: usize = 1024;
 
 /// What the interface is allowed to know: whether a key exists, and why it could not be read.
 #[derive(Clone, Debug, Serialize)]
@@ -36,8 +48,17 @@ pub struct CredentialStatus {
     pub error: Option<String>,
 }
 
-pub fn status() -> CredentialStatus {
-    match platform::get() {
+fn target_for(provider: &str) -> Result<String, String> {
+    // Only ids from the registry may reach the credential store, so an IPC argument cannot be
+    // turned into an arbitrary target name.
+    if crate::providers::find(provider).is_none() {
+        return Err(format!("未知的模型提供方：{provider}。"));
+    }
+    Ok(target_name(provider))
+}
+
+pub fn status_for(provider: &str) -> CredentialStatus {
+    match get_for(provider) {
         Ok(value) => CredentialStatus {
             configured: value.is_some(),
             error: None,
@@ -50,25 +71,51 @@ pub fn status() -> CredentialStatus {
 }
 
 /// Reads the key. The caller owns the returned string and must not log it.
-pub fn get() -> Result<Option<String>, String> {
-    platform::get()
+pub fn get_for(provider: &str) -> Result<Option<String>, String> {
+    let target = target_for(provider)?;
+    if let Some(key) = platform::get(&target)? {
+        return Ok(Some(key));
+    }
+    if provider != "deepseek" {
+        return Ok(None);
+    }
+    // Upgrade path: a key written by a version that only knew one provider. Copy it to the new
+    // target and clear the old one; a failed copy still returns the key, so the reader is not
+    // locked out by a storage hiccup.
+    let Some(key) = platform::get(LEGACY_DEEPSEEK_TARGET)? else {
+        return Ok(None);
+    };
+    if platform::set(&target, &key).is_ok() {
+        let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
+    }
+    Ok(Some(key))
 }
 
-/// Stores or replaces the key.
-pub fn set(key: &str) -> Result<(), String> {
-    platform::set(key)
+/// Stores or replaces the key for one provider.
+pub fn set_for(provider: &str, key: &str) -> Result<(), String> {
+    let target = target_for(provider)?;
+    platform::set(&target, key)?;
+    if provider == "deepseek" {
+        // Two targets for one key would make "delete" ambiguous; now the legacy one is gone.
+        let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
+    }
+    Ok(())
 }
 
 /// Removes the key. Deleting an absent credential succeeds: the desired end state holds.
-pub fn delete() -> Result<(), String> {
-    platform::delete()
+pub fn delete_for(provider: &str) -> Result<(), String> {
+    let target = target_for(provider)?;
+    platform::delete(&target)?;
+    if provider == "deepseek" {
+        platform::delete(LEGACY_DEEPSEEK_TARGET)?;
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
 mod platform {
-    use super::CREDENTIAL_TARGET;
     use std::ptr;
-    use windows_sys::Win32::Foundation::{ERROR_NOT_FOUND, GetLastError};
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
     use windows_sys::Win32::Security::Credentials::{
         CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CREDENTIALW, CredDeleteW, CredFree, CredReadW,
         CredWriteW,
@@ -83,16 +130,16 @@ mod platform {
         format!("{action}失败（Windows 错误 {code}）。")
     }
 
-    pub fn get() -> Result<Option<String>, String> {
-        read_target(CREDENTIAL_TARGET)
+    pub fn get(target_name: &str) -> Result<Option<String>, String> {
+        read_target(target_name)
     }
 
-    pub fn set(key: &str) -> Result<(), String> {
-        write_target(CREDENTIAL_TARGET, key)
+    pub fn set(target_name: &str, key: &str) -> Result<(), String> {
+        write_target(target_name, key)
     }
 
-    pub fn delete() -> Result<(), String> {
-        delete_target(CREDENTIAL_TARGET)
+    pub fn delete(target_name: &str) -> Result<(), String> {
+        delete_target(target_name)
     }
 
     fn read_target(target_name: &str) -> Result<Option<String>, String> {
@@ -131,7 +178,7 @@ mod platform {
 
     fn write_target(target_name: &str, key: &str) -> Result<(), String> {
         let mut target = wide(target_name);
-        let mut user = wide("deepseek-api-key");
+        let mut user = wide("research-workspace-api-key");
         let mut blob = key.as_bytes().to_vec();
 
         let mut credential: CREDENTIALW = CREDENTIALW::default();
@@ -211,15 +258,37 @@ mod platform {
 mod platform {
     const MESSAGE: &str = "当前平台还没有接入系统凭据存储；Linux 版本尚未编译和验证。";
 
-    pub fn get() -> Result<Option<String>, String> {
+    pub fn get(_target_name: &str) -> Result<Option<String>, String> {
         Err(MESSAGE.to_string())
     }
 
-    pub fn set(_key: &str) -> Result<(), String> {
+    pub fn set(_target_name: &str, _key: &str) -> Result<(), String> {
         Err(MESSAGE.to_string())
     }
 
-    pub fn delete() -> Result<(), String> {
+    pub fn delete(_target_name: &str) -> Result<(), String> {
         Err(MESSAGE.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::target_for;
+
+    #[test]
+    fn only_registered_providers_get_a_target() {
+        assert!(target_for("deepseek").is_ok());
+        assert!(target_for("custom").is_ok());
+        assert!(target_for("mock").is_err());
+        assert!(target_for("../etc/passwd").is_err());
+        assert!(target_for("DeepSeek").is_err());
+    }
+
+    #[test]
+    fn targets_are_per_provider() {
+        assert_ne!(
+            target_for("deepseek").expect("target"),
+            target_for("openai").expect("target")
+        );
     }
 }

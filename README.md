@@ -105,19 +105,30 @@ npm run check   # 类型检查 + ESLint + Prettier + 全部测试
 
 ```powershell
 # PowerShell
-$env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='sk-…'; npm run ai:serve
+$env:AI_PROVIDER='deepseek'; $env:AI_API_KEY='sk-…'; npm run ai:serve
 ```
 
 ```bash
 # bash / Git Bash / macOS / Linux
-AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
+AI_PROVIDER=deepseek AI_API_KEY=sk-… npm run ai:serve
 ```
+
+`AI_PROVIDER` 可选 `deepseek` / `openai` / `moonshot` / `zhipu` / `dashscope` / `custom`，
+配合 `AI_BASE_URL` 与 `AI_MODEL` 指向任何 OpenAI 兼容端点（本机服务可用
+`http://127.0.0.1:…`，其余必须 https）。旧的 `DEEPSEEK_*` 变量仍然兼容。
 
 ### 桌面版
 
-在 **设置 → AI 服务** 中输入 Key，保存后会重启 sidecar。Key 由 Rust 写入系统凭据存储（Windows Credential Manager），前端之后只能读到“是否已配置”，没有任何接口可以取回明文。
+在 **设置 → AI 服务** 中选择供应商，API 地址与模型名称都可以手动填写，
+也可以先保存密钥再点“获取可用模型”，由 Rust 通过 `GET {API 地址}/models` 读取该账号
+实际可用的模型列表。保存后会重启 sidecar。
 
-模型白名单为 `deepseek-flash` / `deepseek-v4-pro`，思考强度可选 `none` / `low` / `high` / `max`，并可在设置页配置请求数、单次 token 与会话 token 预算。
+Key 按供应商分别写入系统凭据存储（Windows Credential Manager），前端之后只能读到
+“这个供应商是否已配置”，没有任何接口可以取回明文。
+
+思考强度只对 DeepSeek 显示（`none` / `low` / `high` / `max`）；其他供应商按标准
+OpenAI 兼容协议发送请求，不携带 DeepSeek 专有字段。设置页还可以配置请求数、
+单次 token 与会话 token 预算。
 
 ### 安全边界
 

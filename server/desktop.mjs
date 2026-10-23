@@ -8,9 +8,9 @@
  *   mistaken for each other;
  * - it requires a per-launch bearer token from the shell and refuses every real request
  *   without it;
- * - it runs in exactly one of two modes. `mock` can never reach a network. `online` uses the
- *   DeepSeek provider against the official endpoint only, and does not start serving until the
- *   shell has handed it a key;
+ * - it runs in exactly one of two modes. `mock` can never reach a network. `online` talks to the
+ *   provider named by `AI_PROVIDER`, at the endpoint named by `AI_BASE_URL`, and does not start
+ *   serving until the shell has handed it a key;
  * - the key never arrives through the command line or the environment. The shell writes one
  *   `RW_AI_SECRET {json}` line to this process's stdin after spawning it. The line is read,
  *   the key is kept in memory for the provider, and nothing about it is printed. This also
@@ -46,9 +46,10 @@ if (token.length < 32) {
 const config = readConfig(
   {
     ...process.env,
-    AI_PROVIDER: mode === 'online' ? 'deepseek' : 'mock',
-    // The desktop never lets an inherited key or a non-official endpoint turn this process
-    // into a paid call. A key arrives later, over stdin, and only in online mode.
+    // The desktop never lets an inherited key turn this process into a paid call. A key arrives
+    // later, over stdin, and only in online mode. The provider and the endpoint, by contrast,
+    // are the reader's saved settings, which the shell passes in deliberately.
+    AI_API_KEY: '',
     DEEPSEEK_API_KEY: '',
   },
   {
@@ -56,7 +57,6 @@ const config = readConfig(
     forceOffline: mode === 'mock',
     allowEphemeralPort: true,
     deferredKey: mode === 'online',
-    requireOfficialEndpoint: true,
   },
 );
 
@@ -108,7 +108,7 @@ lines.on('line', (line) => {
   const candidate = typeof payload?.apiKey === 'string' ? payload.apiKey.trim() : '';
   // A key is a printable token. Rejecting anything else keeps the value out of headers and
   // logs even if the shell side is ever wrong.
-  if (candidate.length < 8 || candidate.length > 512 || !/^[\x21-\x7e]+$/.test(candidate)) {
+  if (candidate.length < 8 || candidate.length > 1024 || !/^[\x21-\x7e]+$/.test(candidate)) {
     process.stderr.write('桌面 AI 服务收到的凭据长度或字符不合法。\n');
     process.exit(3);
   }

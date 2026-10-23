@@ -48,8 +48,12 @@ describe('readConfig', () => {
     // A model name goes into a JSON body, so anything that is not a plain token is dropped.
     expect(readConfig({ DEEPSEEK_MODEL: 'deepseek-flash"}\n{"x":1' }).model).toBe('deepseek-flash');
     expect(isValidModelName('deepseek-flash')).toBe(true);
+    // Gateways and aggregators serve names with separators the old rule rejected.
+    expect(isValidModelName('openai/gpt-4o')).toBe(true);
+    expect(isValidModelName('meta-llama/llama-3.1-8b-instruct:free')).toBe(true);
+    expect(isValidModelName('accounts/acme/models/qwen3-32b')).toBe(true);
     expect(isValidModelName('')).toBe(false);
-    expect(isValidModelName('a'.repeat(65))).toBe(false);
+    expect(isValidModelName('a'.repeat(129))).toBe(false);
     expect(isValidModelName('model name')).toBe(false);
   });
 
@@ -107,7 +111,26 @@ describe('configProblems', () => {
   it('refuses the online provider without a key', () => {
     const problems = configProblems(readConfig({ AI_PROVIDER: 'deepseek' }));
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('DEEPSEEK_API_KEY');
+    expect(problems[0]).toContain('API Key');
+  });
+
+  it('accepts every registered provider id and rejects an unknown one', () => {
+    for (const provider of ['openai', 'moonshot', 'zhipu', 'dashscope', 'custom']) {
+      const problems = configProblems(
+        readConfig({
+          AI_PROVIDER: provider,
+          AI_API_KEY: 'sk-test-value',
+          AI_BASE_URL: 'https://example.test/v1',
+          AI_MODEL: 'vendor/model-1',
+        }),
+      );
+      expect(problems, provider).toEqual([]);
+    }
+
+    const unknown = configProblems(
+      readConfig({ AI_PROVIDER: 'not-a-provider', AI_API_KEY: 'sk-test-value' }),
+    );
+    expect(unknown.join(' ')).toContain('未知的 AI_PROVIDER');
   });
 
   it('refuses a non-https base URL for the online provider', () => {
@@ -221,47 +244,46 @@ describe('isLoopbackOrigin', () => {
 
 describe('desktop online configuration', () => {
   it('allows an online start with a deferred key, and only then', () => {
-    const deferred = readConfig(
-      { AI_PROVIDER: 'deepseek' },
-      { deferredKey: true, requireOfficialEndpoint: true },
-    );
+    const deferred = readConfig({ AI_PROVIDER: 'deepseek' }, { deferredKey: true });
     expect(deferred.apiKey).toBe('');
     expect(deferred.deferredKey).toBe(true);
     expect(configProblems(deferred)).toEqual([]);
 
     // The same configuration without the deferred flag is a misconfiguration: a plain
     // `ai:serve` must not come up online without a key.
-    const missing = readConfig({ AI_PROVIDER: 'deepseek' }, { requireOfficialEndpoint: true });
-    expect(configProblems(missing).join(' ')).toContain('DEEPSEEK_API_KEY');
+    const missing = readConfig({ AI_PROVIDER: 'deepseek' });
+    expect(configProblems(missing).join(' ')).toContain('API Key');
   });
 
-  it('accepts exactly the official endpoint in the desktop product', () => {
-    const base = { AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'sk-test-value' };
-    const official = readConfig(base, { requireOfficialEndpoint: true });
-    expect(configProblems(official)).toEqual([]);
+  it('accepts https anywhere, and plain http only on loopback', () => {
+    const base = {
+      AI_PROVIDER: 'openai',
+      AI_API_KEY: 'sk-test-value',
+      AI_MODEL: 'gpt-4o-mini',
+    };
+    for (const url of [
+      'https://api.openai.com/v1',
+      'https://relay.example/v1',
+      'http://127.0.0.1:11434/v1',
+      'http://localhost:1234/v1',
+    ]) {
+      expect(configProblems(readConfig({ ...base, AI_BASE_URL: url })), url).toEqual([]);
+    }
 
-    const elsewhere = readConfig(
-      { ...base, DEEPSEEK_BASE_URL: 'https://api.example.com' },
-      { requireOfficialEndpoint: true },
-    );
-    expect(configProblems(elsewhere).join(' ')).toContain('只允许官方 DeepSeek 端点');
+    // Anything else over http would put the key on the wire in clear text.
+    expect(
+      configProblems(readConfig({ ...base, AI_BASE_URL: 'http://api.example.com/v1' })).join(' '),
+    ).toContain('https');
+    expect(
+      configProblems(readConfig({ ...base, AI_BASE_URL: 'ftp://example.test/v1' })).join(' '),
+    ).toContain('https');
+  });
 
-    // A loopback simulator is allowed only when the launcher says so.
-    const loopback = readConfig(
-      {
-        ...base,
-        DEEPSEEK_BASE_URL: 'http://127.0.0.1:9000',
-        AI_ALLOW_LOOPBACK_UPSTREAM: '1',
-      },
-      { requireOfficialEndpoint: true },
+  it('refuses an online provider with no model name', () => {
+    const problems = configProblems(
+      readConfig({ AI_PROVIDER: 'custom', AI_API_KEY: 'sk-test-value' }),
     );
-    expect(configProblems(loopback)).toEqual([]);
-
-    const disguised = readConfig(
-      { ...base, DEEPSEEK_BASE_URL: 'http://127.0.0.1:9000' },
-      { requireOfficialEndpoint: true },
-    );
-    expect(configProblems(disguised).join(' ')).toContain('只允许官方');
+    expect(problems.join(' ')).toContain('模型名称');
   });
 
   it('reads the desktop mode and the session budget, with safe fallbacks', () => {

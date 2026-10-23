@@ -3,27 +3,28 @@
  *
  * Run it with no configuration and it comes up on the mock provider: nothing leaves the
  * machine and nothing is billed. Reaching a real model requires saying so twice — set
- * `AI_PROVIDER=deepseek` *and* put a key in `DEEPSEEK_API_KEY`. That is on purpose: starting the
+ * `AI_PROVIDER` to a provider id *and* put a key in `AI_API_KEY`. That is on purpose: starting the
  * app should not be able to start spending money.
  *
  *   npm run ai:serve:offline     # mock, always — the environment cannot change that
  *   npm run ai:serve             # whatever AI_PROVIDER says; mock when unset
- *   npm run ai:serve:online      # refuses to start unless a key and the deepseek provider are set
+ *   npm run ai:serve:online      # refuses to start unless a key and a provider are set
  *
  * To reach a real model (PowerShell — `VAR=value command` is bash syntax and PowerShell
  * rejects it):
- *   $env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='…'; npm run ai:serve
+ *   $env:AI_PROVIDER='deepseek'; $env:AI_API_KEY='…'; npm run ai:serve
  *
- * Optional: AI_PORT, DEEPSEEK_MODEL, DEEPSEEK_BASE_URL, AI_TIMEOUT_MS, AI_MAX_OUTPUT_TOKENS,
- * DEEPSEEK_THINKING, DEEPSEEK_REASONING_EFFORT, AI_ALLOWED_ORIGINS.
+ * Optional: AI_PORT, AI_BASE_URL, AI_MODEL, AI_TIMEOUT_MS, AI_MAX_OUTPUT_TOKENS,
+ * AI_THINKING, AI_REASONING_EFFORT, AI_ALLOWED_ORIGINS. The older `DEEPSEEK_*` spellings of
+ * the endpoint, model and key are still read.
  *
  * Two things this file refuses to do, because both have already gone wrong once:
  *
  * - It never falls back to another port. If the one it was told to use is taken, it exits. A
  *   process that quietly moved would leave the verify scripts talking to a *different* service
  *   on the expected port — which is exactly how an offline "dry run" reached the paid API.
- * - `--offline` ignores `AI_PROVIDER` and `DEEPSEEK_API_KEY` entirely, so a machine with a key
- *   exported into its environment still cannot make this process spend anything.
+ * - `--offline` ignores `AI_PROVIDER` and the key entirely, so a machine with a key exported
+ *   into its environment still cannot make this process spend anything.
  */
 
 import { LOOPBACK_HOST, configProblems, readConfig } from './config.mjs';
@@ -44,11 +45,11 @@ const config = readConfig(process.env, { forceOffline: offline });
 
 if (online) {
   const problems = [];
-  if (config.provider !== 'deepseek') {
-    problems.push('--online 需要 AI_PROVIDER=deepseek。');
+  if (config.provider === 'mock') {
+    problems.push('--online 需要在环境里指定一个模型提供方（AI_PROVIDER）。');
   }
   if (config.apiKey === '') {
-    problems.push('--online 需要 DEEPSEEK_API_KEY（只从环境变量读取，不写进任何文件）。');
+    problems.push('--online 需要 AI_API_KEY（只从环境变量读取，不写进任何文件）。');
   }
   if (problems.length > 0) {
     for (const problem of problems) process.stderr.write(`配置错误：${problem}\n`);

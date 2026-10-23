@@ -8,7 +8,7 @@
 ```bash
 npm run ai:serve           # 由 AI_PROVIDER 决定；没设置就是 mock
 npm run ai:serve:offline   # 强制 mock，环境里的 AI_PROVIDER 与密钥一律忽略
-npm run ai:serve:online    # 必须同时有 AI_PROVIDER=deepseek 与密钥，否则拒绝启动
+npm run ai:serve:online    # 必须同时有 AI_PROVIDER 与密钥，否则拒绝启动
 ```
 
 ### 桌面应用内
@@ -17,7 +17,8 @@ npm run ai:serve:online    # 必须同时有 AI_PROVIDER=deepseek 与密钥，�
 
 - 绑定 `127.0.0.1` 的**临时端口**（`AI_PORT=0`），绝不使用 8787，也不连接已在 8787 上的进程；
 - 每次启动生成随机 Bearer 凭据（`AI_SESSION_TOKEN`），前端通过 Tauri IPC 取得，普通网页拿不到；
-- 强制 `--offline` 语义，父进程环境里的 `AI_PROVIDER` / `DEEPSEEK_API_KEY` 不会被继承；
+- 强制 `--offline` 语义，父进程环境里的 `AI_PROVIDER` / `AI_API_KEY` 不会被继承；
+- 供应商、API 地址与模型来自桌面设置，通过环境变量传入；密钥仍只经 stdin 送入凭据通道；
 - 通过 stdin EOF 与父进程 PID 看门狗退出，应用关闭或崩溃后不遗留孤儿进程。
 
 `AI_SESSION_TOKEN`、`AI_DESKTOP_INSTANCE`、`AI_PARENT_PID` 是桌面壳与 sidecar 之间的内部协议，
@@ -40,33 +41,39 @@ npm run ai:serve:online    # 必须同时有 AI_PROVIDER=deepseek 与密钥，�
 会报 `The term 'AI_PROVIDER=deepseek' is not recognized`）：
 
 ```powershell
-$env:AI_PROVIDER='deepseek'; $env:DEEPSEEK_API_KEY='sk-…'; npm run ai:serve
+$env:AI_PROVIDER='deepseek'; $env:AI_API_KEY='sk-…'; npm run ai:serve
 ```
 
 **bash / Git Bash / macOS / Linux**：
 
 ```bash
-AI_PROVIDER=deepseek DEEPSEEK_API_KEY=sk-… npm run ai:serve
+AI_PROVIDER=deepseek AI_API_KEY=sk-… npm run ai:serve
 ```
 
 这是刻意设计的两道门：只设置 Key 不会生效，必须显式声明使用在线提供方。
-界面会在发送前显示「回答来自 DeepSeek …：会调用在线模型，可能产生费用」。
+桌面版由设置页选择供应商，并在每次保存后重启 sidecar 生效。
 
 ### 环境变量
 
-| 变量                        | 默认值                     | 说明                                            |
-| --------------------------- | -------------------------- | ----------------------------------------------- |
-| `AI_PROVIDER`               | `mock`                     | `mock` 或 `deepseek`                            |
-| `DEEPSEEK_API_KEY`          | 空                         | 仅从环境变量读取，不进前端、不进仓库            |
-| `DEEPSEEK_MODEL`            | `deepseek-flash`           | 官方当前型号名；也可填 `deepseek-v4-pro`        |
-| `DEEPSEEK_BASE_URL`         | `https://api.deepseek.com` | 必须是 https                                    |
-| `DEEPSEEK_THINKING`         | `enabled`                  | `enabled` 或 `disabled`                         |
-| `DEEPSEEK_REASONING_EFFORT` | `low`                      | `none` / `low` / `high` / `max`                 |
-| `AI_PORT`                   | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置  |
-| `AI_TIMEOUT_MS`             | `120000`                   | 单次请求超时                                    |
-| `AI_MAX_OUTPUT_TOKENS`      | `8192`                     | 生成上限（**含推理**），256–32000               |
-| `AI_ALLOWED_ORIGINS`        | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许 |
-| `AI_LOG_REQUESTS`           | 开启                       | 设 `0` 关闭访问日志                             |
+| 变量                   | 默认值                     | 说明                                                                           |
+| ---------------------- | -------------------------- | ------------------------------------------------------------------------------ |
+| `AI_PROVIDER`          | `mock`                     | `mock` / `deepseek` / `openai` / `moonshot` / `zhipu` / `dashscope` / `custom` |
+| `AI_API_KEY`           | 空                         | 仅从环境变量或桌面凭据通道读取，不进前端、不进仓库                             |
+| `AI_BASE_URL`          | `https://api.deepseek.com` | 必须 https，本机服务可用 `http://127.0.0.1:…`                                  |
+| `AI_MODEL`             | `deepseek-flash`           | 任意合法模型名（允许 `/`、`:`、`@`）                                           |
+| `AI_THINKING`          | `enabled`                  | 仅 DeepSeek 使用；`enabled` 或 `disabled`                                      |
+| `AI_REASONING_EFFORT`  | `low`                      | 仅 DeepSeek 使用；`none` / `low` / `high` / `max`                              |
+| `AI_PORT`              | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置                                 |
+| `AI_TIMEOUT_MS`        | `120000`                   | 单次请求超时                                                                   |
+| `AI_MAX_OUTPUT_TOKENS` | `8192`                     | 生成上限（**含推理**），256–32000                                              |
+| `AI_ALLOWED_ORIGINS`   | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许                                |
+| `AI_LOG_REQUESTS`      | 开启                       | 设 `0` 关闭访问日志                                                            |
+
+旧的 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` /
+`DEEPSEEK_THINKING` / `DEEPSEEK_REASONING_EFFORT` 仍然会被读取，便于已有的脚本继续使用。
+
+除 DeepSeek 外，其他供应商都按 OpenAI 兼容协议发送普通 chat-completions 请求：
+不会带 `thinking`、`reasoning_effort` 或 `response_format`，因为部分服务会直接拒绝未知字段。
 
 模型名与请求格式核对自官方文档 `api-docs.deepseek.com`（`POST /chat/completions`、
 `Authorization: Bearer`、`choices[0].message.content`）。
