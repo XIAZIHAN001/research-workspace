@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { LAYOUT_CHANGE_EVENT, type LayoutChangeDetail } from '../../app/layoutPrefs';
 import {
   applyDensity,
   applyUiFont,
@@ -31,6 +32,20 @@ export function useAppearancePrefs(): {
   useEffect(() => {
     applyUiFont(document.documentElement, uiFont);
   }, [uiFont]);
+
+  // "恢复默认布局" writes the standard density and default font; follow it live.
+  useEffect(() => {
+    const onLayoutChange = (event: Event): void => {
+      const detail = (event as CustomEvent<LayoutChangeDetail>).detail ?? {};
+      if (detail.reset !== true) return;
+      setDensityState(readDensity());
+      setUiFontState(readUiFont());
+    };
+    window.addEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    return () => {
+      window.removeEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    };
+  }, []);
 
   const setDensity = useCallback((next: Density) => {
     setDensityState(next);

@@ -23,6 +23,7 @@ import { probePdf, readPdfMetadata } from '../features/reader/pdfjs';
 import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
+import { usePaperMode } from '../features/reader/usePaperMode';
 import { BackupDialog } from '../features/backup/BackupDialog';
 import { SettingsDialog } from '../features/settings/SettingsDialog';
 import type { SettingsSection } from '../features/settings/SettingsView';
@@ -119,6 +120,9 @@ export function App({
   const appearance = useAppearancePrefs();
   const layout = useLayoutPreset();
   const sidebar = useSidebar();
+  // The paper preference is owned here so the reader's toolbar and Settings › 阅读偏好 are
+  // one state, not two that can drift apart while both are mounted.
+  const paperMode = usePaperMode(theme.resolved);
   const avatar = useAvatar();
   const now = useNow();
   // One blob store per app instance: the reader keys its loading effect on this identity.
@@ -538,6 +542,7 @@ export function App({
               aiClient={ai}
               theme={theme.resolved}
               layoutPreset={layout.preset}
+              paperMode={paperMode}
               focus={readingFocus}
               onClose={closeReader}
               onReadingPosition={handleReadingPosition}
@@ -872,6 +877,15 @@ export function App({
         uiFont={appearance.uiFont}
         onChangeDensity={appearance.setDensity}
         onChangeUiFont={appearance.setUiFont}
+        paperMode={paperMode}
+        layoutPreset={layout.preset}
+        onChangeLayoutPreset={(preset) => {
+          layout.setPreset(preset);
+          // The preset names the startup layout; choosing one arranges the live one too.
+          sidebar.setOpen(preset !== 'focus');
+        }}
+        sidebarWidth={sidebar.width}
+        onSidebarWidth={sidebar.setWidth}
         avatar={avatar}
         profileName={profile.name}
         onProfileName={profile.save}

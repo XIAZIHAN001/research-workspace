@@ -1241,9 +1241,10 @@ button.row-main:active {
   display: flex;
   flex-direction: column;
   width: min(1080px, calc(100vw - 32px));
-  /* One height for every section: switching tabs must not resize the sheet. This is the middle
-     between the tallest sections (个人, AI 服务) and the shortest (外观), so neither jumps. */
-  height: min(604px, 88vh);
+  /* Adaptive height: a short section ends where its content ends, a long one stops at the cap
+     and scrolls inside (.settings owns the scroll). Switching tabs may resize the sheet — the
+     alternative was every short page carrying a tall block of empty space. */
+  height: auto;
   max-height: min(88vh, 900px);
   /* The sheet itself never scrolls: the title stays put and only the settings column moves. */
   overflow: hidden;

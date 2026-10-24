@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AvatarPicker } from '../home/AvatarPicker';
+import type { useAvatar } from '../home/useAvatar';
 import { clearRecoveryCopies } from '../../services/recoveryCleanup';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { formatBytes } from '../../ui/format';
@@ -9,6 +11,7 @@ interface ProfilePanelProps {
   /** Stores the typed name and returns what is actually shown (trimmed, or the default). */
   onName: (raw: string) => string;
   stats: { papers: number; notes: number; concepts: number };
+  avatar: ReturnType<typeof useAvatar>;
 }
 
 const SHORTCUTS: readonly { keys: string; action: string }[] = [
@@ -28,7 +31,7 @@ const SHORTCUTS: readonly { keys: string; action: string }[] = [
  * rest of the workspace. The data rows describe storage without offering to erase it — the one
  * cleanup action only removes recovery copies, never a paper, a PDF, a note or a concept.
  */
-export function ProfilePanel({ name, onName, stats }: ProfilePanelProps) {
+export function ProfilePanel({ name, onName, stats, avatar }: ProfilePanelProps) {
   const [draft, setDraft] = useState(name);
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
   const [cleanOpen, setCleanOpen] = useState(false);
@@ -104,6 +107,24 @@ export function ProfilePanel({ name, onName, stats }: ProfilePanelProps) {
               }}
             />
           </label>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <h3 className="settings-row-title">头像</h3>
+            <p className="settings-row-hint">
+              显示在侧栏左下角。支持 PNG、JPEG、WebP 或 SVG，最大 1 MB。
+            </p>
+          </div>
+          <AvatarPicker
+            compact
+            src={avatar.src}
+            isCustom={avatar.isCustom}
+            problem={avatar.problem}
+            onUpload={avatar.upload}
+            onReset={avatar.reset}
+            onDismissProblem={avatar.dismiss}
+          />
         </div>
 
         <div className="settings-row">

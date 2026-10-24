@@ -93,6 +93,7 @@ import { usePdfOutline } from './usePdfOutline';
 import { usePdfSearch } from './usePdfSearch';
 import { useReadingHistory } from './useReadingHistory';
 import { useAiReading, type AiClient, type AiSource, type AiTurn } from './useAiReading';
+import type { PaperModeController } from './usePaperMode';
 
 /** How long the reading column must hold still before a new fit-width scale is computed. */
 const RESIZE_SETTLE_MS = 120;
@@ -142,6 +143,11 @@ interface ReaderViewProps {
    * other presets leave it on the rail. Switching it mid-session applies on the spot.
    */
   layoutPreset?: LayoutPreset;
+  /**
+   * The paper preference, lifted so Settings › 阅读偏好 and the toolbar share one state.
+   * When omitted the reader owns it, as it always has.
+   */
+  paperMode?: PaperModeController;
   /**
    * A quotation to land on, when the reader was opened from a concept's evidence.
    *
@@ -224,10 +230,12 @@ export function ReaderView({
   aiClient,
   theme,
   layoutPreset = 'balanced',
+  paperMode: paperModeProp,
   focus = null,
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
-  const paperMode = usePaperMode(theme);
+  const ownedPaperMode = usePaperMode(theme);
+  const paperMode = paperModeProp ?? ownedPaperMode;
   // Below the reader's overlay breakpoint the bar folds its secondary tools into a menu; the
   // breakpoint is the same one that turns the panel into an overlay, so the whole reading
   // layout switches shape together.

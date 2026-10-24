@@ -1,5 +1,7 @@
 import { Dialog } from '../../ui/Dialog';
 import type { useAvatar } from '../home/useAvatar';
+import type { PaperModeController } from '../reader/usePaperMode';
+import type { LayoutPreset } from '../../app/layoutPrefs';
 import type { Density, UiFont } from '../theme/appearancePrefs';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 import { SettingsView, type SettingsSection } from './SettingsView';
@@ -17,6 +19,11 @@ interface SettingsDialogProps {
   uiFont: UiFont;
   onChangeDensity: (density: Density) => void;
   onChangeUiFont: (font: UiFont) => void;
+  paperMode: PaperModeController;
+  layoutPreset: LayoutPreset;
+  onChangeLayoutPreset: (preset: LayoutPreset) => void;
+  sidebarWidth: number;
+  onSidebarWidth: (width: number) => void;
   avatar: ReturnType<typeof useAvatar>;
   profileName: string;
   onProfileName: (raw: string) => string;
@@ -41,6 +48,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
         uiFont={props.uiFont}
         onChangeDensity={props.onChangeDensity}
         onChangeUiFont={props.onChangeUiFont}
+        paperMode={props.paperMode}
+        layoutPreset={props.layoutPreset}
+        onChangeLayoutPreset={props.onChangeLayoutPreset}
+        sidebarWidth={props.sidebarWidth}
+        onSidebarWidth={props.onSidebarWidth}
         avatar={props.avatar}
         profileName={props.profileName}
         onProfileName={props.onProfileName}

@@ -1,8 +1,7 @@
-import { AvatarPicker } from '../home/AvatarPicker';
-import type { useAvatar } from '../home/useAvatar';
 import { DENSITY_LABEL, UI_FONT_LABEL, type Density, type UiFont } from '../theme/appearancePrefs';
 import { DarkLevelSlider, ThemeSegments } from '../theme/ThemeSwitch';
 import type { DarkLevel, ThemePref } from '../theme/theme';
+import { TextSegments } from './PrefSegments';
 
 interface AppearancePanelProps {
   pref: ThemePref;
@@ -13,40 +12,6 @@ interface AppearancePanelProps {
   uiFont: UiFont;
   onChangeDensity: (density: Density) => void;
   onChangeUiFont: (font: UiFont) => void;
-  avatar: ReturnType<typeof useAvatar>;
-}
-
-/** One text-only segmented control for a three-way preference. */
-function TextSegments<T extends string>({
-  value,
-  values,
-  labels,
-  label,
-  onChange,
-}: {
-  value: T;
-  values: readonly T[];
-  labels: Record<T, string>;
-  label: string;
-  onChange: (next: T) => void;
-}) {
-  return (
-    <div className="segmented" role="group" aria-label={label} data-count={values.length}>
-      {values.map((option) => (
-        <button
-          key={option}
-          type="button"
-          className="seg"
-          aria-pressed={value === option}
-          onClick={() => {
-            onChange(option);
-          }}
-        >
-          {labels[option]}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /** Settings › Appearance: theme, dark depth, interface density and UI text size. */
@@ -59,7 +24,6 @@ export function AppearancePanel({
   uiFont,
   onChangeDensity,
   onChangeUiFont,
-  avatar,
 }: AppearancePanelProps) {
   return (
     <section className="settings-panel" aria-labelledby="appearance-title">
@@ -116,24 +80,6 @@ export function AppearancePanel({
             labels={UI_FONT_LABEL}
             label="界面字号"
             onChange={onChangeUiFont}
-          />
-        </div>
-
-        <div className="settings-row">
-          <div className="settings-row-text">
-            <h3 className="settings-row-title">头像</h3>
-            <p className="settings-row-hint">
-              显示在侧栏左下角。支持 PNG、JPEG、WebP 或 SVG，最大 1 MB。
-            </p>
-          </div>
-          <AvatarPicker
-            compact
-            src={avatar.src}
-            isCustom={avatar.isCustom}
-            problem={avatar.problem}
-            onUpload={avatar.upload}
-            onReset={avatar.reset}
-            onDismissProblem={avatar.dismiss}
           />
         </div>
       </div>

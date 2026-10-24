@@ -1,5 +1,11 @@
-import { useCallback, useState } from 'react';
-import { readLayoutPreset, storeLayoutPreset, type LayoutPreset } from './layoutPrefs';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  LAYOUT_CHANGE_EVENT,
+  readLayoutPreset,
+  storeLayoutPreset,
+  type LayoutChangeDetail,
+  type LayoutPreset,
+} from './layoutPrefs';
 
 /**
  * Owns the chosen workspace layout preset. Applying it to the live surfaces is done by the
@@ -15,6 +21,19 @@ export function useLayoutPreset(): {
   const setPreset = useCallback((next: LayoutPreset) => {
     setPresetState(next);
     storeLayoutPreset(next);
+  }, []);
+
+  // "恢复默认布局" writes the preset key directly; follow it so the settings page and the
+  // live layout agree without a reload.
+  useEffect(() => {
+    const onLayoutChange = (event: Event): void => {
+      const detail = (event as CustomEvent<LayoutChangeDetail>).detail ?? {};
+      if (detail.reset === true) setPresetState(readLayoutPreset());
+    };
+    window.addEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    return () => {
+      window.removeEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    };
   }, []);
 
   return { preset, setPreset };
