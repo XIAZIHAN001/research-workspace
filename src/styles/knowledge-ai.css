@@ -9,7 +9,9 @@
 
 .knowledge-panel {
   display: flex;
-  flex: 0 0 360px;
+  /* The column width is owned by `--panel-w` on `.reader-side`, which also overrides this
+     element's flex value; nothing here may widen the reader. */
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
   min-width: 0;

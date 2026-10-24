@@ -35,6 +35,80 @@
   white-space: nowrap;
 }
 
+/* The bar reads as semantic groups — identity (+ history), find, page, zoom, more. The lead
+   group owns the flexible space so the title truncates instead of squeezing the controls. */
+.reader-bar-lead {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Narrow-window overflow for the history, find and paper-mode tools. Shares the paper-mode
+   menu's visual language: one card, one shadow, options that light up as a row. */
+.reader-more {
+  position: relative;
+}
+
+.reader-more__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 240px;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow:
+    0 0 0 0.5px var(--card-edge),
+    0 18px 40px -18px rgb(0 0 0 / 0.35),
+    0 6px 14px -8px rgb(0 0 0 / 0.2);
+}
+
+.reader-more__label {
+  margin: 6px 8px 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.reader-more__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.reader-more__item:hover:not(:disabled) {
+  background: var(--row-hover);
+}
+
+.reader-more__item:disabled {
+  color: var(--text-3);
+}
+
+.reader-more__item[aria-checked='true'] {
+  background: var(--row-hover);
+}
+
+.reader-more__key {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .reader-page,
 .reader-zoom {
   display: flex;
@@ -660,9 +734,9 @@
   width: 100%;
 }
 
-/* Six tabs do not fit on one line at the narrowest panel, so this row wraps — and a track
-   behind a wrapped row reads as a second card showing through the pills. The tabs stand on
-   the panel themselves instead; each pill carries its own edge. */
+/* Three chips — 目录, AI 助手, 知识 — do not need one line at the narrowest panel, so this
+   row wraps. A track behind a wrapped row reads as a second card showing through the pills;
+   the tabs stand on the panel themselves instead, and each pill carries its own edge. */
 .reader-side-tabs {
   display: flex;
   flex: 0 0 auto;
@@ -670,7 +744,7 @@
   gap: 4px;
 }
 
-/* Six tabs do not fit on one line at the narrowest panel: wrap the row, never the labels. */
+/* Wrap the row, never the labels. */
 .reader-side-tabs .chip {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -910,8 +984,9 @@
   display: flex;
   /* `min-width: 0` matters here: a flex item will not shrink below its min-content width, and a
      single long paragraph in the range disclosure would otherwise widen the panel until it and
-     the whole reader overflowed the window. */
-  flex: 0 0 360px;
+     the whole reader overflowed the window. The column width is owned by `--panel-w` on
+     `.reader-side`, which also overrides this element's flex value. */
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;

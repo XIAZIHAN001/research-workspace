@@ -48,6 +48,7 @@ import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { useMediaQuery } from '../../ui/useMediaQuery';
 import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
@@ -59,6 +60,7 @@ import { inspectPageLayout, measureFragmentation } from './layout';
 import { OutlinePanel } from './OutlinePanel';
 import { PaperModeSwitch } from './PaperModeSwitch';
 import { PdfPage } from './PdfPage';
+import { ReaderMoreMenu } from './ReaderMoreMenu';
 import { SuggestionCard } from './SuggestionCard';
 import { useDifficultyScan, type LocatedQuote } from './useDifficultyScan';
 import { usePaperMode } from './usePaperMode';
@@ -226,6 +228,10 @@ export function ReaderView({
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
   const paperMode = usePaperMode(theme);
+  // Below the reader's overlay breakpoint the bar folds its secondary tools into a menu; the
+  // breakpoint is the same one that turns the panel into an overlay, so the whole reading
+  // layout switches shape together.
+  const compactBar = useMediaQuery(READER_OVERLAY_QUERY);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // The default-zoom strategy is read once per paper: it decides how this open starts, and
   // "沿用上次" replays the zoom of the previous session with this file.
@@ -1222,53 +1228,59 @@ export function ReaderView({
   return (
     <div className="reader">
       <div className="reader-bar">
-        <button type="button" className="btn btn-quiet" onClick={onClose}>
-          <ArrowLeft size={15} aria-hidden="true" />
-          返回
-        </button>
-        <h1 className="reader-title" title={paper.title}>
-          {paper.title}
-        </h1>
+        <div className="reader-bar-lead">
+          <button type="button" className="btn btn-quiet" onClick={onClose}>
+            <ArrowLeft size={15} aria-hidden="true" />
+            返回
+          </button>
+          <h1 className="reader-title" title={paper.title}>
+            {paper.title}
+          </h1>
 
-        <div className="reader-history" role="group" aria-label="阅读位置历史">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="回到上一个阅读位置"
-            title="上一个位置（Alt+←）"
-            disabled={!canBack}
-            onClick={goBack}
-          >
-            <Undo2 size={15} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="前往下一个阅读位置"
-            title="下一个位置（Alt+→）"
-            disabled={!canForward}
-            onClick={goForward}
-          >
-            <Redo2 size={15} aria-hidden="true" />
-          </button>
+          {!compactBar && (
+            <div className="reader-history" role="group" aria-label="阅读位置历史">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="回到上一个阅读位置"
+                title="上一个位置（Alt+←）"
+                disabled={!canBack}
+                onClick={goBack}
+              >
+                <Undo2 size={15} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="前往下一个阅读位置"
+                title="下一个位置（Alt+→）"
+                disabled={!canForward}
+                onClick={goForward}
+              >
+                <Redo2 size={15} aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </div>
 
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="查找"
-          title="查找（Ctrl+F）"
-          aria-pressed={findOpen}
-          disabled={state.status !== 'ready'}
-          onClick={() => {
-            if (findOpen) closeFind();
-            else setFindOpen(true);
-          }}
-        >
-          <Search size={15} aria-hidden="true" />
-        </button>
+        {!compactBar && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="查找"
+            title="查找（Ctrl+F）"
+            aria-pressed={findOpen}
+            disabled={state.status !== 'ready'}
+            onClick={() => {
+              if (findOpen) closeFind();
+              else setFindOpen(true);
+            }}
+          >
+            <Search size={15} aria-hidden="true" />
+          </button>
+        )}
 
-        <div className="reader-page">
+        <div className="reader-page" role="group" aria-label="页码导航">
           {state.status === 'ready' ? (
             <>
               <button
@@ -1318,7 +1330,7 @@ export function ReaderView({
           )}
         </div>
 
-        <div className="reader-zoom">
+        <div className="reader-zoom" role="group" aria-label="缩放">
           <button
             type="button"
             className="icon-btn"
@@ -1353,8 +1365,24 @@ export function ReaderView({
             <Maximize2 size={14} aria-hidden="true" />
             适应宽度
           </button>
-          <PaperModeSwitch pref={paperMode.pref} onChange={paperMode.setPref} />
+          {!compactBar && <PaperModeSwitch pref={paperMode.pref} onChange={paperMode.setPref} />}
         </div>
+
+        {compactBar && (
+          <ReaderMoreMenu
+            findOpen={findOpen}
+            onToggleFind={() => {
+              if (findOpen) closeFind();
+              else setFindOpen(true);
+            }}
+            canBack={canBack}
+            canForward={canForward}
+            onBack={goBack}
+            onForward={goForward}
+            paperMode={paperMode.pref}
+            onPaperMode={paperMode.setPref}
+          />
+        )}
       </div>
 
       {findOpen && state.status === 'ready' && (
