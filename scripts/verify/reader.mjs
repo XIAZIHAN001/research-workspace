@@ -224,6 +224,23 @@ async function main() {
     );
 
     // ---- Text selection ----------------------------------------------------
+    // Fit-width only promises the canvas size: PDF.js rebuilds the text layer
+    // asynchronously afterwards, so keep re-selecting until the selection really
+    // carries the page text instead of landing on a half-rebuilt layer.
+    await page.waitForFunction(
+      () => {
+        const layer = document.querySelector('.pdf-page[data-page="2"] .textLayer');
+        if (layer === null) return false;
+        const range = document.createRange();
+        range.selectNodeContents(layer);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        return (selection?.toString() ?? '').includes('MARKER-PAGE-2');
+      },
+      null,
+      { timeout: 10_000 },
+    );
     const selected = await page.evaluate(() => {
       const layer = document.querySelector('.pdf-page[data-page="2"] .textLayer');
       if (layer === null) return '';
@@ -436,6 +453,90 @@ async function main() {
     );
     await page.screenshot({ path: fileURLToPath(new URL('06-library.png', SHOT_DIR)) });
 
+    // ---- A very long title: truncate, never squeeze or clip ----------------
+    // MAX_TITLE_LENGTH is 200; fill it to the cap and check both surfaces where the title has
+    // to make room for the things beside it.
+    const longTitle =
+      '很长很长的论文标题用来检验截断策略'.repeat(10) + ' Long Title For Truncation';
+    const libraryRegion = page.getByRole('region', { name: '论文库' });
+    await libraryRegion
+      .getByRole('article')
+      .first()
+      .getByRole('button', { name: '更多操作' })
+      .click();
+    await libraryRegion.getByRole('menuitem', { name: '编辑' }).click();
+    const editDialog = page.getByRole('dialog', { name: '编辑论文信息' });
+    await editDialog.getByLabel('标题').fill(longTitle);
+    await editDialog.getByRole('button', { name: '保存' }).click();
+    await page.waitForTimeout(300);
+    // Library rows wrap by design (overflow-wrap: anywhere); the invariant is that a
+    // 200-character title never pushes the row past its column.
+    const rowTitle = await page.evaluate(() => {
+      const element = document.querySelector('.paper-row-title');
+      if (element === null) return null;
+      return {
+        wrapped:
+          element.scrollHeight > element.clientHeight + 1 || element.getClientRects().length > 1,
+        overflowX: element.scrollWidth > element.parentElement.clientWidth + 1,
+      };
+    });
+    check(
+      'long title: the library row wraps instead of overflowing',
+      rowTitle !== null && !rowTitle.overflowX,
+      JSON.stringify(rowTitle),
+    );
+    await page.screenshot({ path: fileURLToPath(new URL('06b-library-long-title.png', SHOT_DIR)) });
+
+    await page
+      .getByRole('article')
+      .filter({ hasText: 'Long Title For Truncation' })
+      .getByRole('button', { name: '阅读' })
+      .click();
+    await page.locator('.reader-title').waitFor({ timeout: 20_000 });
+    // The reader restores its last position (page 3 of the sample), so wait for any text
+    // layer instead of page 1's.
+    await page.locator('.textLayer span').first().waitFor({ timeout: 20_000 });
+    const readerTitle = await page.evaluate(() => {
+      const title = document.querySelector('.reader-title');
+      const pageInput = document.querySelector('.reader-page-jump input');
+      const zoomIn = [...document.querySelectorAll('.reader-zoom button')].find(
+        (button) => button.getAttribute('aria-label') === '放大',
+      );
+      const fitWidth = [...document.querySelectorAll('.reader-zoom .btn-quiet')].find((button) =>
+        button.textContent.includes('适应宽度'),
+      );
+      const bar = title?.closest('.reader-bar');
+      const tb = title?.getBoundingClientRect();
+      const bb = bar?.getBoundingClientRect();
+      return {
+        truncated: title !== null && title.scrollWidth > title.clientWidth + 1,
+        // The bar itself must not scroll, and the clipped title must stay inside it.
+        noOverflow:
+          bar !== null &&
+          title !== null &&
+          tb !== undefined &&
+          bb !== undefined &&
+          bar.scrollWidth <= bar.clientWidth + 1 &&
+          tb.top >= bb.top - 1 &&
+          tb.bottom <= bb.bottom + 1 &&
+          tb.right <= bb.right + 1,
+        pageInputVisible: pageInput !== null && pageInput.getBoundingClientRect().width > 0,
+        zoomEnabled: zoomIn !== null && !zoomIn.disabled,
+        fitWidthVisible: fitWidth !== null,
+      };
+    });
+    check(
+      'long title: the reader toolbar truncates and keeps page and zoom reachable',
+      readerTitle.truncated &&
+        readerTitle.noOverflow &&
+        readerTitle.pageInputVisible &&
+        readerTitle.zoomEnabled &&
+        readerTitle.fitWidthVisible,
+      JSON.stringify(readerTitle),
+    );
+    await page.screenshot({
+      path: fileURLToPath(new URL('06c-reader-long-title.png', SHOT_DIR)),
+    });
     // ---- No browser database ----------------------------------------------
     const noDb = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const noDbPage = await noDb.newPage();

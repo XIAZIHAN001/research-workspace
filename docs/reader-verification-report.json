@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-24T04:29:38.420Z",
-  "passed": 27,
+  "generatedAt": "2026-10-24T15:21:48.607Z",
+  "passed": 29,
   "failed": 0,
   "results": [
     {
@@ -127,6 +127,16 @@
       "name": "library: every paper is listed",
       "passed": true,
       "detail": "3 rows"
+    },
+    {
+      "name": "long title: the library row wraps instead of overflowing",
+      "passed": true,
+      "detail": "{\"wrapped\":false,\"overflowX\":false}"
+    },
+    {
+      "name": "long title: the reader toolbar truncates and keeps page and zoom reachable",
+      "passed": true,
+      "detail": "{\"truncated\":true,\"noOverflow\":true,\"pageInputVisible\":true,\"zoomEnabled\":true,\"fitWidthVisible\":true}"
     },
     {
       "name": "storage unavailable: the user is told, and no PDF is recorded",
