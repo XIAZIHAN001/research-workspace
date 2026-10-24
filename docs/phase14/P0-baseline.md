@@ -8,31 +8,31 @@
 
 ## 2. 基线检查（本轮实测）
 
-| 检查 | 结果 |
-|---|---|
-| `npm run check` | **全绿：90 文件 / 1642 测试**（typecheck + eslint + prettier + vitest） |
-| `verify:reader` | 上轮 27/27（同 HEAD 实测），P8 复跑 |
-| `verify:immersive` | 上轮 33/33（同 HEAD 实测），P8 复跑 |
-| `verify:ui-phase12` | 上轮 64/64（同 HEAD 实测），P8 复跑 |
+| 检查                 | 结果                                                                                                                                                                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`      | **全绿：90 文件 / 1642 测试**（typecheck + eslint + prettier + vitest）                                                                                                                                                                        |
+| `verify:reader`      | 上轮 27/27（同 HEAD 实测），P8 复跑                                                                                                                                                                                                            |
+| `verify:immersive`   | 上轮 33/33（同 HEAD 实测），P8 复跑                                                                                                                                                                                                            |
+| `verify:ui-phase12`  | 上轮 64/64（同 HEAD 实测），P8 复跑                                                                                                                                                                                                            |
 | `verify:annotations` | **失败（本轮实测复现）**：7 项选段/高亮/锚点核心 PASS（框选精度 0.0px、双栏 context 正确），在等待 `.notes-panel` 时超时——该 DOM 已随 37493ba 并入目录面板（`.outline-panel`），脚本仍在找退役类名。定性：**存量脚本漂移**，功能本体未被证伪。 |
 
 Tauri IPC stub 契约：Phase 13 已把 ui-phase12 的 stub 更新到现行 `get_ai_settings`（嵌套 budget）+ `ai_providers` 契约并 64/64 通过；**真机 Tauri 桌面构建仍未验证**（本环境无桌面构建条件），列 P7 如实记录。
 
 ## 3. 滚动容器盘点（P2 施工对象）
 
-| 容器 | 位置 | Scroll Edge 适用 |
-|---|---|---|
-| `.ai-scroll` | reader.css:1089（AI 对话） | ✅ 原型首选 |
-| `.sidebar-scroll` | components.css:167（项目导航） | ✅ |
-| `.outline-scroll` | reader.css:1946（目录/书签/笔记） | ✅ |
-| `.knowledge-panel-scroll` | knowledge-ai.css:70（知识面板） | ✅ |
-| `.knowledge-list` / `.concept-graph-scroll` | knowledge.css:183/494（项目知识视图） | ✅ |
-| `.main` | layout.css:171（首页/项目/论文库） | ✅ |
-| `.dialog:has(.settings) .settings` | components.css:1283（设置长页） | ✅ |
-| `.global-search-results` | components.css:2110（搜索结果） | ✅ |
-| `.notes-scroll` | reader.css:831 | 待确认是否仍被渲染（NotesPanel 已退役，P2 时核实） |
-| `.reader-scroll` | reader.css:168（**PDF 列**） | ❌ 任务书明确禁止 mask/blur 触及 Canvas/text layer |
-| `.ai-model-picker`、backup/搜索弹层、`.ai-range-part p` | 弹层内部滚动 | P2 视效果决定，默认不动 |
+| 容器                                                    | 位置                                  | Scroll Edge 适用                                   |
+| ------------------------------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| `.ai-scroll`                                            | reader.css:1089（AI 对话）            | ✅ 原型首选                                        |
+| `.sidebar-scroll`                                       | components.css:167（项目导航）        | ✅                                                 |
+| `.outline-scroll`                                       | reader.css:1946（目录/书签/笔记）     | ✅                                                 |
+| `.knowledge-panel-scroll`                               | knowledge-ai.css:70（知识面板）       | ✅                                                 |
+| `.knowledge-list` / `.concept-graph-scroll`             | knowledge.css:183/494（项目知识视图） | ✅                                                 |
+| `.main`                                                 | layout.css:171（首页/项目/论文库）    | ✅                                                 |
+| `.dialog:has(.settings) .settings`                      | components.css:1283（设置长页）       | ✅                                                 |
+| `.global-search-results`                                | components.css:2110（搜索结果）       | ✅                                                 |
+| `.notes-scroll`                                         | reader.css:831                        | 待确认是否仍被渲染（NotesPanel 已退役，P2 时核实） |
+| `.reader-scroll`                                        | reader.css:168（**PDF 列**）          | ❌ 任务书明确禁止 mask/blur 触及 Canvas/text layer |
+| `.ai-model-picker`、backup/搜索弹层、`.ai-range-part p` | 弹层内部滚动                          | P2 视效果决定，默认不动                            |
 
 固定栏（磨砂候选）：AI 面板 `.ai-head` 与 `.ai-ask`（flex 列两端）、设置窗口 `.dialog-head` 与 sticky 的 `.settings-nav`、阅读器 `.reader-bar`（非 sticky，位于滚动区外，无需处理）。
 

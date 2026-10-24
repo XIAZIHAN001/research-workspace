@@ -9,6 +9,7 @@ import {
   UI_FONT_STORAGE_KEY,
   ZOOM_DEFAULT_STORAGE_KEY,
   ZOOM_LAST_STORAGE_KEY,
+  SCROLL_EDGE_STORAGE_KEY,
 } from './config';
 import {
   LAYOUT_CHANGE_EVENT,
@@ -71,6 +72,7 @@ describe('resetLayoutDefaults', () => {
     window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, '560');
     window.localStorage.setItem(DENSITY_STORAGE_KEY, 'compact');
     window.localStorage.setItem(UI_FONT_STORAGE_KEY, 'large');
+    window.localStorage.setItem(SCROLL_EDGE_STORAGE_KEY, 'off');
     window.localStorage.setItem(ZOOM_DEFAULT_STORAGE_KEY, '100');
     const events: CustomEvent[] = [];
     window.addEventListener(LAYOUT_CHANGE_EVENT, (event) => {
@@ -85,6 +87,7 @@ describe('resetLayoutDefaults', () => {
     expect(Number(window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY))).toBe(360);
     expect(window.localStorage.getItem(DENSITY_STORAGE_KEY)).toBe('standard');
     expect(window.localStorage.getItem(UI_FONT_STORAGE_KEY)).toBe('default');
+    expect(window.localStorage.getItem(SCROLL_EDGE_STORAGE_KEY)).toBe('soft');
     expect(window.localStorage.getItem(ZOOM_DEFAULT_STORAGE_KEY)).toBe('fit-width');
     expect(JSON.parse(window.localStorage.getItem(ZOOM_LAST_STORAGE_KEY) ?? '{}')).toEqual({
       fit: true,

@@ -29,6 +29,8 @@ export const ZOOM_LAST_STORAGE_KEY = 'rw.zoomLast';
 export const DENSITY_STORAGE_KEY = 'rw.density';
 /** The UI text size step. Never affects the PDF pages themselves. */
 export const UI_FONT_STORAGE_KEY = 'rw.uiFont';
+/** How strongly scrolling surfaces fade at their edges: off, soft (default) or standard. */
+export const SCROLL_EDGE_STORAGE_KEY = 'rw.scrollEdge';
 /** How wide the reader's side panel is, in CSS pixels. */
 export const PANEL_WIDTH_STORAGE_KEY = 'rw.panelWidth';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';

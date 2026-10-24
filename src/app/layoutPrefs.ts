@@ -4,6 +4,7 @@ import {
   LAYOUT_PRESET_STORAGE_KEY,
   PANEL_DEFAULT_WIDTH,
   PANEL_WIDTH_STORAGE_KEY,
+  SCROLL_EDGE_STORAGE_KEY,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_STORAGE_KEY,
   SIDEBAR_WIDTH_STORAGE_KEY,
@@ -11,7 +12,7 @@ import {
   ZOOM_DEFAULT_STORAGE_KEY,
   ZOOM_LAST_STORAGE_KEY,
 } from './config';
-import type { Density, UiFont } from '../features/theme/appearancePrefs';
+import type { Density, ScrollEdge, UiFont } from '../features/theme/appearancePrefs';
 
 /**
  * The three workspace layouts. A preset is the layout the app *starts* in — the sidebar and
@@ -139,6 +140,7 @@ export function resetLayoutDefaults(): void {
   writeItem(PANEL_WIDTH_STORAGE_KEY, String(PANEL_DEFAULT_WIDTH));
   writeItem(DENSITY_STORAGE_KEY, 'standard' satisfies Density);
   writeItem(UI_FONT_STORAGE_KEY, 'default' satisfies UiFont);
+  writeItem(SCROLL_EDGE_STORAGE_KEY, 'soft' satisfies ScrollEdge);
   writeItem(ZOOM_DEFAULT_STORAGE_KEY, 'fit-width');
   writeItem(ZOOM_LAST_STORAGE_KEY, JSON.stringify({ fit: true, scale: 1 }));
   announceLayoutChange({ reset: true });

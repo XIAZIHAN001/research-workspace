@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { DENSITY_STORAGE_KEY, UI_FONT_STORAGE_KEY } from '../../app/config';
+import {
+  DENSITY_STORAGE_KEY,
+  SCROLL_EDGE_STORAGE_KEY,
+  UI_FONT_STORAGE_KEY,
+} from '../../app/config';
 import {
   applyDensity,
+  applyScrollEdge,
   applyUiFont,
   parseDensity,
+  parseScrollEdge,
   readDensity,
+  readScrollEdge,
   readUiFont,
 } from './appearancePrefs';
 
@@ -32,12 +39,29 @@ describe('appearance preferences', () => {
     expect(readUiFont()).toBe('larger');
   });
 
+  it('falls back to the soft scroll edge when the key is absent or invalid', () => {
+    expect(readScrollEdge()).toBe('soft');
+    window.localStorage.setItem(SCROLL_EDGE_STORAGE_KEY, 'extreme');
+    expect(readScrollEdge()).toBe('soft');
+    window.localStorage.setItem(SCROLL_EDGE_STORAGE_KEY, 'off');
+    expect(readScrollEdge()).toBe('off');
+  });
+
+  it('rejects unknown scroll edge values', () => {
+    expect(parseScrollEdge('soft')).toBe('soft');
+    expect(parseScrollEdge('subtle')).toBeNull();
+    expect(parseScrollEdge(2)).toBeNull();
+  });
+
   it('applies the choice to the document element as a data attribute', () => {
     applyDensity(document.documentElement, 'compact');
     applyUiFont(document.documentElement, 'large');
+    applyScrollEdge(document.documentElement, 'standard');
     expect(document.documentElement).toHaveAttribute('data-density', 'compact');
     expect(document.documentElement).toHaveAttribute('data-ui-font', 'large');
+    expect(document.documentElement).toHaveAttribute('data-scroll-edge', 'standard');
     delete document.documentElement.dataset.density;
     delete document.documentElement.dataset.uiFont;
+    delete document.documentElement.dataset.scrollEdge;
   });
 });

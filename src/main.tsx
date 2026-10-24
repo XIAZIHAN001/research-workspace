@@ -19,6 +19,9 @@ import './styles/knowledge.css';
 import './styles/knowledge-ai.css';
 import './styles/backup.css';
 import './styles/desktop.css';
+// Scroll edge fades for the app's scrolling surfaces. Before apple.css so the presentation
+// layer can still win where the two ever disagree.
+import './styles/scroll-edges.css';
 // Presentation only, imported last: it settles the surface hierarchy, type ladder and accent
 // on top of the component stylesheets without touching any behaviour.
 import './styles/apple.css';

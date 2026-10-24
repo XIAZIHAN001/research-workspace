@@ -1,4 +1,11 @@
-import { DENSITY_LABEL, UI_FONT_LABEL, type Density, type UiFont } from '../theme/appearancePrefs';
+import {
+  DENSITY_LABEL,
+  SCROLL_EDGE_LABEL,
+  UI_FONT_LABEL,
+  type Density,
+  type ScrollEdge,
+  type UiFont,
+} from '../theme/appearancePrefs';
 import { DarkLevelSlider, ThemeSegments } from '../theme/ThemeSwitch';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 import { TextSegments } from './PrefSegments';
@@ -10,11 +17,13 @@ interface AppearancePanelProps {
   onChangeLevel: (level: DarkLevel) => void;
   density: Density;
   uiFont: UiFont;
+  scrollEdge: ScrollEdge;
   onChangeDensity: (density: Density) => void;
   onChangeUiFont: (font: UiFont) => void;
+  onChangeScrollEdge: (edge: ScrollEdge) => void;
 }
 
-/** Settings › Appearance: theme, dark depth, interface density and UI text size. */
+/** Settings › Appearance: theme, dark depth, density, UI text size and scroll edges. */
 export function AppearancePanel({
   pref,
   level,
@@ -22,8 +31,10 @@ export function AppearancePanel({
   onChangeLevel,
   density,
   uiFont,
+  scrollEdge,
   onChangeDensity,
   onChangeUiFont,
+  onChangeScrollEdge,
 }: AppearancePanelProps) {
   return (
     <section className="settings-panel" aria-labelledby="appearance-title">
@@ -80,6 +91,22 @@ export function AppearancePanel({
             labels={UI_FONT_LABEL}
             label="界面字号"
             onChange={onChangeUiFont}
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <h3 className="settings-row-title">滚动边缘</h3>
+            <p className="settings-row-hint">
+              列表和对话滚动到上下边缘时的渐隐；不影响论文页面本身。
+            </p>
+          </div>
+          <TextSegments
+            value={scrollEdge}
+            values={['off', 'soft', 'standard'] as const}
+            labels={SCROLL_EDGE_LABEL}
+            label="滚动边缘"
+            onChange={onChangeScrollEdge}
           />
         </div>
       </div>

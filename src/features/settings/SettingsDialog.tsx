@@ -2,7 +2,7 @@ import { Dialog } from '../../ui/Dialog';
 import type { useAvatar } from '../home/useAvatar';
 import type { PaperModeController } from '../reader/usePaperMode';
 import type { LayoutPreset } from '../../app/layoutPrefs';
-import type { Density, UiFont } from '../theme/appearancePrefs';
+import type { Density, ScrollEdge, UiFont } from '../theme/appearancePrefs';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 import { SettingsView, type SettingsSection } from './SettingsView';
 
@@ -17,8 +17,10 @@ interface SettingsDialogProps {
   onChangeLevel: (level: DarkLevel) => void;
   density: Density;
   uiFont: UiFont;
+  scrollEdge: ScrollEdge;
   onChangeDensity: (density: Density) => void;
   onChangeUiFont: (font: UiFont) => void;
+  onChangeScrollEdge: (edge: ScrollEdge) => void;
   paperMode: PaperModeController;
   layoutPreset: LayoutPreset;
   onChangeLayoutPreset: (preset: LayoutPreset) => void;
@@ -46,8 +48,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
         onChangeLevel={props.onChangeLevel}
         density={props.density}
         uiFont={props.uiFont}
+        scrollEdge={props.scrollEdge}
         onChangeDensity={props.onChangeDensity}
         onChangeUiFont={props.onChangeUiFont}
+        onChangeScrollEdge={props.onChangeScrollEdge}
         paperMode={props.paperMode}
         layoutPreset={props.layoutPreset}
         onChangeLayoutPreset={props.onChangeLayoutPreset}

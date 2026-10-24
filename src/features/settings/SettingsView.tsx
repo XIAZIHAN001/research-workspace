@@ -6,7 +6,7 @@ import { ReadingPrefsPanel } from './ReadingPrefsPanel';
 import { ProfilePanel } from './ProfilePanel';
 import type { useAvatar } from '../home/useAvatar';
 import type { PaperModeController } from '../reader/usePaperMode';
-import type { Density, UiFont } from '../theme/appearancePrefs';
+import type { Density, ScrollEdge, UiFont } from '../theme/appearancePrefs';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 import type { LayoutPreset } from '../../app/layoutPrefs';
 
@@ -21,8 +21,10 @@ interface SettingsViewProps {
   onChangeLevel: (level: DarkLevel) => void;
   density: Density;
   uiFont: UiFont;
+  scrollEdge: ScrollEdge;
   onChangeDensity: (density: Density) => void;
   onChangeUiFont: (font: UiFont) => void;
+  onChangeScrollEdge: (edge: ScrollEdge) => void;
   /** The lifted paper preference, shared with the reader's toolbar. */
   paperMode: PaperModeController;
   layoutPreset: LayoutPreset;
@@ -55,8 +57,10 @@ export function SettingsView({
   onChangeLevel,
   density,
   uiFont,
+  scrollEdge,
   onChangeDensity,
   onChangeUiFont,
+  onChangeScrollEdge,
   paperMode,
   layoutPreset,
   onChangeLayoutPreset,
@@ -94,8 +98,10 @@ export function SettingsView({
             onChangeLevel={onChangeLevel}
             density={density}
             uiFont={uiFont}
+            scrollEdge={scrollEdge}
             onChangeDensity={onChangeDensity}
             onChangeUiFont={onChangeUiFont}
+            onChangeScrollEdge={onChangeScrollEdge}
           />
         ) : section === 'reading' ? (
           <ReadingPrefsPanel paperMode={paperMode} />

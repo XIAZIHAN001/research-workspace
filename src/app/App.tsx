@@ -875,8 +875,10 @@ export function App({
         onChangeLevel={theme.setLevel}
         density={appearance.density}
         uiFont={appearance.uiFont}
+        scrollEdge={appearance.scrollEdge}
         onChangeDensity={appearance.setDensity}
         onChangeUiFont={appearance.setUiFont}
+        onChangeScrollEdge={appearance.setScrollEdge}
         paperMode={paperMode}
         layoutPreset={layout.preset}
         onChangeLayoutPreset={(preset) => {

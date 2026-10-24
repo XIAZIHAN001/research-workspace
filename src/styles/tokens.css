@@ -84,6 +84,13 @@
   --control-h-md: 28px;
   --control-h-lg: 32px;
   --control-h: var(--control-h-md);
+
+  /*
+   * Scroll edge fades. The preference (关闭/柔和/标准) is written to <html data-scroll-edge>
+   * and only ever changes how tall the sticky gradient bars are; the bars themselves live in
+   * scroll-edges.css. 柔和 is the designed default, so the un-annotated root gets its size.
+   */
+  --scroll-edge-h: 20px;
 }
 
 /*
@@ -320,4 +327,12 @@
   --fs-row: 18px;
   --fs-small: 15px;
   --fs-caption: 14px;
+}
+
+:root[data-scroll-edge='standard'] {
+  --scroll-edge-h: 36px;
+}
+
+:root[data-scroll-edge='off'] {
+  --scroll-edge-h: 0px;
 }
