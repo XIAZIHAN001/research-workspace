@@ -15,7 +15,12 @@ export function TextSegments<T extends string>({
   onChange,
 }: TextSegmentsProps<T>) {
   return (
-    <div className="segmented" role="group" aria-label={label} data-count={values.length}>
+    <div
+      className="segmented segmented--text"
+      role="group"
+      aria-label={label}
+      data-count={values.length}
+    >
       {values.map((option) => (
         <button
           key={option}

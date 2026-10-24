@@ -620,6 +620,17 @@ button.row-main:active {
   color: var(--text);
 }
 
+/* Text segments (Settings rows) carry a label instead of an icon: widen the track and the
+   sliding plate together through the same two variables the plate's transform reads. */
+.segmented--text {
+  --seg-w: 76px;
+}
+
+.segmented--text .seg {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* Without :has() there is no sliding layer; the pressed segment draws its own plate. */
 @supports not selector(:has(*)) {
   .seg[aria-pressed='true'] {

@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-10-21T08:46:33.555Z",
-  "passed": 26,
-  "failed": 1,
+  "generatedAt": "2026-10-24T02:48:39.733Z",
+  "passed": 27,
+  "failed": 0,
   "results": [
     {
       "name": "import: title is prefilled from the file name",
@@ -21,7 +21,7 @@
     {
       "name": "render: the canvas has a real size",
       "passed": true,
-      "detail": "700x991"
+      "detail": "1094x1548"
     },
     {
       "name": "pages: the indicator starts at 1",
@@ -36,7 +36,7 @@
     {
       "name": "pages: jumping by number reaches page 3",
       "passed": true,
-      "detail": "{\"indicator\":\"3\",\"scrollTop\":12,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"3051.76px\"}"
+      "detail": "{\"indicator\":\"3\",\"scrollTop\":29,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"4724.44px\"}"
     },
     {
       "name": "pages: the jumped-to page has its own text",
@@ -46,17 +46,17 @@
     {
       "name": "zoom: zooming in makes the page bigger",
       "passed": true,
-      "detail": "700 → 744"
+      "detail": "1094 → 1190"
     },
     {
       "name": "zoom: fit-width returns to the container width",
       "passed": true,
-      "detail": "700px"
+      "detail": "1094px"
     },
     {
       "name": "render: the page canvas really has ink on it",
       "passed": true,
-      "detail": "13076 dark samples"
+      "detail": "31954 dark samples"
     },
     {
       "name": "text: the page text can be selected and copied",
@@ -81,7 +81,7 @@
     {
       "name": "layout: the current page sits inside the visible area",
       "passed": true,
-      "detail": "{\"scroll\":[286,135,758,753],\"page\":[310,151,700,991],\"scrollTop\":1015}"
+      "detail": "{\"scroll\":[262,130,1152,758],\"page\":[286,146,1094,1548],\"scrollTop\":1572}"
     },
     {
       "name": "theme: the page follows the reading mode in dark mode",
@@ -135,11 +135,9 @@
     },
     {
       "name": "console: no errors, warnings or page exceptions",
-      "passed": false,
-      "detail": "warning: Warning: Indexing all PDF objects"
+      "passed": true,
+      "detail": ""
     }
   ],
-  "consoleIssues": [
-    "warning: Warning: Indexing all PDF objects"
-  ]
+  "consoleIssues": []
 }

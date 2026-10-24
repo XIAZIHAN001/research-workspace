@@ -56,9 +56,11 @@ async function startPreview() {
 
 function watch(page) {
   page.on('console', (message) => {
-    if (message.type() === 'error' || message.type() === 'warning') {
-      consoleIssues.push(`${message.type()}: ${message.text()}`);
-    }
+    if (message.type() !== 'error' && message.type() !== 'warning') return;
+    // pdf.js reconstructs the xref of the generated sample fixture and says so on every run;
+    // the message is about the fixture, not the app, and it never varies.
+    if (message.text() === 'Warning: Indexing all PDF objects') return;
+    consoleIssues.push(`${message.type()}: ${message.text()}`);
   });
   page.on('pageerror', (error) => {
     consoleIssues.push(`pageerror: ${error.message}`);
@@ -335,7 +337,9 @@ async function main() {
       pageBackground !== 'rgb(255, 255, 255)',
       pageBackground,
     );
-    await page.getByRole('button', { name: '原始', exact: true }).click();
+    // The paper modes live in the toolbar's trigger menu (Phase 5): open it, then pick.
+    await page.getByRole('button', { name: /纸张模式/ }).click();
+    await page.getByRole('option', { name: /^原始\s/ }).click();
     await page.waitForTimeout(300);
     const originalBackground = await page
       .locator('.pdf-page[data-page="3"]')
@@ -345,7 +349,8 @@ async function main() {
       originalBackground === 'rgb(255, 255, 255)',
       originalBackground,
     );
-    await page.getByRole('button', { name: '跟随外观', exact: true }).click();
+    await page.getByRole('button', { name: /纸张模式/ }).click();
+    await page.getByRole('option', { name: /^跟随外观\s/ }).click();
     await setAppTheme(page, '浅色');
 
     // Leave the reader on page 3 and wait for the debounced write before reloading.
