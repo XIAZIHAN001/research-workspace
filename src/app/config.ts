@@ -12,9 +12,23 @@ export const THEME_LEVEL_STORAGE_KEY = 'rw.themeLevel';
  */
 export const THEME_STYLE_STORAGE_KEY = 'rw.themeStyle';
 export const PAPER_STORAGE_KEY = 'rw.paper';
+/**
+ * Legacy open/closed switch. Since layout presets exist this key is no longer written; it is
+ * read exactly once, to infer the preset of a profile that predates them (see layoutPrefs.ts).
+ */
 export const SIDEBAR_STORAGE_KEY = 'rw.sidebar';
 /** How wide the sidebar column is, in CSS pixels. Kept beside the open/closed key. */
 export const SIDEBAR_WIDTH_STORAGE_KEY = 'rw.sidebarWidth';
+/** Which of the three workspace layouts (专注/均衡/研究) the app starts in. */
+export const LAYOUT_PRESET_STORAGE_KEY = 'rw.layoutPreset';
+/** How the reader picks its initial zoom for a paper it opens. */
+export const ZOOM_DEFAULT_STORAGE_KEY = 'rw.zoomDefault';
+/** The last zoom the reader used, for the "沿用上次" default-zoom strategy. */
+export const ZOOM_LAST_STORAGE_KEY = 'rw.zoomLast';
+/** How dense the interface is: compact, standard or comfortable. */
+export const DENSITY_STORAGE_KEY = 'rw.density';
+/** The UI text size step. Never affects the PDF pages themselves. */
+export const UI_FONT_STORAGE_KEY = 'rw.uiFont';
 /** How wide the reader's side panel is, in CSS pixels. */
 export const PANEL_WIDTH_STORAGE_KEY = 'rw.panelWidth';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';
@@ -51,7 +65,8 @@ export const READER_OVERLAY_QUERY = '(max-width: 1100px)';
  */
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 420;
-export const SIDEBAR_DEFAULT_WIDTH = 248;
+/** The designed default. Stored widths always win; this is what "恢复默认" writes. */
+export const SIDEBAR_DEFAULT_WIDTH = 224;
 export const PANEL_MIN_WIDTH = 260;
 export const PANEL_MAX_WIDTH = 560;
 export const PANEL_DEFAULT_WIDTH = 360;

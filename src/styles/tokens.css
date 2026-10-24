@@ -60,12 +60,30 @@
   /* spring.css replaces this with a sampled damped spring where linear() exists. */
   --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
 
-  --sidebar-w: 248px;
+  --sidebar-w: 224px;
   --glass-blur: 20px;
   /* The only colour that used to be written by hand. It stays a UI-neutral. */
   --scroll-thumb: rgb(0 0 0 / 0.22);
   /* Fade for the pointer light; append it to any transition list on a glowing element. */
   --glow-t: --glow var(--dur) var(--ease-out);
+
+  /*
+   * Spacing rhythm: 4px steps. New styles take their gaps and paddings from these tokens, not
+   * from hand-written px, so the density modes below can re-tune every surface in one place.
+   */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Control heights: buttons, inputs and chips take one of these three, never an ad-hoc px. */
+  --control-h-sm: 24px;
+  --control-h-md: 28px;
+  --control-h-lg: 32px;
+  --control-h: var(--control-h-md);
 }
 
 /*
@@ -258,4 +276,48 @@
   --primary-rim: rgb(255 255 255 / 0);
   --primary-shadow: rgb(0 0 0 / 0.5);
   --primary-glow: rgb(255 255 255 / 0.2);
+}
+
+/*
+ * Interface density and UI text size, set from Settings and written to <html data-density /
+ * data-ui-font> by appearancePrefs. Both re-tune UI tokens only: the PDF page is a canvas plus
+ * a text layer whose type is sized by the zoom scale and pdf.js itself, so reading is never
+ * resized by these choices.
+ */
+:root[data-density='compact'] {
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-8: 24px;
+  --control-h-md: 24px;
+  --fs-body: 14px;
+  --fs-row: 14px;
+  --fs-small: 12px;
+}
+
+:root[data-density='comfortable'] {
+  --space-3: 14px;
+  --space-4: 20px;
+  --space-5: 24px;
+  --space-6: 28px;
+  --space-8: 36px;
+  --control-h-md: 32px;
+  --fs-body: 16px;
+  --fs-row: 16px;
+  --fs-small: 14px;
+}
+
+:root[data-ui-font='large'] {
+  --fs-body: 16.5px;
+  --fs-row: 16.5px;
+  --fs-small: 14px;
+  --fs-caption: 13px;
+}
+
+:root[data-ui-font='larger'] {
+  --fs-body: 18px;
+  --fs-row: 18px;
+  --fs-small: 15px;
+  --fs-caption: 14px;
 }

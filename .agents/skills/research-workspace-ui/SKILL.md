@@ -26,15 +26,15 @@ description: Research Workspace（本地优先论文精读工作台，React 19 +
 
 ## 代码地图（省一次探索）
 
-| 区域 | 位置 | 关键事实 |
-|---|---|---|
-| 设计 Token | `src/styles/tokens.css` | `:root` + `[data-theme='light']` + `[data-theme='dark']`；深色程度靠 JS 写入 7 个 `--dark-*` 变量 |
-| 布局外壳 | `src/app/App.tsx`, `useSidebar.ts`, `config.ts` | 侧栏宽 248（200–420），拖拽 + 键盘（±16、Home/End）；`data-narrow` 属性驱动 CSS |
-| 阅读器 | `src/features/reader/ReaderView.tsx` | 右侧三态：折叠 rail / 侧栏列（`--panel-w` 360，260–560）/ ≤1100px 浮层；工具栏：返回·标题·历史·查找·页码·缩放·纸张模式 |
-| 右侧面板 | `OutlinePanel` / `AiPanel` / `KnowledgePanel` | 顶层只有 3 个 chip（目录/AI/知识）；书签、笔记在目录面板内，难点在知识面板内 |
-| 主题 | `src/features/theme/` + `public/theme-init.js` | 深色程度 0–100 连续值 → `darkPalette(level)`；**改调色必须同步 theme-init.js，否则首帧闪白** |
-| 设置 | `src/features/settings/` | 模态 Dialog；页：个人/外观/AI 服务；头像目前在外观页 |
-| 存储 | `src/app/config.ts` | 全部 `rw.*` localStorage 键常量在此；759/1100 断点常量在此 |
+| 区域       | 位置                                            | 关键事实                                                                                                               |
+| ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 设计 Token | `src/styles/tokens.css`                         | `:root` + `[data-theme='light']` + `[data-theme='dark']`；深色程度靠 JS 写入 7 个 `--dark-*` 变量                      |
+| 布局外壳   | `src/app/App.tsx`, `useSidebar.ts`, `config.ts` | 侧栏宽 248（200–420），拖拽 + 键盘（±16、Home/End）；`data-narrow` 属性驱动 CSS                                        |
+| 阅读器     | `src/features/reader/ReaderView.tsx`            | 右侧三态：折叠 rail / 侧栏列（`--panel-w` 360，260–560）/ ≤1100px 浮层；工具栏：返回·标题·历史·查找·页码·缩放·纸张模式 |
+| 右侧面板   | `OutlinePanel` / `AiPanel` / `KnowledgePanel`   | 顶层只有 3 个 chip（目录/AI/知识）；书签、笔记在目录面板内，难点在知识面板内                                           |
+| 主题       | `src/features/theme/` + `public/theme-init.js`  | 深色程度 0–100 连续值 → `darkPalette(level)`；**改调色必须同步 theme-init.js，否则首帧闪白**                           |
+| 设置       | `src/features/settings/`                        | 模态 Dialog；页：个人/外观/AI 服务；头像目前在外观页                                                                   |
+| 存储       | `src/app/config.ts`                             | 全部 `rw.*` localStorage 键常量在此；759/1100 断点常量在此                                                             |
 
 ## CSS 层级陷阱
 
@@ -50,7 +50,7 @@ description: Research Workspace（本地优先论文精读工作台，React 19 +
 ## 持久化约定（rw.* localStorage 键）
 
 - 键名常量集中在 `src/app/config.ts`，命名 `rw.<feature>`。新键三件套：**默认值 + 消费端 clamp
-  + 旧版本容忍**（键缺失/非法值回落默认，参照 `parseThemeLevel` 的迁移先例）。
+  - 旧版本容忍**（键缺失/非法值回落默认，参照 `parseThemeLevel` 的迁移先例）。
 - 配置键只存 UI 偏好。永远不要写入或改写 `rw.projects`、`rw.projects.corrupt/backup` 及任何
   论文、标注、知识数据；工作区数据有自己的版本迁移（`src/domain/migrate.ts`），别碰。
 - 需要预渲染读取的偏好（如主题）必须同步 `public/theme-init.js`。

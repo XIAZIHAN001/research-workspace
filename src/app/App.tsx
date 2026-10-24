@@ -9,6 +9,7 @@ import { HomeView } from '../features/home/HomeView';
 import { useAvatar } from '../features/home/useAvatar';
 import { useWelcome } from '../features/home/useWelcome';
 import { useTheme } from '../features/theme/useTheme';
+import { useAppearancePrefs } from '../features/theme/useAppearancePrefs';
 import { EditPaperDialog } from '../features/papers/EditPaperDialog';
 import { ImportPaperDialog } from '../features/library/ImportPaperDialog';
 import { LibraryView } from '../features/library/LibraryView';
@@ -51,6 +52,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useNow } from '../ui/useNow';
 import { PROJECTS_BACKUP_KEY, PROJECTS_CORRUPT_KEY } from './config';
 import { useSidebar } from './useSidebar';
+import { useLayoutPreset } from './useLayoutPreset';
 import { WindowBar } from './WindowBar';
 import { isDesktopApp } from '../services/desktop/aiService';
 
@@ -114,6 +116,8 @@ export function App({
   const { projects, papers, annotations, bookmarks, selected, persisted, issue, actions } =
     useProjects(store);
   const theme = useTheme();
+  const appearance = useAppearancePrefs();
+  const layout = useLayoutPreset();
   const sidebar = useSidebar();
   const avatar = useAvatar();
   const now = useNow();
@@ -533,6 +537,7 @@ export function App({
               blobs={blobStore}
               aiClient={ai}
               theme={theme.resolved}
+              layoutPreset={layout.preset}
               focus={readingFocus}
               onClose={closeReader}
               onReadingPosition={handleReadingPosition}
@@ -863,6 +868,10 @@ export function App({
         level={theme.level}
         onChangePref={theme.setPref}
         onChangeLevel={theme.setLevel}
+        density={appearance.density}
+        uiFont={appearance.uiFont}
+        onChangeDensity={appearance.setDensity}
+        onChangeUiFont={appearance.setUiFont}
         avatar={avatar}
         profileName={profile.name}
         onProfileName={profile.save}

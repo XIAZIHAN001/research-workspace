@@ -549,23 +549,24 @@ describe('settings', () => {
 });
 
 describe('sidebar', () => {
-  it('collapses, offers a way back, and remembers the choice', async () => {
+  it('collapses, offers a way back, and keeps the choice for the session', async () => {
     const { user, container } = setup();
     expect(container.querySelector('.app')).toHaveAttribute('data-sidebar', 'open');
 
     await user.click(screen.getByRole('button', { name: '收起侧栏' }));
     expect(container.querySelector('.app')).toHaveAttribute('data-sidebar', 'closed');
-    expect(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('closed');
+    // Startup open/closed is owned by the layout preset now; the in-session toggle is not
+    // written back behind the user's back — "恢复默认布局" and the preset page own storage.
+    expect(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBeNull();
     // The column stays mounted so it can animate, but it must be inert: no focus, no clicks.
     expect(sidebar()).toHaveAttribute('inert');
 
     await user.click(screen.getByRole('button', { name: '展开侧栏' }));
     expect(container.querySelector('.app')).toHaveAttribute('data-sidebar', 'open');
-    expect(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('open');
     expect(sidebar()).not.toHaveAttribute('inert');
   });
 
-  it('starts collapsed when it was left collapsed', () => {
+  it('starts collapsed when the profile was migrated from a closed sidebar', () => {
     window.localStorage.setItem(SIDEBAR_STORAGE_KEY, 'closed');
     const { container } = setup();
     expect(container.querySelector('.app')).toHaveAttribute('data-sidebar', 'closed');

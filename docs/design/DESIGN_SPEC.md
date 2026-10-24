@@ -17,15 +17,15 @@
 
 新代码一律使用语义 Token；旧式短别名仍在大量使用，**不批量重命名**，触及处渐进替换。
 
-| 类别 | Token（现值） |
-|---|---|
-| 颜色语义（新式） | `--color-bg-app/-sidebar/-panel/-elevated`、`--color-border-subtle`、`--color-text-primary/secondary/tertiary`、`--color-accent`（浅 #0066CC / 深 #2997FF）、`--color-danger/ok/warn`、`--color-primary-bg/-fg` |
-| 颜色别名（旧式，仍广泛使用） | `--bg-base`、`--sheet`、`--card`、`--well`、`--text/-2/-3`、`--accent(-soft)`、`--hairline`、`--control-fill(-hover)`、`--input-fill`、`--focus`、`--row-hover/-active`、`--scrim` 等 |
-| 字号 | `--fs-hero` clamp(32,3.4vw,44) · `--fs-title` clamp(26,2.6vw,34) · `--fs-h2` 20 · `--fs-h3` 17 · `--fs-body` 15 · `--fs-row` 15 · `--fs-small` 13 · `--fs-caption` 12 · `--fs-micro` 11 |
-| 圆角 | `--r-sm` 8 · `--r-md` 12 · `--r-lg` 18 · `--r-xl` 22 · `--r-pill` 980 |
-| 动效 | `--dur-fast` 120ms · `--dur` 200ms · `--dur-slow` 320ms · `--ease-out`、`--ease-spring`、`--press-scale` 0.975 |
-| 字体 | `--font-ui`、`--font-display`（系统栈，无 webfont） |
-| 布局 | `--sidebar-w`（JS 内联写入） |
+| 类别                         | Token（现值）                                                                                                                                                                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 颜色语义（新式）             | `--color-bg-app/-sidebar/-panel/-elevated`、`--color-border-subtle`、`--color-text-primary/secondary/tertiary`、`--color-accent`（浅 #0066CC / 深 #2997FF）、`--color-danger/ok/warn`、`--color-primary-bg/-fg` |
+| 颜色别名（旧式，仍广泛使用） | `--bg-base`、`--sheet`、`--card`、`--well`、`--text/-2/-3`、`--accent(-soft)`、`--hairline`、`--control-fill(-hover)`、`--input-fill`、`--focus`、`--row-hover/-active`、`--scrim` 等                           |
+| 字号                         | `--fs-hero` clamp(32,3.4vw,44) · `--fs-title` clamp(26,2.6vw,34) · `--fs-h2` 20 · `--fs-h3` 17 · `--fs-body` 15 · `--fs-row` 15 · `--fs-small` 13 · `--fs-caption` 12 · `--fs-micro` 11                         |
+| 圆角                         | `--r-sm` 8 · `--r-md` 12 · `--r-lg` 18 · `--r-xl` 22 · `--r-pill` 980                                                                                                                                           |
+| 动效                         | `--dur-fast` 120ms · `--dur` 200ms · `--dur-slow` 320ms · `--ease-out`、`--ease-spring`、`--press-scale` 0.975                                                                                                  |
+| 字体                         | `--font-ui`、`--font-display`（系统栈，无 webfont）                                                                                                                                                             |
+| 布局                         | `--sidebar-w`（JS 内联写入）                                                                                                                                                                                    |
 
 **主题机制**：`<html data-theme>` + JS 写入的 7 个 `--dark-*` 变量；深色程度是 0–100 连续值，
 `theme.ts darkPalette(level)` 推导中性灰阶梯（app/sidebar/panel/elevated/border/hairline）。
@@ -40,23 +40,55 @@
 ```css
 :root {
   /* 间距刻度：4 的倍数，替换随手写的 px 间距（渐进替换，触及即改） */
-  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
-  --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
   /* 控件高度层级：按钮/输入/chip 统一取值 */
-  --control-h-sm: 24px; --control-h-md: 28px; --control-h-lg: 32px;
+  --control-h-sm: 24px;
+  --control-h-md: 28px;
+  --control-h-lg: 32px;
   --control-h: var(--control-h-md);
 }
 /* 界面密度：只影响 UI 行高、间距与控件高度，永远不进 .reader-scroll 内部 */
-:root[data-density='compact']    { --space-3: 8px;  --space-4: 12px; --space-6: 20px;
-                                   --control-h-md: 24px; --fs-body: 14px; --fs-row: 14px; --fs-small: 12px; }
-:root[data-density='comfortable']{ --space-3: 14px; --space-4: 20px; --space-6: 28px;
-                                   --control-h-md: 32px; --fs-body: 16px; --fs-row: 16px; --fs-small: 14px; }
+:root[data-density='compact'] {
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-6: 20px;
+  --control-h-md: 24px;
+  --fs-body: 14px;
+  --fs-row: 14px;
+  --fs-small: 12px;
+}
+:root[data-density='comfortable'] {
+  --space-3: 14px;
+  --space-4: 20px;
+  --space-6: 28px;
+  --control-h-md: 32px;
+  --fs-body: 16px;
+  --fs-row: 16px;
+  --fs-small: 14px;
+}
 /* UI 字号档：独立于密度；选择器必须限定在 UI 表面，禁止波及 PDF 文本层（.textLayer 的字号跟随画布缩放） */
-:root[data-ui-font='large'] { --fs-body: 16.5px; --fs-row: 16.5px; --fs-small: 14px; --fs-caption: 13px; }
-:root[data-ui-font='larger']{ --fs-body: 18px;   --fs-row: 18px;   --fs-small: 15px; --fs-caption: 14px; }
+:root[data-ui-font='large'] {
+  --fs-body: 16.5px;
+  --fs-row: 16.5px;
+  --fs-small: 14px;
+  --fs-caption: 13px;
+}
+:root[data-ui-font='larger'] {
+  --fs-body: 18px;
+  --fs-row: 18px;
+  --fs-small: 15px;
+  --fs-caption: 14px;
+}
 ```
 
 约束：
+
 - 密度与字号档**只改 UI 文本**。PDF 画布是 canvas 渲染天然不受影响；PDF 文本层（透明选字层）
   字号由缩放驱动，任何 UI 缩放选择器不得命中 `.reader-scroll`、`.reader-slot`、`.textLayer`。
 - 三档密度下逐一复测工具栏、面板、设置页不出现裁切与换行错乱。
@@ -75,11 +107,11 @@
 
 ### 3.2 三种布局预设
 
-| 预设 | 主侧栏 | 右侧面板 | 语义 |
-|---|---|---|---|
-| 专注阅读 focus | 收起（保留"展开侧栏"入口） | 收起（rail 常驻） | 最大化 PDF |
-| 均衡布局 balanced（默认） | 展开 | 收起，按需从 rail 打开 | 日常默认 |
-| 研究模式 research | 展开 | 展开并定位到上次使用的面板 | 边读边查/问 AI |
+| 预设                      | 主侧栏                     | 右侧面板                   | 语义           |
+| ------------------------- | -------------------------- | -------------------------- | -------------- |
+| 专注阅读 focus            | 收起（保留"展开侧栏"入口） | 收起（rail 常驻）          | 最大化 PDF     |
+| 均衡布局 balanced（默认） | 展开                       | 收起，按需从 rail 打开     | 日常默认       |
+| 研究模式 research         | 展开                       | 展开并定位到上次使用的面板 | 边读边查/问 AI |
 
 - 切换预设只设置各部件的初始开合；已存储的手动宽度（`rw.sidebarWidth`、`rw.panelWidth`）保持不动。
 - 预设选择持久化；重新打开应用恢复所选预设，窄窗口下抽屉/浮层规则仍优先于预设。

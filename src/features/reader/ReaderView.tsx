@@ -36,6 +36,14 @@ import {
   PANEL_WIDTH_STORAGE_KEY,
   READER_OVERLAY_QUERY,
 } from '../../app/config';
+import {
+  LAYOUT_CHANGE_EVENT,
+  readLastZoom,
+  readZoomDefault,
+  storeLastZoom,
+  type LayoutChangeDetail,
+  type LayoutPreset,
+} from '../../app/layoutPrefs';
 import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
@@ -128,6 +136,11 @@ interface ReaderViewProps {
   /** The application's resolved theme, which the paper follows until the reader chooses. */
   theme: 'light' | 'dark';
   /**
+   * The chosen workspace layout preset. 研究模式 opens the side panel with the paper; the
+   * other presets leave it on the rail. Switching it mid-session applies on the spot.
+   */
+  layoutPreset?: LayoutPreset;
+  /**
    * A quotation to land on, when the reader was opened from a concept's evidence.
    *
    * It is a one-shot instruction: the reader scrolls to the page and marks the words, and the
@@ -208,13 +221,22 @@ export function ReaderView({
   onDeleteAnnotation,
   aiClient,
   theme,
+  layoutPreset = 'balanced',
   focus = null,
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
   const paperMode = usePaperMode(theme);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [manualScale, setManualScale] = useState(1);
-  const [fitWidth, setFitWidth] = useState(true);
+  // The default-zoom strategy is read once per paper: it decides how this open starts, and
+  // "沿用上次" replays the zoom of the previous session with this file.
+  const [{ fit: initialFit, scale: initialScale }] = useState(() => {
+    const mode = readZoomDefault();
+    if (mode === '100') return { fit: false, scale: 1 };
+    if (mode === 'last') return readLastZoom() ?? { fit: true, scale: 1 };
+    return { fit: true, scale: 1 };
+  });
+  const [manualScale, setManualScale] = useState(initialScale);
+  const [fitWidth, setFitWidth] = useState(initialFit);
   const [currentPage, setCurrentPage] = useState(() => paper.reading?.page ?? 1);
   /**
    * Jumps made in this session, so a reader can come back from a note, a citation or an
@@ -290,11 +312,29 @@ export function ReaderView({
   /** The document's own table of contents, loaded when the document opens. */
   const outline = usePdfOutline(state.status === 'ready' ? state.doc : null);
   /** Which of the side panels is showing, if any. */
-  const [panel, setPanel] = useState<'ai' | 'knowledge' | 'outline' | null>(() =>
-    typeof window.matchMedia === 'function' && !window.matchMedia(OVERLAY_QUERY).matches
-      ? 'outline'
-      : null,
-  );
+  const [panel, setPanel] = useState<'ai' | 'knowledge' | 'outline' | null>(() => {
+    if (typeof window.matchMedia === 'function' && window.matchMedia(OVERLAY_QUERY).matches) {
+      return null;
+    }
+    return layoutPreset === 'research' ? 'outline' : null;
+  });
+  /** The panel that was open last, so 研究模式 reopens the one the reader used. */
+  const lastPanelRef = useRef<'ai' | 'knowledge' | 'outline'>('outline');
+  useEffect(() => {
+    if (panel !== null) lastPanelRef.current = panel;
+  }, [panel]);
+  // Choosing a preset in Settings applies while reading: research opens the last panel, the
+  // others fold back to the rail. Below the overlay breakpoint the panel is transient, so
+  // nothing to apply there.
+  const presetRef = useRef(layoutPreset);
+  useEffect(() => {
+    if (presetRef.current === layoutPreset) return;
+    presetRef.current = layoutPreset;
+    if (typeof window.matchMedia === 'function' && window.matchMedia(OVERLAY_QUERY).matches) {
+      return;
+    }
+    setPanel(layoutPreset === 'research' ? lastPanelRef.current : null);
+  }, [layoutPreset]);
   /**
    * How wide the side panel column is.
    *
@@ -345,6 +385,34 @@ export function ReaderView({
     },
     [panelWidth, setPanelWidth],
   );
+
+  // Settings can set the panel's width directly, and "恢复默认布局" resets width and zoom;
+  // both arrive as one layout-change announcement because the column lives here.
+  useEffect(() => {
+    const onLayoutChange = (event: Event): void => {
+      const detail = (event as CustomEvent<LayoutChangeDetail>).detail ?? {};
+      if (detail.panelWidth !== undefined) {
+        setPanelWidthRaw(
+          Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(detail.panelWidth))),
+        );
+      }
+      if (detail.reset === true) {
+        setPanelWidthRaw(PANEL_DEFAULT_WIDTH);
+        setFitWidth(true);
+        setManualScale(1);
+      }
+    };
+    window.addEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    return () => {
+      window.removeEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    };
+  }, []);
+
+  // The "沿用上次" default needs to know what the reader used last. It is written on every
+  // zoom change; the strategy only reads it back when it is the selected one.
+  useEffect(() => {
+    storeLastZoom({ fit: fitWidth, scale: manualScale });
+  }, [fitWidth, manualScale]);
 
   /** Boxes shown briefly when the reader follows a citation. Never saved, never a highlight. */
   const [spotlight, setSpotlight] = useState<{ page: number; rects: NormalizedRect[] } | null>(

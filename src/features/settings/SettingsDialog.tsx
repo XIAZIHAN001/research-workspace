@@ -1,5 +1,6 @@
 import { Dialog } from '../../ui/Dialog';
 import type { useAvatar } from '../home/useAvatar';
+import type { Density, UiFont } from '../theme/appearancePrefs';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 import { SettingsView, type SettingsSection } from './SettingsView';
 
@@ -12,6 +13,10 @@ interface SettingsDialogProps {
   level: DarkLevel;
   onChangePref: (pref: ThemePref) => void;
   onChangeLevel: (level: DarkLevel) => void;
+  density: Density;
+  uiFont: UiFont;
+  onChangeDensity: (density: Density) => void;
+  onChangeUiFont: (font: UiFont) => void;
   avatar: ReturnType<typeof useAvatar>;
   profileName: string;
   onProfileName: (raw: string) => string;
@@ -32,6 +37,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
         level={props.level}
         onChangePref={props.onChangePref}
         onChangeLevel={props.onChangeLevel}
+        density={props.density}
+        uiFont={props.uiFont}
+        onChangeDensity={props.onChangeDensity}
+        onChangeUiFont={props.onChangeUiFont}
         avatar={props.avatar}
         profileName={props.profileName}
         onProfileName={props.onProfileName}

@@ -3,6 +3,7 @@ import { AppearancePanel } from './AppearancePanel';
 import { AiSettingsPanel } from './AiSettingsPanel';
 import { ProfilePanel } from './ProfilePanel';
 import type { useAvatar } from '../home/useAvatar';
+import type { Density, UiFont } from '../theme/appearancePrefs';
 import type { DarkLevel, ThemePref } from '../theme/theme';
 
 export type SettingsSection = 'profile' | 'appearance' | 'ai';
@@ -14,6 +15,10 @@ interface SettingsViewProps {
   level: DarkLevel;
   onChangePref: (pref: ThemePref) => void;
   onChangeLevel: (level: DarkLevel) => void;
+  density: Density;
+  uiFont: UiFont;
+  onChangeDensity: (density: Density) => void;
+  onChangeUiFont: (font: UiFont) => void;
   avatar: ReturnType<typeof useAvatar>;
   profileName: string;
   /** Stores the nickname and returns what is displayed after trimming. */
@@ -35,6 +40,10 @@ export function SettingsView({
   level,
   onChangePref,
   onChangeLevel,
+  density,
+  uiFont,
+  onChangeDensity,
+  onChangeUiFont,
   avatar,
   profileName,
   onProfileName,
@@ -65,6 +74,10 @@ export function SettingsView({
             level={level}
             onChangePref={onChangePref}
             onChangeLevel={onChangeLevel}
+            density={density}
+            uiFont={uiFont}
+            onChangeDensity={onChangeDensity}
+            onChangeUiFont={onChangeUiFont}
             avatar={avatar}
           />
         ) : section === 'ai' ? (
