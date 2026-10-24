@@ -19,12 +19,19 @@
 ## 2. 桌面（Tauri）兼容 —— 部分执行，其余如实 NOT_RUN
 
 - `npm run desktop:prepare`：✓ sidecar 运行时准备成功（rw-node.exe 87.2 MB，win32/x64）。
-- `cargo check`（src-tauri）：**NOT_RUN** — 本机 MSVC 链接环境故障（`multiversion_no_op`/
-  `rustversion` 构建脚本在 link 阶段失败，Git Bash 与 cmd 两种环境同样失败）。该问题先于本轮
-  存在（src-tauri 本轮零改动），属本机工具链配置，需人工修复 PATH/组件后重验。
-- 桌面 GUI 人工走查（开关窗、AI 服务页 provider IPC、密钥状态、sidecar 生命周期）：**NOT_RUN**
-  （无 GUI 自动化通道）。缓解：桌面分支 UI（WindowBar、AI 服务页桌面分区、provider IPC 契约）
-  已由 `verify:ui-phase12` 的 tauri stub 以现行契约覆盖（64/64，含 AI 服务页三主题审计）。
+- `cargo check`（src-tauri）：**✓ 通过（21s）**。更正：此前的失败不是本机工具链故障——直接在
+  shell 里调 cargo 会命中 GNU coreutils 的 `link`（PATH 遮蔽）且 VS 装在非标准路径
+  `D:\VS CODE`；**项目的 `scripts/desktop/msvc-env.cmd`（Phase 10 固化的 vcvars64 环境）就是
+  既定入口**，经它调用一切正常。
+- **桌面真机验证：✓ 4/4（2026-10-24，用户授权后执行）**。经 `msvc-env.cmd npm run desktop:dev`
+  启动 debug 壳（24.8s），WebView2 开 CDP 通道由 playwright 驱动（`.cache/desktop-verify.mjs`）：
+  1. 桌面壳：`.desktop-frame` + `.window-bar` + 3 个窗口控制按钮；
+  2. **AI 服务页以真实 Rust IPC 渲染**（无 stub）：运行模式/供应商与模型分区、凭据行、
+     `ai_providers` 返回的 2 个 provider、无浏览器降级提示；
+  3. 外观偏好（density=standard / scrollEdge=soft / 四组分段）在桌面 webview 生效；
+  4. 首页 Scroll Edge 渐隐在桌面壳内正常。
+     证据：`docs/phase14/desktop/`（4 截图 + desktop-verify.json）。
+- 未覆盖：在线模式付费调用、密钥真实写入 OS 凭据库、安装包安装流程（保持只读验证边界）。
 
 ## 3. 性能（Scroll Edge 专项）
 
