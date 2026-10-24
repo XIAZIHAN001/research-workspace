@@ -228,7 +228,7 @@ ${(await page.evaluate(() => document.body.innerText)).slice(0, 400)}
 
 /** Closes whichever side panel is open, so the rail can be checked. */
 async function closeSidePanel(page) {
-  for (const name of ['收起笔记', '关闭 AI 面板', '关闭相关知识']) {
+  for (const name of ['关闭目录', '关闭 AI 面板', '关闭相关知识']) {
     const button = page.getByRole('button', { name });
     if ((await button.count()) > 0) {
       await button.first().click();

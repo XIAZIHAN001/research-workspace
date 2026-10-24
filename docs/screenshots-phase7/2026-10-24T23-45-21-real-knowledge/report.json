@@ -1,0 +1,149 @@
+{
+  "generatedAt": "2026-10-24T23:45:36.874Z",
+  "run": "2026-10-24T23-45-21",
+  "provider": "mock (offline)",
+  "providerIdentity": {
+    "ok": true,
+    "instanceId": "a86ad9c2-ee6e-44f3-865c-817d2f5f852c",
+    "startedAt": "2026-10-24T23:45:22.019Z",
+    "provider": "mock",
+    "label": "本地模拟（未连接在线模型）",
+    "model": "mock-1",
+    "reasoning": null,
+    "online": false,
+    "budget": {
+      "requests": 50,
+      "tokensPerRequest": 8192,
+      "tokensPerSession": 200000
+    },
+    "pricing": {
+      "model": "mock-1",
+      "known": false,
+      "currency": "CNY",
+      "asOf": "2026-10-18",
+      "source": "https://api-docs.deepseek.com/quick_start/pricing",
+      "note": "没有这个模型的可用价格配置，费用估算不可靠；实际用量由模型服务结算。"
+    },
+    "limits": {
+      "passages": 8,
+      "passageChars": 2000,
+      "totalContextChars": 6000,
+      "questionChars": 1000,
+      "requestsPerMinute": 30,
+      "answerTokens": 8192,
+      "knowledgePassages": 8,
+      "knowledgeContextChars": 9000,
+      "knowledgePages": 6
+    },
+    "usage": {
+      "requests": 0,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "reasoningTokens": 0,
+      "totalTokens": 0,
+      "estimatedCostCny": 0,
+      "costKnown": true,
+      "unknownCostRequests": 0,
+      "exactTokens": true
+    }
+  },
+  "instanceId": "a86ad9c2-ee6e-44f3-865c-817d2f5f852c",
+  "papers": [
+    "2610.22294",
+    "2610.22327"
+  ],
+  "selectedQuotes": {
+    "lmFromDlm": "Diffusion language models (DLMs) offer a natural interface for these tasks because they are not\nrestricted to next-token prediction and can generate tokens anywhere on the shared canvas (Austin",
+    "fewShot": "Few-shot prompting is useful when instructions and rewards are hard to specify. One",
+    "diffusion": "Masked diffusion language models iteratively unmask positions\nwithin a shared canvas, supporting flexible generation orders and parallel decoding (Austin et al.,",
+    "multiTarget": "We therefore introduce multi-target few-shot prompting with diffusion language models,\nwhere examples guide the infilling of multiple masked regions within a shared canvas. To",
+    "tslm": "Time Series Language Models (TSLMs) enable language-based understanding\nand reasoning over temporal data, yet a fundamental question remains: what in-",
+    "lmFromTs": "should they factor out? Existing TSLMs typically expose the language model to a\nsingle representation, imposing a fixed inductive bias across downstream tasks.",
+    "vlm": "tion while emphasizing relative structure and temporal dynamics. Recent evaluations further show\nthat simply rendering a time series as a line plot can already provide strong temporal understand-"
+  },
+  "passed": 16,
+  "failed": 0,
+  "results": [
+    {
+      "name": "real paper D: four quotations were selected from its own rendered text",
+      "passed": true,
+      "detail": "193,83,161,175"
+    },
+    {
+      "name": "real paper T: three quotations were selected from its own rendered text",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "one concept, two papers, two different occurrences",
+      "passed": true,
+      "detail": "Twice Upon a Time: Complementary Representations for Time-Series Reasoning / Multi-Target Few-Shot Prompting with Diffusion Language Models"
+    },
+    {
+      "name": "the two occurrences are different quotations, each from its own paper",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "navigation: a three-level chain can be walked (multi-target → diffusion → language model)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "navigation: the second chain also reaches the shared concept (TSLM → VLM → language model)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "graph: seven concepts and seven dependencies",
+      "passed": true,
+      "detail": "7 nodes, 7 edges"
+    },
+    {
+      "name": "evidence: opening the occurrence lands on the quoted sentence in the paper",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "returning: the graph and the selected concept are still where they were",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "honesty: a concept without evidence says so in the list and the detail",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "cross-project: the same concept is available in the second project",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "cross-project: the occurrences from both papers are visible there too",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "replaced file: the old occurrence is kept but cannot jump into the new file",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: the service this run started was the offline mock",
+      "passed": true,
+      "detail": "instance a86ad9c2"
+    },
+    {
+      "name": "safety: the knowledge network was built without any assistant request",
+      "passed": true,
+      "detail": "0 request(s)"
+    },
+    {
+      "name": "console: nothing failed unexpectedly",
+      "passed": true,
+      "detail": "0 unexpected"
+    }
+  ],
+  "consoleIssues": []
+}

@@ -416,12 +416,13 @@ async function main() {
     await toolbar.getByRole('button', { name: '保存' }).click();
     await page.locator('.pdf-highlight').first().waitFor({ timeout: 10_000 });
     check('高亮已绘制在 PDF 上', (await page.locator('.pdf-highlight').count()) > 0);
-    await page.getByLabel('打开我的笔记').click();
-    const notesPanel = page.getByLabel('论文笔记');
-    await notesPanel.getByText(NOTE_TEXT).waitFor({ timeout: 10_000 });
+    // 37493ba folded notes into the merged outline panel; the rail button follows it.
+    await page.getByLabel('打开目录、书签和笔记').click();
+    const outlinePanel = page.getByLabel('论文目录');
+    await outlinePanel.getByText(NOTE_TEXT).waitFor({ timeout: 10_000 });
     check('笔记面板读到刚保存的笔记', true);
     await screenshot(page, '04-note.png');
-    await page.getByLabel('收起笔记').click();
+    await page.getByLabel('关闭目录').click();
     await page.getByRole('button', { name: '返回' }).click();
     await page.getByRole('heading', { level: 1, name: PROJECT_NAME }).waitFor();
 

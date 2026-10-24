@@ -492,7 +492,7 @@ async function main() {
 
     // ---- The graph and the return from the paper -------------------------
     await page.getByRole('button', { name: '关系图' }).click();
-    const graph = page.getByRole('group', { name: '概念关系图' });
+    const graph = page.getByRole('group', { name: '概念关系图', exact: true });
     await graph.waitFor();
     check(
       'graph: seven concepts and seven dependencies',

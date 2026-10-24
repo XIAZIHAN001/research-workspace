@@ -188,7 +188,7 @@ async function createConcept(page, name, summary = '') {
 
 /** Closes whichever side panel is open, so the rail is reachable. */
 async function closeSidePanel(page) {
-  for (const name of ['收起笔记', '关闭 AI 面板', '关闭难点面板']) {
+  for (const name of ['关闭目录', '关闭 AI 面板', '关闭相关知识']) {
     const button = page.getByRole('button', { name });
     if ((await button.count()) > 0) {
       await button.first().click();
@@ -232,10 +232,12 @@ async function main() {
 
     // ---- Read a page so there is something to build concepts from ----------
     await closeSidePanel(page);
-    await page.getByRole('button', { name: '打开智能难点' }).click();
-    const difficulty = page.getByRole('complementary', { name: '智能难点' });
-    await difficulty.waitFor({ timeout: 10_000 });
-    await difficulty.getByRole('button', { name: '启用智能难点标注' }).click();
+    // The difficulty fold now lives inside the merged knowledge panel.
+    await page.getByRole('button', { name: '打开相关知识与难点' }).click();
+    const knowledge = page.getByRole('complementary', { name: '相关知识' });
+    await knowledge.waitFor({ timeout: 10_000 });
+    const difficulty = knowledge.getByRole('region', { name: '本页难点' });
+    await difficulty.getByRole('button', { name: '启用难点标注' }).click();
     await difficulty.getByRole('button', { name: '开始分析' }).click();
     await page.locator('.pdf-suggestion').first().waitFor({ timeout: 25_000 });
     check(
@@ -325,7 +327,7 @@ async function main() {
 
     // ---- The graph shows what the list shows -------------------------------
     await page.getByRole('button', { name: '关系图' }).click();
-    const graph = page.getByRole('group', { name: '概念关系图' });
+    const graph = page.getByRole('group', { name: '概念关系图', exact: true });
     await graph.waitFor({ timeout: 5000 });
     check(
       'graph: every concept is a node, and the relation is an edge',

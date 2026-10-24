@@ -830,7 +830,7 @@ async function main() {
       ) ?? false,
     );
     await audit(page, 'reader / dark 100');
-    if ((await page.getByRole('button', { name: '收起笔记' }).count()) > 0) {
+    if ((await page.getByRole('button', { name: '关闭目录' }).count()) > 0) {
       await page.getByRole('button', { name: '关闭目录' }).click();
       await page.waitForTimeout(250);
     }
