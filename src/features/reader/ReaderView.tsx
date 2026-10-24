@@ -445,6 +445,18 @@ export function ReaderView({
     () => annotations.filter((annotation) => annotation.pdfSha256 === pdfSha256),
     [annotations, pdfSha256],
   );
+  // The same paper after its file was replaced: the notes are kept, but they belong to a file
+  // this reader cannot draw. They stay visible in the outline (without a jump) instead of
+  // silently disappearing — the merge into the outline must not hide them.
+  const elsewhere = useMemo(
+    () =>
+      pdfSha256 === null
+        ? []
+        : annotations.filter(
+            (annotation) => annotation.paperId === paper.id && annotation.pdfSha256 !== pdfSha256,
+          ),
+    [annotations, paper.id, pdfSha256],
+  );
   const byPage = useMemo(() => {
     const map = new Map<number, Annotation[]>();
     for (const annotation of here) {
@@ -1643,6 +1655,7 @@ export function ReaderView({
                   }}
                   bookmarks={bookmarks}
                   annotations={here}
+                  elsewhereNotes={elsewhere}
                   activeNoteId={activeAnnotationId}
                   onAddBookmark={(label) => {
                     onAddBookmark(currentPage, label);

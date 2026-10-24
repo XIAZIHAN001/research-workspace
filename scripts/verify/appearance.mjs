@@ -20,7 +20,7 @@ export async function setAppTheme(page, label) {
   await page.getByRole('button', { name: label, exact: true }).click();
   await page.waitForTimeout(250);
   if (!alreadyOpen) {
-    await page.locator('dialog[open]').getByRole('button', { name: '关闭' }).click();
+    await page.locator('dialog[open] .dialog-head').getByRole('button', { name: '关闭' }).click();
     await page.waitForFunction(() => document.querySelector('dialog[open]') === null);
   }
 }

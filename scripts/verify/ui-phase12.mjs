@@ -335,7 +335,7 @@ async function openAiSettings(page) {
 }
 
 async function closeSettings(page) {
-  await page.locator('dialog[open]').getByRole('button', { name: '关闭' }).click();
+  await page.locator('dialog[open] .dialog-head').getByRole('button', { name: '关闭' }).click();
   await page.waitForFunction(() => document.querySelector('dialog[open]') === null);
 }
 

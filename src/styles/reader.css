@@ -2114,6 +2114,22 @@
   border-radius: var(--r-sm);
 }
 
+/* Notes that belong to an older file version: visible so they are never lost, muted so they
+   do not read as marks of this file, and without a jump — the anchor cannot be trusted. */
+.outline-elsewhere {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.outline-mark[data-stale] {
+  opacity: 0.68;
+}
+
+.outline-mark[data-stale]:hover {
+  background: transparent;
+}
+
 .outline-mark:hover,
 .outline-mark[data-active='true'] {
   background: var(--row-hover);

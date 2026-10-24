@@ -39,6 +39,8 @@ interface OutlinePanelProps {
    */
   bookmarks?: readonly Bookmark[];
   annotations?: readonly Annotation[];
+  /** Notes of this paper that belong to an older file version: stored, but not drawn. */
+  elsewhereNotes?: readonly Annotation[];
   activeNoteId?: string | null;
   onAddBookmark?: (label: string) => void;
   onRenameBookmark?: (id: string, label: string) => void;
@@ -71,6 +73,7 @@ export function OutlinePanel({
   onClose,
   bookmarks = [],
   annotations = [],
+  elsewhereNotes = [],
   activeNoteId = null,
   onAddBookmark,
   onRenameBookmark,
@@ -186,6 +189,46 @@ export function OutlinePanel({
             onToggle={toggle}
             onJump={onJump}
           />
+        )}
+
+        {elsewhereNotes.length > 0 && (
+          <section className="outline-elsewhere" aria-label="另一份 PDF 上的笔记">
+            <p className="outline-loose-title">另一份 PDF 上的笔记（{elsewhereNotes.length}）</p>
+            <p className="outline-note">
+              这篇论文的 PDF 文件换过了，旧笔记不会画在新文件上——它们还在，只是位置对不上。
+            </p>
+            <ul className="outline-marks">
+              {elsewhereNotes.map((annotation) => {
+                const excerpt = annotation.note.trim() === '' ? annotation.quote : annotation.note;
+                return (
+                  <li key={annotation.id} className="outline-mark" data-kind="note" data-stale>
+                    <span className="outline-mark-main">
+                      <StickyNote size={12} aria-hidden="true" />
+                      <span className="outline-mark-text">{excerpt}</span>
+                      <span className="outline-mark-kind">
+                        {ANNOTATION_KIND_LABEL[annotation.kind]}
+                      </span>
+                      <span className="outline-mark-page">第 {annotation.page} 页</span>
+                    </span>
+                    {onDeleteNote !== undefined && (
+                      <span className="outline-mark-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`删除第 ${String(annotation.page)} 页的笔记`}
+                          onClick={() => {
+                            onDeleteNote(annotation);
+                          }}
+                        >
+                          <Trash2 size={11} aria-hidden="true" />
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         )}
       </div>
     </aside>
