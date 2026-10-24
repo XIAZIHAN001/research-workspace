@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-24T03:22:42.934Z",
+  "generatedAt": "2026-10-24T04:30:32.421Z",
   "baseUrl": "http://127.0.0.1:4178/",
   "viewportMatrix": [
     "1440x900",
@@ -17,25 +17,25 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.home-panel-title \"继续阅读\" @381,329",
+          "label": "h2.home-panel-title \"继续阅读\" @381,349",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @850,330",
+          "label": "span.home-panel-count \"2\" @850,350",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @856,330",
+          "label": "span.home-panel-count \"篇\" @856,350",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,395",
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,415",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
@@ -52,25 +52,25 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.home-panel-title \"继续阅读\" @381,329",
+          "label": "h2.home-panel-title \"继续阅读\" @381,349",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @850,330",
+          "label": "span.home-panel-count \"2\" @850,350",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @856,330",
+          "label": "span.home-panel-count \"篇\" @856,350",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,395",
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,415",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
@@ -87,25 +87,25 @@
       "failures": [],
       "lowest": [
         {
-          "label": "h2.home-panel-title \"继续阅读\" @381,329",
+          "label": "h2.home-panel-title \"继续阅读\" @381,349",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @850,330",
+          "label": "span.home-panel-count \"2\" @850,350",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @856,330",
+          "label": "span.home-panel-count \"篇\" @856,350",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,395",
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,415",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
@@ -122,13 +122,13 @@
       "failures": [],
       "lowest": [
         {
-          "label": "kbd.sidebar-kbd \"Ctrl K\" @186,120",
+          "label": "kbd.sidebar-kbd \"Ctrl K\" @186,162",
           "ratio": 4.66,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "h2.group-title \"项目\" @32,348",
+          "label": "h2.group-title \"项目\" @32,390",
           "ratio": 4.66,
           "need": 4.5,
           "translucent": false
@@ -157,25 +157,25 @@
       "failures": [],
       "lowest": [
         {
-          "label": "input.input \"placeholder: 按标题、作者、DOI \" @443,229",
+          "label": "input.input \"placeholder: 按标题、作者、DOI \" @443,249",
           "ratio": 7.73,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"导入 PDF\" @1165,363",
+          "label": "button.btn \"导入 PDF\" @1165,383",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"导入 PDF\" @1165,512",
+          "label": "button.btn \"导入 PDF\" @1165,532",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"导入 PDF\" @1165,661",
+          "label": "button.btn \"导入 PDF\" @1165,681",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
@@ -192,25 +192,25 @@
       "failures": [],
       "lowest": [
         {
-          "label": "button.btn \"适应宽度\" @1258,168",
+          "label": "button.btn \"适应宽度\" @1258,188",
           "ratio": 5.48,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "p.banner \"浏览器没有保存最近的改动，关闭窗口后可能丢失。\" @689,69",
+          "label": "p.banner \"浏览器没有保存最近的改动，关闭窗口后可能丢失。\" @689,89",
           "ratio": 8.54,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"返回\" @289,166",
+          "label": "button.btn \"返回\" @289,186",
           "ratio": 8.73,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.reader-page-total \"/\" @1057,168",
+          "label": "span.reader-page-total \"/\" @1057,188",
           "ratio": 9.01,
           "need": 4.5,
           "translucent": false
@@ -223,29 +223,29 @@
     },
     {
       "label": "AI settings / dark 100",
-      "checked": 24,
+      "checked": 23,
       "failures": [],
       "lowest": [
         {
-          "label": "button.btn \"显示输入\" @445,578",
+          "label": "button.btn \"显示输入\" @445,638",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"删除已保存的 Key\" @536,578",
+          "label": "button.btn \"删除已保存的 Key\" @536,638",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @383,273",
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @383,333",
           "ratio": 8.09,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "h3.settings-section-title \"运行模式\" @341,208",
+          "label": "h3.settings-section-title \"运行模式\" @341,268",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
@@ -258,29 +258,29 @@
     },
     {
       "label": "AI settings / dark 0",
-      "checked": 24,
+      "checked": 23,
       "failures": [],
       "lowest": [
         {
-          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @383,273",
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @383,333",
           "ratio": 4.92,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"显示输入\" @445,578",
+          "label": "button.btn \"显示输入\" @445,638",
           "ratio": 4.96,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"删除已保存的 Key\" @536,578",
+          "label": "button.btn \"删除已保存的 Key\" @536,638",
           "ratio": 4.96,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "input \"placeholder: sk-…\" @351,533",
+          "label": "input \"placeholder: sk-…\" @351,593",
           "ratio": 4.99,
           "need": 4.5,
           "translucent": false
@@ -549,12 +549,12 @@
       "detail": "当前：离线模拟"
     },
     {
-      "name": "contrast: AI settings / dark 100 — 24 text runs meet WCAG AA",
+      "name": "contrast: AI settings / dark 100 — 23 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 7.98"
     },
     {
-      "name": "contrast: AI settings / dark 0 — 24 text runs meet WCAG AA",
+      "name": "contrast: AI settings / dark 0 — 23 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 4.92"
     },
@@ -616,5 +616,5 @@
   ],
   "passed": 64,
   "failed": 0,
-  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-24T03-22-16-ui\\"
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-24T04-30-04-ui\\"
 }

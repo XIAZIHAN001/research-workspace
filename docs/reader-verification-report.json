@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-24T03:57:08.818Z",
+  "generatedAt": "2026-10-24T04:29:38.420Z",
   "passed": 27,
   "failed": 0,
   "results": [
@@ -36,7 +36,7 @@
     {
       "name": "pages: jumping by number reaches page 3",
       "passed": true,
-      "detail": "{\"indicator\":\"3\",\"scrollTop\":9,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"4724.44px\"}"
+      "detail": "{\"indicator\":\"3\",\"scrollTop\":10,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"4724.44px\"}"
     },
     {
       "name": "pages: the jumped-to page has its own text",
@@ -81,7 +81,7 @@
     {
       "name": "layout: the current page sits inside the visible area",
       "passed": true,
-      "detail": "{\"scroll\":[262,130,1152,758],\"page\":[286,146,1094,1548],\"scrollTop\":1572}"
+      "detail": "{\"scroll\":[262,150,1152,718],\"page\":[286,166,1094,1548],\"scrollTop\":1572}"
     },
     {
       "name": "theme: the page follows the reading mode in dark mode",
