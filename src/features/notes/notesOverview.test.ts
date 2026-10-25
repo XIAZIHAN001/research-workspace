@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
-import { filterNotes, groupNotes } from './notesOverview';
+import { filterNotes, groupNotes, openQuestionCount } from './notesOverview';
 
 function note(id: string, paperId: string, overrides: Partial<Annotation> = {}): Annotation {
   return {
@@ -72,6 +72,29 @@ describe('filterNotes', () => {
       paperId: 'p1',
     });
     expect(result.map((entry) => entry.id)).toStrictEqual(['d1']);
+  });
+
+  it('narrows to open or resolved questions only, whatever their paper', () => {
+    const resolved = { ...gamma, kind: 'question' as const, resolvedAt: 77 };
+    const open = filterNotes([alpha, beta, resolved, delta], {
+      query: '',
+      kind: 'all',
+      paperId: null,
+      questionStatus: 'open',
+    });
+    expect(open.map((entry) => entry.id)).toStrictEqual([beta.id]);
+    const done = filterNotes([alpha, beta, resolved, delta], {
+      query: '',
+      kind: 'all',
+      paperId: null,
+      questionStatus: 'resolved',
+    });
+    expect(done.map((entry) => entry.id)).toStrictEqual([gamma.id]);
+  });
+
+  it('counts only the questions that are still open', () => {
+    expect(openQuestionCount([alpha, beta, { ...gamma, resolvedAt: 9 }])).toBe(1);
+    expect(openQuestionCount([])).toBe(0);
   });
 });
 

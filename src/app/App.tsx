@@ -9,10 +9,13 @@ import { HomeView } from '../features/home/HomeView';
 import { useAvatar } from '../features/home/useAvatar';
 import { useWelcome } from '../features/home/useWelcome';
 import { useTheme } from '../features/theme/useTheme';
+import { useAppearancePrefs } from '../features/theme/useAppearancePrefs';
 import { EditPaperDialog } from '../features/papers/EditPaperDialog';
 import { ImportPaperDialog } from '../features/library/ImportPaperDialog';
+import { BibTeXImportDialog } from '../features/library/BibTeXImportDialog';
 import { LibraryView } from '../features/library/LibraryView';
 import { NotesView } from '../features/notes/NotesView';
+import { ReviewView } from '../features/review/ReviewView';
 import {
   commitImport,
   describeEditFailure,
@@ -22,6 +25,7 @@ import { probePdf, readPdfMetadata } from '../features/reader/pdfjs';
 import type { ProbePdf } from '../features/library/importPdf';
 import { ReaderBoundary } from '../features/reader/ReaderBoundary';
 import { ReaderView } from '../features/reader/ReaderView';
+import { usePaperMode } from '../features/reader/usePaperMode';
 import { BackupDialog } from '../features/backup/BackupDialog';
 import { SettingsDialog } from '../features/settings/SettingsDialog';
 import type { SettingsSection } from '../features/settings/SettingsView';
@@ -29,12 +33,18 @@ import { useProfileName } from '../features/settings/useProfileName';
 import { GlobalSearchDialog } from '../features/search/GlobalSearchDialog';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
+import { createReviewStore, type ReviewStore } from '../services/reviewStore';
 import { createAnnotation } from '../domain/annotation';
+import { createGlossaryEntry, type GlossaryEdit } from '../domain/glossary';
 import { cleanBookmarkLabel, createBookmark } from '../domain/bookmark';
 import { bibtexKey, toBibtex } from '../domain/citation';
+import { buildPaperReport, reportFileName } from '../domain/paperReport';
+import { downloadTextFile } from '../services/download';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
+import { askAi } from '../services/ai/client';
+import { isDue } from '../domain/review';
 import type { Project } from '../domain/project';
 import type { ProjectsState } from '../domain/projectsState';
 import { daysBetween } from '../domain/time';
@@ -51,6 +61,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useNow } from '../ui/useNow';
 import { PROJECTS_BACKUP_KEY, PROJECTS_CORRUPT_KEY } from './config';
 import { useSidebar } from './useSidebar';
+import { useLayoutPreset } from './useLayoutPreset';
 import { WindowBar } from './WindowBar';
 import { isDesktopApp } from '../services/desktop/aiService';
 
@@ -65,11 +76,13 @@ interface AppProps {
   ai?: AiClient;
   /** The knowledge graph's storage; created on first use when not supplied. */
   knowledgeStore?: KnowledgeStore;
+  /** The review schedule's storage; created on first use when not supplied. */
+  reviewStore?: ReviewStore;
   /** Set when start-up had to finish or roll back a restore that was interrupted. */
   restoreNotice?: 'completed' | 'clean' | 'rolled-back' | 'blocked';
 }
 
-type View = 'home' | 'project' | 'library' | 'notes' | 'reader';
+type View = 'home' | 'project' | 'library' | 'notes' | 'review' | 'reader';
 
 /** Which file the import dialog is collecting, and where the paper should end up. */
 interface ImportRequest {
@@ -109,20 +122,37 @@ export function App({
   probe,
   ai,
   knowledgeStore,
+  reviewStore,
   restoreNotice,
 }: AppProps) {
-  const { projects, papers, annotations, bookmarks, selected, persisted, issue, actions } =
-    useProjects(store);
+  const {
+    projects,
+    papers,
+    annotations,
+    bookmarks,
+    glossary,
+    selected,
+    persisted,
+    issue,
+    actions,
+  } = useProjects(store);
   const theme = useTheme();
+  const appearance = useAppearancePrefs();
+  const layout = useLayoutPreset();
   const sidebar = useSidebar();
+  // The paper preference is owned here so the reader's toolbar and Settings › 阅读偏好 are
+  // one state, not two that can drift apart while both are mounted.
+  const paperMode = usePaperMode(theme.resolved);
   const avatar = useAvatar();
   const now = useNow();
   // One blob store per app instance: the reader keys its loading effect on this identity.
   const blobStore = useMemo(() => blobs ?? createPdfBlobStore(), [blobs]);
   const knowledge = useMemo(() => knowledgeStore ?? createKnowledgeStore(), [knowledgeStore]);
+  const review = useMemo(() => reviewStore ?? createReviewStore(), [reviewStore]);
   // Subscribed at the top so a dispatch anywhere re-renders the project view, the reader and
   // the sidebar from the same snapshot.
   useSyncExternalStore(knowledge.subscribe, knowledge.getSnapshot);
+  const reviewSnapshot = useSyncExternalStore(review.subscribe, review.getSnapshot);
   const knowledgeApi = useKnowledgeApi(knowledge, makeId);
 
   const [view, setView] = useState<View>('home');
@@ -134,6 +164,7 @@ export function App({
   /** Where to land in the reader, set when opening a paper from a concept's evidence. */
   const [readingFocus, setReadingFocus] = useState<{ page: number; quote: string } | null>(null);
   const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
+  const [bibtexOpen, setBibtexOpen] = useState(false);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [projectZone, setProjectZone] = useState<'papers' | 'knowledge'>('papers');
@@ -194,8 +225,15 @@ export function App({
   );
   /** The workspace in the shape the backup service reads — the same state the stores persist. */
   const projectsState = useMemo<ProjectsState>(
-    () => ({ projects, papers, annotations, bookmarks, selectedId: selected?.id ?? null }),
-    [projects, papers, annotations, bookmarks, selected?.id],
+    () => ({
+      projects,
+      papers,
+      annotations,
+      bookmarks,
+      glossary,
+      selectedId: selected?.id ?? null,
+    }),
+    [projects, papers, annotations, bookmarks, glossary, selected?.id],
   );
   const readingPaper = readingPaperId === null ? null : (papers[readingPaperId] ?? null);
   // Notes follow the paper, so every project that opens it sees the same ones.
@@ -205,6 +243,12 @@ export function App({
         ? []
         : annotations.filter((annotation) => annotation.paperId === readingPaper.id),
     [annotations, readingPaper],
+  );
+  // Glossary terms follow the paper the same way notes and bookmarks do.
+  const paperGlossary = useMemo(
+    () =>
+      readingPaper === null ? [] : glossary.filter((entry) => entry.paperId === readingPaper.id),
+    [glossary, readingPaper],
   );
   // Bookmarks follow the paper too, and are shown only in the reader for that paper.
   const paperBookmarks = useMemo(
@@ -225,6 +269,29 @@ export function App({
     }),
     [paperList, annotations, knowledgeApi.state.concepts, knowledgeApi.state.evidence],
   );
+
+  /*
+   * The review badge counts what a reader opening the page right now would face: cards whose
+   * time has come, plus confirmed concepts that have never been reviewed. Suggested concepts
+   * wait for confirmation, not for review.
+   */
+  const confirmedIds = useMemo(
+    () =>
+      new Set(
+        knowledgeApi.state.concepts
+          .filter((concept) => concept.status === 'confirmed')
+          .map((concept) => concept.id),
+      ),
+    [knowledgeApi.state.concepts],
+  );
+  const reviewDue = useMemo(() => {
+    let count = 0;
+    for (const conceptId of confirmedIds) {
+      const card = reviewSnapshot.state.cards[conceptId];
+      if (card === undefined || isDue(card, now)) count += 1;
+    }
+    return count;
+  }, [confirmedIds, reviewSnapshot, now]);
 
   // `now` ticks once a minute. Only the values derived from it feed the memo, so the
   // welcome line is requested again when the hour or the idle-day count changes, not every tick.
@@ -416,6 +483,8 @@ export function App({
         libraryActive={view === 'library'}
         notesActive={view === 'notes'}
         notesCount={annotations.length}
+        reviewActive={view === 'review'}
+        reviewDue={reviewDue}
         now={now}
         managing={managing}
         renamingId={renamingId}
@@ -431,6 +500,10 @@ export function App({
         }}
         onNotes={() => {
           setView('notes');
+          closeOverlay();
+        }}
+        onReview={() => {
+          setView('review');
           closeOverlay();
         }}
         onSearch={() => {
@@ -533,6 +606,8 @@ export function App({
               blobs={blobStore}
               aiClient={ai}
               theme={theme.resolved}
+              layoutPreset={layout.preset}
+              paperMode={paperMode}
               focus={readingFocus}
               onClose={closeReader}
               onReadingPosition={handleReadingPosition}
@@ -545,6 +620,32 @@ export function App({
               }}
               annotations={paperAnnotations}
               bookmarks={paperBookmarks}
+              glossary={paperGlossary}
+              onAddTerm={(draft) => {
+                const created =
+                  readingPaper === null
+                    ? null
+                    : createGlossaryEntry(
+                        { paperId: readingPaper.id, ...draft },
+                        makeId,
+                        Date.now(),
+                      );
+                if (created === null) return;
+                actions.addGlossary(created);
+                setNotice(`已把「${created.term}」记入这篇论文的术语表。`);
+              }}
+              onEditTerm={(id, edit: GlossaryEdit) => {
+                actions.updateGlossary(id, edit);
+              }}
+              onRemoveTerm={(id) => {
+                actions.removeGlossary(id);
+              }}
+              onSaveSummary={(summary) => {
+                actions.updatePaper(readingPaper.id, { summary });
+              }}
+              onClearSummary={() => {
+                actions.updatePaper(readingPaper.id, { summary: null });
+              }}
               onAddBookmark={(page, label) => {
                 const created = createBookmark(
                   { paperId: readingPaper.id, page, label },
@@ -693,9 +794,58 @@ export function App({
                 },
               );
             }}
+            onImportBibtex={() => {
+              setBibtexOpen(true);
+            }}
+            onExportReport={(paper) => {
+              const report = buildPaperReport({
+                paper,
+                annotations,
+                knowledge: knowledgeApi.state,
+                projects,
+                glossary,
+              });
+              downloadTextFile(reportFileName(paper), report, 'text/markdown;charset=utf-8');
+              setNotice(`已导出《${paper.title}》的阅读报告。`);
+            }}
+            onExportBibtex={() => {
+              // Keys are allocated in list order with the earlier ones marked taken, so two
+              // papers that would collide never produce the same key in one file.
+              const taken: string[] = [];
+              const body = paperList
+                .map((paper) => {
+                  const key = bibtexKey(paper, taken);
+                  taken.push(key);
+                  return toBibtex(paper, taken.slice(0, -1));
+                })
+                .join('');
+              downloadTextFile('论文库.bib', body, 'application/x-bibtex;charset=utf-8');
+              setNotice(`已导出 ${String(paperList.length)} 篇论文的 BibTeX。`);
+            }}
           />
         ) : view === 'notes' ? (
-          <NotesView annotations={annotations} papers={papers} onOpenPaper={openReader} />
+          <NotesView
+            annotations={annotations}
+            papers={papers}
+            onOpenPaper={openReader}
+            onResolveQuestion={(id, resolvedAt) => {
+              actions.updateAnnotation(id, { resolvedAt });
+            }}
+            ai={ai ?? { ask: askAi }}
+          />
+        ) : view === 'review' ? (
+          <ReviewView
+            concepts={knowledgeApi.state.concepts.filter(
+              (concept) => concept.status === 'confirmed',
+            )}
+            evidence={knowledgeApi.state.evidence}
+            papers={papers}
+            cards={reviewSnapshot.state.cards}
+            now={now}
+            onGrade={(conceptId, grade) => {
+              review.dispatch({ type: 'grade', conceptId, grade, at: Date.now() });
+            }}
+          />
         ) : showProject ? (
           <ProjectView
             project={selected}
@@ -808,6 +958,28 @@ export function App({
         onSave={(edit) => (editingPaper === null ? null : savePaperEdit(editingPaper.id, edit))}
       />
 
+      <BibTeXImportDialog
+        open={bibtexOpen}
+        papers={papers}
+        onClose={() => {
+          setBibtexOpen(false);
+        }}
+        onImport={(inputs) => {
+          // addPaper decides per entry: create, reuse the record its identifiers name, or
+          // refuse a conflict. The notice counts what ended up in place, without claiming
+          // every one of them was created by this import.
+          let conflicts = 0;
+          for (const input of inputs) {
+            const outcome = actions.addPaper(input);
+            if (outcome.status === 'conflict') conflicts += 1;
+          }
+          setNotice(
+            `BibTeX 导入完成：${String(inputs.length - conflicts)} 篇已就位` +
+              (conflicts > 0 ? `，${String(conflicts)} 篇因标识符冲突未导入。` : '。'),
+          );
+        }}
+      />
+
       <ConfirmDialog
         open={pendingDelete !== null}
         title="删除项目"
@@ -863,6 +1035,21 @@ export function App({
         level={theme.level}
         onChangePref={theme.setPref}
         onChangeLevel={theme.setLevel}
+        density={appearance.density}
+        uiFont={appearance.uiFont}
+        scrollEdge={appearance.scrollEdge}
+        onChangeDensity={appearance.setDensity}
+        onChangeUiFont={appearance.setUiFont}
+        onChangeScrollEdge={appearance.setScrollEdge}
+        paperMode={paperMode}
+        layoutPreset={layout.preset}
+        onChangeLayoutPreset={(preset) => {
+          layout.setPreset(preset);
+          // The preset names the startup layout; choosing one arranges the live one too.
+          sidebar.setOpen(preset !== 'focus');
+        }}
+        sidebarWidth={sidebar.width}
+        onSidebarWidth={sidebar.setWidth}
         avatar={avatar}
         profileName={profile.name}
         onProfileName={profile.save}

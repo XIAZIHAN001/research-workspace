@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 10;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -186,12 +186,54 @@ function migrateV5ToV6(payload: Record<string, unknown>): Record<string, unknown
   return { ...payload, version: 6, bookmarks: [] };
 }
 
+/**
+ * v6 → v7 added an optional `resolvedAt` to annotations: when a reader marked a question
+ * answered. The field needs no rewriting — absent means still open — so the step only states
+ * the new version, the same way v5 → v6 treated optional paper fields.
+ */
+function migrateV6ToV7(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 7 };
+}
+
+/**
+ * v7 → v8 added the paper glossary (`ProjectsState.glossary`). The list is written as an
+ * empty one so the payload is self-describing, exactly as v5 → v6 did for bookmarks.
+ */
+function migrateV7ToV8(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 8, glossary: [] };
+}
+
+/**
+ * v8 → v9 added an optional `summary` to papers (the AI summary card). An optional paper field
+ * needs no rewriting — absent means no card — so the step only states the version, the same way
+ * v6 → v7 treated annotation resolutions.
+ */
+function migrateV8ToV9(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 9 };
+}
+
+/**
+ * v9 → v10 added an optional `pdfSha256` to a paper's summary card, so a card can say whether
+ * it still describes the file the reader has. Optional inside an optional: no rewriting.
+ */
+function migrateV9ToV10(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 10 };
+}
+
 const MIGRATIONS: Record<number, MigrationStep> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
   4: migrateV4ToV5,
   5: migrateV5ToV6,
+  6: migrateV6ToV7,
+  7: migrateV7ToV8,
+  8: migrateV8ToV9,
+  9: migrateV9ToV10,
 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {
@@ -201,6 +243,7 @@ export function serializeProjects(state: ProjectsState): string {
     papers: state.papers,
     annotations: state.annotations,
     bookmarks: state.bookmarks,
+    glossary: state.glossary,
     selectedId: state.selectedId,
   });
 }

@@ -18,6 +18,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { auditContrast } from './contrast.mjs';
 import { buildSamplePdf } from './sample-pdf.mjs';
@@ -109,9 +110,35 @@ function tauriStub() {
           error: null,
         };
       }
+      if (command === 'ai_providers') {
+        return [
+          {
+            id: 'deepseek',
+            label: 'DeepSeek',
+            baseUrl: 'https://api.deepseek.com',
+            defaultModel: 'deepseek-flash',
+            models: ['deepseek-flash', 'deepseek-v4-pro'],
+            supportsThinking: true,
+          },
+          {
+            id: 'custom',
+            label: '自定义（OpenAI 兼容）',
+            baseUrl: '',
+            defaultModel: '',
+            models: [],
+            supportsThinking: false,
+          },
+        ];
+      }
       if (command === 'ai_credentials_status') return { configured: true, error: null };
       if (command === 'get_ai_settings') {
-        return { requests: 50, tokensPerRequest: 8192, tokensPerSession: 200000 };
+        return {
+          budget: { requests: 50, tokensPerRequest: 8192, tokensPerSession: 200000 },
+          provider: 'mock',
+          baseUrl: 'http://127.0.0.1:9',
+          model: 'mock-1',
+          reasoningEffort: 'none',
+        };
       }
       if (command === 'plugin:event|listen') return 1;
       if (command === 'plugin:event|unlisten') return null;
@@ -309,7 +336,7 @@ async function openAiSettings(page) {
 }
 
 async function closeSettings(page) {
-  await page.locator('dialog[open]').getByRole('button', { name: '关闭' }).click();
+  await page.locator('dialog[open] .dialog-head').getByRole('button', { name: '关闭' }).click();
   await page.waitForFunction(() => document.querySelector('dialog[open]') === null);
 }
 
@@ -346,6 +373,7 @@ async function main() {
   await mkdir(fileURLToPath(new URL('.cache/verify/', ROOT)), { recursive: true });
   await writeFile(SAMPLE_FILE, buildSamplePdf());
 
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   const browser = await launchBrowser();
   const context = await browser.newContext({
@@ -420,7 +448,7 @@ async function main() {
       level: document.documentElement.dataset.darkLevel,
       app: document.documentElement.style.getPropertyValue('--dark-app'),
       slider: document.querySelector('input[type="range"]')?.value ?? null,
-      segments: [...document.querySelectorAll('.seg')].map((button) =>
+      segments: [...document.querySelectorAll('.segmented[aria-label="主题"] .seg')].map((button) =>
         button.getAttribute('aria-label'),
       ),
     }));
@@ -506,9 +534,10 @@ async function main() {
     await shot(page, '01-home-dark-100-1440x900.png');
 
     const metrics = await layoutMetrics(page);
+    // The designed default moved to 224px with the layout presets (feat 6ce9f3e).
     check(
-      'layout: the sidebar sits within the 240–260px target',
-      metrics.sidebarWidth >= 240 && metrics.sidebarWidth <= 260,
+      'layout: the sidebar sits within the 214–234px target',
+      metrics.sidebarWidth >= 214 && metrics.sidebarWidth <= 234,
       `${String(metrics.sidebarWidth)}px`,
     );
     check('layout: the footer stays inside the sidebar', metrics.footerControlsInside);
@@ -649,11 +678,14 @@ async function main() {
       JSON.stringify({ app: white.app.css, main: white.main.css }),
     );
     check(
-      'primary: light mode uses the accent blue with white text',
+      'primary: light mode uses the near-black inverse with white text',
       primaryLight !== null &&
         primaryLight.ratio >= 4.5 &&
-        primaryLight.backgroundChannels[2] >= 150 &&
-        primaryLight.backgroundChannels[0] <= 40 &&
+        // A near-neutral dark fill: every channel low, and no hue left between channels.
+        Math.max(...primaryLight.backgroundChannels) <= 60 &&
+        Math.max(...primaryLight.backgroundChannels) -
+          Math.min(...primaryLight.backgroundChannels) <=
+          8 &&
         primaryLight.foregroundChannels.every((channel) => channel >= 240),
       JSON.stringify(primaryLight),
     );
@@ -803,15 +835,16 @@ async function main() {
       ) ?? false,
     );
     await audit(page, 'reader / dark 100');
-    if ((await page.getByRole('button', { name: '收起笔记' }).count()) > 0) {
-      await page.getByRole('button', { name: '收起笔记' }).click();
+    if ((await page.getByRole('button', { name: '关闭目录' }).count()) > 0) {
+      await page.getByRole('button', { name: '关闭目录' }).click();
       await page.waitForTimeout(250);
     }
     await shot(page, '08-reader-dark-100-1440x900.png');
-    await page.getByRole('button', { name: '打开我的笔记' }).click();
+    // 37493ba merged bookmarks and notes into the outline panel; the rail button follows it.
+    await page.getByRole('button', { name: '打开目录、书签和笔记' }).click();
     await page.waitForTimeout(300);
     await shot(page, '09-reader-notes-dark-100-1440x900.png');
-    await page.getByRole('button', { name: '收起笔记' }).click();
+    await page.getByRole('button', { name: '关闭目录' }).click();
 
     // ---- AI service settings: compact rows in the settings page ------------------------
     await page.setViewportSize({ width: 1024, height: 689 });
@@ -846,6 +879,7 @@ async function main() {
         }),
         text: settings.textContent ?? '',
         state: document.querySelector('.ai-settings__state')?.textContent?.trim() ?? '',
+        notice: document.querySelector('.ai-settings__notice')?.textContent?.trim() ?? '',
       };
     });
     check(
@@ -866,9 +900,13 @@ async function main() {
       !ai.overflow && ai.inside,
       `${String(ai.panelWidth)} / ${String(ai.dialogWidth)}`,
     );
+    // The provider choice list names its own presets; the status line and the notice must
+    // stay neutral about which vendor is behind the offline mode.
     check(
-      'ai settings: no vendor name is shown',
-      !/deepseek|openai|anthropic|claude|moonshot|bigmodel|gemini/i.test(ai.text),
+      'ai settings: no vendor name is shown in the status or the notice',
+      !/deepseek|openai|anthropic|claude|moonshot|bigmodel|gemini/i.test(
+        `${ai.state} ${ai.notice}`,
+      ),
     );
     check(
       'ai settings: the mode is stated in neutral words',
@@ -952,7 +990,7 @@ async function main() {
     );
 
     await openAppearance(page);
-    await page.locator('.segmented .seg').last().focus();
+    await page.locator('.segmented[aria-label="主题"] .seg').last().focus();
     await page.keyboard.press('Tab');
     const sliderFocus = await page.evaluate(() => {
       const active = document.activeElement;
@@ -981,7 +1019,7 @@ async function main() {
         setter?.call(input, String(value));
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      const buttons = document.querySelectorAll('.segmented .seg');
+      const buttons = document.querySelectorAll('.segmented[aria-label="主题"] .seg');
       for (let round = 0; round < 3; round += 1) {
         buttons.forEach((button) => button.click());
       }
@@ -992,7 +1030,7 @@ async function main() {
       theme: document.documentElement.dataset.theme,
       pref: document.documentElement.dataset.themePref,
       storedLevel: localStorage.getItem('rw.themeLevel'),
-      pressed: [...document.querySelectorAll('.seg')].filter(
+      pressed: [...document.querySelectorAll('.segmented[aria-label="主题"] .seg')].filter(
         (button) => button.getAttribute('aria-pressed') === 'true',
       ).length,
     }));

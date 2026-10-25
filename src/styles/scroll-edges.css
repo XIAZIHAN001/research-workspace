@@ -1,0 +1,99 @@
+/* Scroll edge fades: the visual system for lists and conversations that end at a container
+   edge. One implementation for every scrolling surface in the app.
+
+   How it works, and why there is no JavaScript scroll state here: each scroll container gets
+   two zero-cost sticky bars (::before / ::after — they are its first and last children). A bar
+   is `position: sticky` at the edge with its own gradient, so it sits over the content only
+   while that content has somewhere to scroll *past* it:
+
+   - 无溢出: the bars render as h px of background-coloured space — invisible, nothing fades;
+   - 顶部: the top bar's natural position is above the first line, so it is scrolled out and
+     clipped — the first line reads in full, while the bottom bar still fades the tail;
+   - 中间: both bars are pinned to the scrollport edges and soften both ends;
+   - 底部: mirror image of 顶部.
+
+   The bars are pointer-transparent and paint the surface colour they sit on (a var(), so the
+   continuously adjustable dark palette follows on its own), which makes the fade read as
+   content dissolving into its own background. Nothing here may be applied to the PDF column
+   (`.reader-scroll`) — canvas, text layer and annotation layers must stay untouched.
+
+   Rejected alternatives (see docs/phase14/P2 notes): `mask-image` on the container fades more
+   literally but also clips sticky children (the settings nav) and focus rings that reach an
+   edge; `backdrop-filter` needs bars that genuinely overlay the content, which this layout
+   does not have outside dialogs — evaluated and consciously not applied.
+*/
+
+.ai-scroll,
+.sidebar-scroll,
+.outline-scroll,
+.knowledge-panel-scroll,
+.knowledge-list,
+.concept-graph-scroll,
+.main,
+.global-search-results,
+.dialog:has(.settings) .settings {
+  --scroll-edge-from: var(--color-bg-panel);
+}
+
+/* Each surface fades into its own background, not into a global one. */
+.sidebar-scroll {
+  --scroll-edge-from: var(--color-bg-sidebar);
+}
+
+.main {
+  --scroll-edge-from: var(--color-bg-app);
+}
+
+.ai-scroll::before,
+.ai-scroll::after,
+.sidebar-scroll::before,
+.sidebar-scroll::after,
+.outline-scroll::before,
+.outline-scroll::after,
+.knowledge-panel-scroll::before,
+.knowledge-panel-scroll::after,
+.knowledge-list::before,
+.knowledge-list::after,
+.concept-graph-scroll::before,
+.concept-graph-scroll::after,
+.main::before,
+.main::after,
+.global-search-results::before,
+.global-search-results::after,
+.dialog:has(.settings) .settings::before,
+.dialog:has(.settings) .settings::after {
+  content: '';
+  position: sticky;
+  z-index: 2;
+  flex: none;
+  align-self: stretch;
+  grid-column: 1 / -1;
+  height: var(--scroll-edge-h);
+  pointer-events: none;
+}
+
+.ai-scroll::before,
+.sidebar-scroll::before,
+.outline-scroll::before,
+.knowledge-panel-scroll::before,
+.knowledge-list::before,
+.concept-graph-scroll::before,
+.main::before,
+.global-search-results::before,
+.dialog:has(.settings) .settings::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--scroll-edge-from), transparent);
+}
+
+.ai-scroll::after,
+.sidebar-scroll::after,
+.outline-scroll::after,
+.knowledge-panel-scroll::after,
+.knowledge-list::after,
+.concept-graph-scroll::after,
+.main::after,
+.global-search-results::after,
+.dialog:has(.settings) .settings::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--scroll-edge-from), transparent);
+}

@@ -110,7 +110,19 @@ function describe(mode, passage, question) {
     `“${quoted}”`,
     '',
   ];
-  if (mode === 'translate') {
+  if (mode === 'summarize') {
+    lines.push(
+      '问题：这份摘要卡由本地模拟生成，用于验证摘要流程。',
+      '方法：离线 mock 会按请求附带的页数返回固定结构，不产生任何费用。',
+      '结论：接入在线模型后，这里会是依据全文三段式摘要。',
+    );
+  } else if (mode === 'draft') {
+    lines.push(
+      '## 论点一（模拟）',
+      '这是由你的笔记整理出的占位草稿段落，引用对应关系由 [1] 标注。',
+      '在线模型接入后，这里会按论点组织你的全部笔记并逐条溯源。',
+    );
+  } else if (mode === 'translate') {
     lines.push('译文：这是一段用于验证翻译流程的占位译文，它与左侧英文原文逐段对应显示。');
   } else if (mode === 'formula') {
     lines.push(

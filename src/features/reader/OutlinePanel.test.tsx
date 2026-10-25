@@ -31,6 +31,42 @@ function renderPanel(
 }
 
 describe('OutlinePanel', () => {
+  it('lists notes from an older file version without a jump, and offers to delete them', () => {
+    const onDeleteNote = vi.fn();
+    const stale = createAnnotation(
+      {
+        paperId: 'paper-1',
+        pdfSha256: 'a'.repeat(64),
+        page: 2,
+        quote: '旧文件里的话',
+        prefix: '',
+        suffix: '',
+        rects: [{ x: 0.1, y: 0.2, width: 0.4, height: 0.02 }],
+        kind: 'note',
+        note: '旧文件里的笔记',
+      },
+      () => 'a-old',
+      1200,
+    );
+    if (stale === null) throw new Error('fixture annotation was refused');
+    render(
+      <OutlinePanel
+        outline={outline}
+        currentPage={2}
+        onJump={vi.fn()}
+        onClose={vi.fn()}
+        elsewhereNotes={[stale]}
+        onDeleteNote={onDeleteNote}
+      />,
+    );
+    expect(screen.getByText('另一份 PDF 上的笔记（1）')).toBeTruthy();
+    expect(screen.getByText('旧文件里的笔记')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '删除第 2 页的笔记' }));
+    expect(onDeleteNote).toHaveBeenCalledWith(stale);
+    // 旧文件的行不再是跳转按钮：锚点对不上新文件，跳转只会制造误导。
+    expect(screen.queryByRole('button', { name: /旧文件里的笔记/ })).toBeNull();
+  });
+
   it('says so when the PDF has no outline', () => {
     renderPanel({ status: 'ready', items: [] }, 1);
     expect(screen.getByText('这份 PDF 没有目录。')).toBeTruthy();

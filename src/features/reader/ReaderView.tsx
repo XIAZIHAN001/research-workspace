@@ -36,13 +36,26 @@ import {
   PANEL_WIDTH_STORAGE_KEY,
   READER_OVERLAY_QUERY,
 } from '../../app/config';
+import {
+  LAYOUT_CHANGE_EVENT,
+  readLastZoom,
+  readZoomDefault,
+  storeLastZoom,
+  type LayoutChangeDetail,
+  type LayoutPreset,
+} from '../../app/layoutPrefs';
 import { fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { useMediaQuery } from '../../ui/useMediaQuery';
 import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
+import { GlossaryHover } from './GlossaryHover';
+import { buildAskContext, MAX_DOCUMENT_PASSAGES } from '../../services/ai/context';
+import type { PaperSummary } from '../../domain/papers';
+import type { GlossaryEdit, GlossaryEntry } from '../../domain/glossary';
 import { FindBar } from './FindBar';
 import { KnowledgePanel } from './KnowledgePanel';
 import { useKnowledgeAnalysis } from './useKnowledgeAnalysis';
@@ -51,6 +64,7 @@ import { inspectPageLayout, measureFragmentation } from './layout';
 import { OutlinePanel } from './OutlinePanel';
 import { PaperModeSwitch } from './PaperModeSwitch';
 import { PdfPage } from './PdfPage';
+import { ReaderMoreMenu } from './ReaderMoreMenu';
 import { SuggestionCard } from './SuggestionCard';
 import { useDifficultyScan, type LocatedQuote } from './useDifficultyScan';
 import { usePaperMode } from './usePaperMode';
@@ -83,6 +97,7 @@ import { usePdfOutline } from './usePdfOutline';
 import { usePdfSearch } from './usePdfSearch';
 import { useReadingHistory } from './useReadingHistory';
 import { useAiReading, type AiClient, type AiSource, type AiTurn } from './useAiReading';
+import type { PaperModeController } from './usePaperMode';
 
 /** How long the reading column must hold still before a new fit-width scale is computed. */
 const RESIZE_SETTLE_MS = 120;
@@ -90,6 +105,15 @@ const RESIZE_SETTLE_MS = 120;
 interface ReaderViewProps {
   paper: Paper;
   blobs: PdfBlobStore;
+  /** The paper's glossary terms; hovering one in the text layer shows its definition. */
+  glossary?: readonly GlossaryEntry[];
+  /** Saves a term the reader defined from a selection or in the outline panel. */
+  onAddTerm?: (draft: { term: string; definition: string }) => void;
+  /** Stores a generated summary card on the paper. */
+  onSaveSummary?: (summary: PaperSummary) => void;
+  onClearSummary?: () => void;
+  onEditTerm?: (id: string, edit: GlossaryEdit) => void;
+  onRemoveTerm?: (id: string) => void;
   onClose: () => void;
   /** Called with the page the reader is on; the caller decides how often to persist it. */
   onReadingPosition: (page: number) => void;
@@ -127,6 +151,16 @@ interface ReaderViewProps {
   aiClient?: AiClient;
   /** The application's resolved theme, which the paper follows until the reader chooses. */
   theme: 'light' | 'dark';
+  /**
+   * The chosen workspace layout preset. 研究模式 opens the side panel with the paper; the
+   * other presets leave it on the rail. Switching it mid-session applies on the spot.
+   */
+  layoutPreset?: LayoutPreset;
+  /**
+   * The paper preference, lifted so Settings › 阅读偏好 and the toolbar share one state.
+   * When omitted the reader owns it, as it always has.
+   */
+  paperMode?: PaperModeController;
   /**
    * A quotation to land on, when the reader was opened from a concept's evidence.
    *
@@ -206,15 +240,36 @@ export function ReaderView({
   onOpenConceptInProject,
   onEditAnnotation,
   onDeleteAnnotation,
+  glossary = [],
+  onAddTerm,
+  onEditTerm,
+  onRemoveTerm,
+  onSaveSummary,
+  onClearSummary,
   aiClient,
   theme,
+  layoutPreset = 'balanced',
+  paperMode: paperModeProp,
   focus = null,
 }: ReaderViewProps) {
   const state = usePdfDocument(paper.pdf, blobs);
-  const paperMode = usePaperMode(theme);
+  const ownedPaperMode = usePaperMode(theme);
+  const paperMode = paperModeProp ?? ownedPaperMode;
+  // Below the reader's overlay breakpoint the bar folds its secondary tools into a menu; the
+  // breakpoint is the same one that turns the panel into an overlay, so the whole reading
+  // layout switches shape together.
+  const compactBar = useMediaQuery(READER_OVERLAY_QUERY);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [manualScale, setManualScale] = useState(1);
-  const [fitWidth, setFitWidth] = useState(true);
+  // The default-zoom strategy is read once per paper: it decides how this open starts, and
+  // "沿用上次" replays the zoom of the previous session with this file.
+  const [{ fit: initialFit, scale: initialScale }] = useState(() => {
+    const mode = readZoomDefault();
+    if (mode === '100') return { fit: false, scale: 1 };
+    if (mode === 'last') return readLastZoom() ?? { fit: true, scale: 1 };
+    return { fit: true, scale: 1 };
+  });
+  const [manualScale, setManualScale] = useState(initialScale);
+  const [fitWidth, setFitWidth] = useState(initialFit);
   const [currentPage, setCurrentPage] = useState(() => paper.reading?.page ?? 1);
   /**
    * Jumps made in this session, so a reader can come back from a note, a citation or an
@@ -290,11 +345,29 @@ export function ReaderView({
   /** The document's own table of contents, loaded when the document opens. */
   const outline = usePdfOutline(state.status === 'ready' ? state.doc : null);
   /** Which of the side panels is showing, if any. */
-  const [panel, setPanel] = useState<'ai' | 'knowledge' | 'outline' | null>(() =>
-    typeof window.matchMedia === 'function' && !window.matchMedia(OVERLAY_QUERY).matches
-      ? 'outline'
-      : null,
-  );
+  const [panel, setPanel] = useState<'ai' | 'knowledge' | 'outline' | null>(() => {
+    if (typeof window.matchMedia === 'function' && window.matchMedia(OVERLAY_QUERY).matches) {
+      return null;
+    }
+    return layoutPreset === 'research' ? 'outline' : null;
+  });
+  /** The panel that was open last, so 研究模式 reopens the one the reader used. */
+  const lastPanelRef = useRef<'ai' | 'knowledge' | 'outline'>('outline');
+  useEffect(() => {
+    if (panel !== null) lastPanelRef.current = panel;
+  }, [panel]);
+  // Choosing a preset in Settings applies while reading: research opens the last panel, the
+  // others fold back to the rail. Below the overlay breakpoint the panel is transient, so
+  // nothing to apply there.
+  const presetRef = useRef(layoutPreset);
+  useEffect(() => {
+    if (presetRef.current === layoutPreset) return;
+    presetRef.current = layoutPreset;
+    if (typeof window.matchMedia === 'function' && window.matchMedia(OVERLAY_QUERY).matches) {
+      return;
+    }
+    setPanel(layoutPreset === 'research' ? lastPanelRef.current : null);
+  }, [layoutPreset]);
   /**
    * How wide the side panel column is.
    *
@@ -346,12 +419,42 @@ export function ReaderView({
     [panelWidth, setPanelWidth],
   );
 
+  // Settings can set the panel's width directly, and "恢复默认布局" resets width and zoom;
+  // both arrive as one layout-change announcement because the column lives here.
+  useEffect(() => {
+    const onLayoutChange = (event: Event): void => {
+      const detail = (event as CustomEvent<LayoutChangeDetail>).detail ?? {};
+      if (detail.panelWidth !== undefined) {
+        setPanelWidthRaw(
+          Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(detail.panelWidth))),
+        );
+      }
+      if (detail.reset === true) {
+        setPanelWidthRaw(PANEL_DEFAULT_WIDTH);
+        setFitWidth(true);
+        setManualScale(1);
+      }
+    };
+    window.addEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    return () => {
+      window.removeEventListener(LAYOUT_CHANGE_EVENT, onLayoutChange);
+    };
+  }, []);
+
+  // The "沿用上次" default needs to know what the reader used last. It is written on every
+  // zoom change; the strategy only reads it back when it is the selected one.
+  useEffect(() => {
+    storeLastZoom({ fit: fitWidth, scale: manualScale });
+  }, [fitWidth, manualScale]);
+
   /** Boxes shown briefly when the reader follows a citation. Never saved, never a highlight. */
   const [spotlight, setSpotlight] = useState<{ page: number; rects: NormalizedRect[] } | null>(
     null,
   );
   const [health, setHealth] = useState<AiHealth | null>(null);
   const ai = useAiReading(aiClient);
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryNotice, setSummaryNotice] = useState<string | null>(null);
 
   const pdfSha256 = paper.pdf?.sha256 ?? null;
   // Read in the background, once per file: the assistant answers from the whole paper, not the page.
@@ -362,6 +465,18 @@ export function ReaderView({
   const here = useMemo(
     () => annotations.filter((annotation) => annotation.pdfSha256 === pdfSha256),
     [annotations, pdfSha256],
+  );
+  // The same paper after its file was replaced: the notes are kept, but they belong to a file
+  // this reader cannot draw. They stay visible in the outline (without a jump) instead of
+  // silently disappearing — the merge into the outline must not hide them.
+  const elsewhere = useMemo(
+    () =>
+      pdfSha256 === null
+        ? []
+        : annotations.filter(
+            (annotation) => annotation.paperId === paper.id && annotation.pdfSha256 !== pdfSha256,
+          ),
+    [annotations, paper.id, pdfSha256],
   );
   const byPage = useMemo(() => {
     const map = new Map<number, Annotation[]>();
@@ -1006,6 +1121,59 @@ export function ReaderView({
     if (anchor !== null) clearSelection();
   };
 
+  /**
+   * Generates the paper's summary card: the whole document as passages, one confirmed click.
+   *
+   * The answer is stored verbatim with its provenance, the same rule an assistant note follows:
+   * a card keeps saying which model wrote it, forever, even after that model is long gone.
+   */
+  const generateSummary = async (): Promise<void> => {
+    if (aiClient === undefined || summaryBusy || onSaveSummary === undefined) return;
+    setSummaryNotice(null);
+    if (documentText.pages.length === 0) {
+      setSummaryNotice('论文文字还没有提取好，稍等一下再试。');
+      return;
+    }
+    const pageSource = sourceFor(currentPage, null);
+    if (pageSource === null) {
+      setSummaryNotice('当前页还没有渲染好，暂时无法组织请求。');
+      return;
+    }
+    setSummaryBusy(true);
+    try {
+      const request = buildAskContext({
+        paperId: paper.id,
+        title: paper.title,
+        pdfSha256: pdfSha256 ?? '',
+        page: currentPage,
+        pageText: pageSource.pageText,
+        layoutNotice: null,
+        documentPages: documentText.pages,
+        mode: 'summarize',
+        question: '请按「问题 / 方法 / 结论」生成这篇论文的摘要卡。',
+      });
+      const result = await aiClient.ask(request);
+      if (!result.ok) {
+        setSummaryNotice(`生成失败：${result.failure.message}`);
+        return;
+      }
+      onSaveSummary({
+        text: result.answer.answer,
+        // The card keeps naming the file it was written from, so a replaced PDF can be caught.
+        ...(pdfSha256 === null ? {} : { pdfSha256 }),
+        provider: result.answer.provider,
+        providerLabel: result.answer.providerLabel,
+        model: result.answer.model,
+        online: result.answer.online,
+        createdAt: Date.now(),
+      });
+    } catch (error) {
+      setSummaryNotice(`生成失败：${String(error)}`);
+    } finally {
+      setSummaryBusy(false);
+    }
+  };
+
   /** The tab and the rail open the current session when there is one, and create one if not. */
   const showKnowledgePanel = (): void => {
     if (knowledgeAnalysis.context === null || knowledgeAnalysis.context.paperId !== paper.id) {
@@ -1154,53 +1322,59 @@ export function ReaderView({
   return (
     <div className="reader">
       <div className="reader-bar">
-        <button type="button" className="btn btn-quiet" onClick={onClose}>
-          <ArrowLeft size={15} aria-hidden="true" />
-          返回
-        </button>
-        <h1 className="reader-title" title={paper.title}>
-          {paper.title}
-        </h1>
+        <div className="reader-bar-lead">
+          <button type="button" className="btn btn-quiet" onClick={onClose}>
+            <ArrowLeft size={15} aria-hidden="true" />
+            返回
+          </button>
+          <h1 className="reader-title" title={paper.title}>
+            {paper.title}
+          </h1>
 
-        <div className="reader-history" role="group" aria-label="阅读位置历史">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="回到上一个阅读位置"
-            title="上一个位置（Alt+←）"
-            disabled={!canBack}
-            onClick={goBack}
-          >
-            <Undo2 size={15} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="前往下一个阅读位置"
-            title="下一个位置（Alt+→）"
-            disabled={!canForward}
-            onClick={goForward}
-          >
-            <Redo2 size={15} aria-hidden="true" />
-          </button>
+          {!compactBar && (
+            <div className="reader-history" role="group" aria-label="阅读位置历史">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="回到上一个阅读位置"
+                title="上一个位置（Alt+←）"
+                disabled={!canBack}
+                onClick={goBack}
+              >
+                <Undo2 size={15} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="前往下一个阅读位置"
+                title="下一个位置（Alt+→）"
+                disabled={!canForward}
+                onClick={goForward}
+              >
+                <Redo2 size={15} aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </div>
 
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="查找"
-          title="查找（Ctrl+F）"
-          aria-pressed={findOpen}
-          disabled={state.status !== 'ready'}
-          onClick={() => {
-            if (findOpen) closeFind();
-            else setFindOpen(true);
-          }}
-        >
-          <Search size={15} aria-hidden="true" />
-        </button>
+        {!compactBar && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="查找"
+            title="查找（Ctrl+F）"
+            aria-pressed={findOpen}
+            disabled={state.status !== 'ready'}
+            onClick={() => {
+              if (findOpen) closeFind();
+              else setFindOpen(true);
+            }}
+          >
+            <Search size={15} aria-hidden="true" />
+          </button>
+        )}
 
-        <div className="reader-page">
+        <div className="reader-page" role="group" aria-label="页码导航">
           {state.status === 'ready' ? (
             <>
               <button
@@ -1250,7 +1424,7 @@ export function ReaderView({
           )}
         </div>
 
-        <div className="reader-zoom">
+        <div className="reader-zoom" role="group" aria-label="缩放">
           <button
             type="button"
             className="icon-btn"
@@ -1285,8 +1459,24 @@ export function ReaderView({
             <Maximize2 size={14} aria-hidden="true" />
             适应宽度
           </button>
-          <PaperModeSwitch pref={paperMode.pref} onChange={paperMode.setPref} />
+          {!compactBar && <PaperModeSwitch pref={paperMode.pref} onChange={paperMode.setPref} />}
         </div>
+
+        {compactBar && (
+          <ReaderMoreMenu
+            findOpen={findOpen}
+            onToggleFind={() => {
+              if (findOpen) closeFind();
+              else setFindOpen(true);
+            }}
+            canBack={canBack}
+            canForward={canForward}
+            onBack={goBack}
+            onForward={goForward}
+            paperMode={paperMode.pref}
+            onPaperMode={paperMode.setPref}
+          />
+        )}
       </div>
 
       {findOpen && state.status === 'ready' && (
@@ -1539,6 +1729,7 @@ export function ReaderView({
                   }}
                   bookmarks={bookmarks}
                   annotations={here}
+                  elsewhereNotes={elsewhere}
                   activeNoteId={activeAnnotationId}
                   onAddBookmark={(label) => {
                     onAddBookmark(currentPage, label);
@@ -1549,7 +1740,33 @@ export function ReaderView({
                   onEditNote={(id, note) => {
                     onEditAnnotation(id, { note });
                   }}
+                  onResolveNote={(id, resolvedAt) => {
+                    onEditAnnotation(id, { resolvedAt });
+                  }}
                   onDeleteNote={setPendingDelete}
+                  glossary={glossary}
+                  summary={paper.summary}
+                  summaryBusy={summaryBusy}
+                  summaryNotice={summaryNotice}
+                  summaryScope={
+                    documentText.pages.length === 0
+                      ? null
+                      : {
+                          pagesSent: Math.min(documentText.pages.length, MAX_DOCUMENT_PASSAGES),
+                          pagesTotal: documentText.pages.length,
+                          truncated: documentText.pages.length > MAX_DOCUMENT_PASSAGES,
+                        }
+                  }
+                  summaryOnline={health?.online === true}
+                  summaryStale={
+                    paper.summary?.pdfSha256 !== undefined &&
+                    paper.summary.pdfSha256 !== (paper.pdf?.sha256 ?? paper.summary.pdfSha256)
+                  }
+                  onGenerateSummary={onSaveSummary === undefined ? undefined : generateSummary}
+                  onClearSummary={onClearSummary}
+                  onAddGlossaryTerm={onAddTerm}
+                  onEditGlossaryTerm={onEditTerm}
+                  onRemoveGlossaryTerm={onRemoveTerm}
                   onExportNotes={() => {
                     downloadTextFile(
                       notesFileName(paper),
@@ -1608,6 +1825,8 @@ export function ReaderView({
         </div>
       )}
 
+      <GlossaryHover entries={glossary} />
+
       {pendingSelection !== null && (
         <AnnotationToolbar
           spot={pendingSelection.spot}
@@ -1619,6 +1838,8 @@ export function ReaderView({
           onKnowledge={() => {
             openKnowledge(pendingSelection.anchor);
           }}
+          onTerm={onAddTerm}
+          selectionText={pendingSelection.anchor.quote}
           onDismiss={clearSelection}
         />
       )}

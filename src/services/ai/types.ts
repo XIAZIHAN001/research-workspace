@@ -7,7 +7,8 @@
  */
 
 /** The kinds of help the reader can ask for at a selection. */
-export type AiMode = 'explain' | 'walkthrough' | 'formula' | 'translate' | 'ask';
+export type AiMode =
+  'explain' | 'walkthrough' | 'formula' | 'translate' | 'ask' | 'summarize' | 'draft';
 
 export const AI_MODE_LABEL: Record<AiMode, string> = {
   explain: '解释这段话',
@@ -15,7 +16,20 @@ export const AI_MODE_LABEL: Record<AiMode, string> = {
   formula: '解释数学公式',
   translate: '翻译为中文',
   ask: '自由提问',
+  summarize: '生成摘要卡',
+  draft: '整理笔记草稿',
 };
+
+/**
+ * The reader's own note attached to a passage, for draft mode only.
+ *
+ * The passage stays the citation anchor; the note is what the reader wrote about it and never
+ * becomes quotable material — the service carries it beside the paper block, not inside it.
+ */
+export interface AiDraftNote {
+  passageId: string;
+  note: string;
+}
 
 /** One block of原文 the model is allowed to rely on. Exactly one is the reader's selection. */
 export interface AiPassage {
@@ -61,6 +75,8 @@ export interface AiAskRequest {
   paper: AiPaperRef;
   passages: AiPassage[];
   history?: AiHistoryTurn[];
+  /** Draft mode only: the reader's own notes, each pinned to the passage it belongs to. */
+  draftNotes?: AiDraftNote[];
   /** What the reader's own layout check found, stated as a measurement rather than a guess. */
   layoutNotice?: string | null;
   scope?: AiScope;

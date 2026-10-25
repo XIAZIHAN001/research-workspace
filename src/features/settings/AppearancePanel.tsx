@@ -1,23 +1,40 @@
-import { AvatarPicker } from '../home/AvatarPicker';
-import type { useAvatar } from '../home/useAvatar';
+import {
+  DENSITY_LABEL,
+  SCROLL_EDGE_LABEL,
+  UI_FONT_LABEL,
+  type Density,
+  type ScrollEdge,
+  type UiFont,
+} from '../theme/appearancePrefs';
 import { DarkLevelSlider, ThemeSegments } from '../theme/ThemeSwitch';
 import type { DarkLevel, ThemePref } from '../theme/theme';
+import { TextSegments } from './PrefSegments';
 
 interface AppearancePanelProps {
   pref: ThemePref;
   level: DarkLevel;
   onChangePref: (pref: ThemePref) => void;
   onChangeLevel: (level: DarkLevel) => void;
-  avatar: ReturnType<typeof useAvatar>;
+  density: Density;
+  uiFont: UiFont;
+  scrollEdge: ScrollEdge;
+  onChangeDensity: (density: Density) => void;
+  onChangeUiFont: (font: UiFont) => void;
+  onChangeScrollEdge: (edge: ScrollEdge) => void;
 }
 
-/** Settings › Appearance: the only place the theme preference is edited. */
+/** Settings › Appearance: theme, dark depth, density, UI text size and scroll edges. */
 export function AppearancePanel({
   pref,
   level,
   onChangePref,
   onChangeLevel,
-  avatar,
+  density,
+  uiFont,
+  scrollEdge,
+  onChangeDensity,
+  onChangeUiFont,
+  onChangeScrollEdge,
 }: AppearancePanelProps) {
   return (
     <section className="settings-panel" aria-labelledby="appearance-title">
@@ -51,19 +68,45 @@ export function AppearancePanel({
 
         <div className="settings-row">
           <div className="settings-row-text">
-            <h3 className="settings-row-title">头像</h3>
+            <h3 className="settings-row-title">界面密度</h3>
+            <p className="settings-row-hint">调整间距与控件高度，不影响论文页面。</p>
+          </div>
+          <TextSegments
+            value={density}
+            values={['compact', 'standard', 'comfortable'] as const}
+            labels={DENSITY_LABEL}
+            label="界面密度"
+            onChange={onChangeDensity}
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <h3 className="settings-row-title">界面字号</h3>
+            <p className="settings-row-hint">只放大界面文字，论文页面保持原样。</p>
+          </div>
+          <TextSegments
+            value={uiFont}
+            values={['default', 'large', 'larger'] as const}
+            labels={UI_FONT_LABEL}
+            label="界面字号"
+            onChange={onChangeUiFont}
+          />
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <h3 className="settings-row-title">滚动边缘</h3>
             <p className="settings-row-hint">
-              显示在侧栏左下角。支持 PNG、JPEG、WebP 或 SVG，最大 1 MB。
+              列表和对话滚动到上下边缘时的渐隐；不影响论文页面本身。
             </p>
           </div>
-          <AvatarPicker
-            compact
-            src={avatar.src}
-            isCustom={avatar.isCustom}
-            problem={avatar.problem}
-            onUpload={avatar.upload}
-            onReset={avatar.reset}
-            onDismissProblem={avatar.dismiss}
+          <TextSegments
+            value={scrollEdge}
+            values={['off', 'soft', 'standard'] as const}
+            labels={SCROLL_EDGE_LABEL}
+            label="滚动边缘"
+            onChange={onChangeScrollEdge}
           />
         </div>
       </div>

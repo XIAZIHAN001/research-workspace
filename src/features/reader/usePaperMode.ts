@@ -8,6 +8,9 @@ import {
   type PaperPalette,
 } from './paperTheme';
 
+/** The paper preference's public shape, shared by the reader and Settings › 阅读偏好. */
+export type PaperModeController = ReturnType<typeof usePaperMode>;
+
 /**
  * The reader's paper preference.
  *

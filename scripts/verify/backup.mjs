@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { selectSpans } from './text-selection.mjs';
@@ -312,6 +313,7 @@ async function main() {
   await mkdir(WORK_DIR, { recursive: true });
 
   const service = await startService();
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   await requireOfflineProxy(ORIGIN, {
     expectedInstance: service.health.instanceId,
@@ -397,7 +399,7 @@ async function main() {
     // Graph mode and a selected concept, so environment B can prove the return keeps them.
     await page.getByRole('button', { name: '关系图' }).click();
     await page
-      .getByRole('group', { name: '概念关系图' })
+      .getByRole('group', { name: '概念关系图', exact: true })
       .getByRole('button', { name: 'KZG commitment', exact: true })
       .click();
     await detailOf(page, 'KZG commitment')
@@ -582,14 +584,15 @@ async function main() {
       'environment B: the reader reopens on the restored page',
       (await pageB.locator('.reader-page-jump input').inputValue()) === '2',
     );
-    const notesPanel = pageB.getByRole('complementary', { name: '论文笔记' });
-    if ((await notesPanel.count()) === 0) {
-      await pageB.getByRole('button', { name: '打开我的笔记' }).click();
+    // 37493ba folded notes into the merged outline panel; the rail button follows it.
+    const outlinePanel = pageB.getByRole('complementary', { name: '论文目录' });
+    if ((await outlinePanel.count()) === 0) {
+      await pageB.getByRole('button', { name: '打开目录、书签和笔记' }).click();
     }
-    await notesPanel.waitFor({ timeout: 10_000 });
+    await outlinePanel.waitFor({ timeout: 10_000 });
     check(
       'environment B: the restored note is on the paper',
-      (await notesPanel.innerText()).includes('迁移验收的笔记'),
+      (await outlinePanel.innerText()).includes('迁移验收的笔记'),
     );
     await pageB.screenshot({ path: fileURLToPath(new URL('03-restored-paper.png', SHOT_DIR)) });
 
@@ -598,7 +601,7 @@ async function main() {
     await openKnowledge(pageB);
     await pageB.getByRole('button', { name: '关系图' }).click();
     await pageB
-      .getByRole('group', { name: '概念关系图' })
+      .getByRole('group', { name: '概念关系图', exact: true })
       .getByRole('button', { name: 'KZG commitment', exact: true })
       .click();
     await detailOf(pageB, 'KZG commitment')

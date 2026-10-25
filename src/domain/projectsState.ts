@@ -1,5 +1,6 @@
 import { applyAnnotationEdit, type Annotation, type AnnotationEdit } from './annotation';
 import type { Bookmark } from './bookmark';
+import { applyGlossaryEdit, type GlossaryEdit, type GlossaryEntry } from './glossary';
 import { normalizeName } from './normalize';
 import { applyPaperEdit, type Paper, type PaperEdit } from './papers';
 import type { Project } from './project';
@@ -25,6 +26,11 @@ export interface ProjectsState {
    * survive the project that led the reader to them.
    */
   bookmarks: Bookmark[];
+  /**
+   * The terms a reader defined for a paper, like the annotations and bookmarks beside them:
+   * paper-scoped, project-independent, and untouched by deleting a project.
+   */
+  glossary: GlossaryEntry[];
 }
 
 export const EMPTY_STATE: ProjectsState = {
@@ -32,6 +38,7 @@ export const EMPTY_STATE: ProjectsState = {
   papers: {},
   annotations: [],
   bookmarks: [],
+  glossary: [],
   selectedId: null,
 };
 
@@ -57,6 +64,9 @@ export type ProjectsAction =
   | { type: 'removeAnnotation'; id: string }
   /** Saves a place in a paper. */
   | { type: 'addBookmark'; bookmark: Bookmark }
+  | { type: 'addGlossary'; entry: GlossaryEntry }
+  | { type: 'updateGlossary'; id: string; edit: GlossaryEdit; now: number }
+  | { type: 'removeGlossary'; id: string }
   /** Changes the bookmark's name; where it points never moves. */
   | { type: 'renameBookmark'; id: string; label: string }
   | { type: 'removeBookmark'; id: string }
@@ -166,6 +176,28 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
     case 'addBookmark': {
       if (state.bookmarks.some((bookmark) => bookmark.id === action.bookmark.id)) return state;
       return { ...state, bookmarks: [...state.bookmarks, action.bookmark] };
+    }
+
+    case 'addGlossary': {
+      if (state.glossary.some((entry) => entry.id === action.entry.id)) return state;
+      return { ...state, glossary: [...state.glossary, action.entry] };
+    }
+
+    case 'updateGlossary': {
+      const current = state.glossary.find((entry) => entry.id === action.id);
+      if (current === undefined) return state;
+      // A blank term is refused by the domain, not silently trimmed into meaninglessness.
+      const updated = applyGlossaryEdit(current, action.edit, action.now);
+      if (updated === null || updated === current) return state;
+      return {
+        ...state,
+        glossary: state.glossary.map((entry) => (entry === current ? updated : entry)),
+      };
+    }
+
+    case 'removeGlossary': {
+      if (!state.glossary.some((entry) => entry.id === action.id)) return state;
+      return { ...state, glossary: state.glossary.filter((entry) => entry.id !== action.id) };
     }
 
     case 'renameBookmark': {

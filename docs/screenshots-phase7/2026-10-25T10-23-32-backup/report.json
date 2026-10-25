@@ -1,0 +1,252 @@
+{
+  "generatedAt": "2026-10-25T10:23:49.696Z",
+  "run": "2026-10-25T10-23-32",
+  "provider": "mock (offline)",
+  "providerIdentity": {
+    "ok": true,
+    "instanceId": "6c83e955-c431-4680-9eab-43f210374cf2",
+    "startedAt": "2026-10-25T10:23:32.690Z",
+    "provider": "mock",
+    "label": "本地模拟（未连接在线模型）",
+    "model": "mock-1",
+    "reasoning": null,
+    "online": false,
+    "budget": {
+      "requests": 50,
+      "tokensPerRequest": 8192,
+      "tokensPerSession": 200000
+    },
+    "pricing": {
+      "model": "mock-1",
+      "known": false,
+      "currency": "CNY",
+      "asOf": "2026-10-18",
+      "source": "https://api-docs.deepseek.com/quick_start/pricing",
+      "note": "没有这个模型的可用价格配置，费用估算不可靠；实际用量由模型服务结算。"
+    },
+    "limits": {
+      "passages": 8,
+      "passageChars": 2000,
+      "totalContextChars": 6000,
+      "questionChars": 1000,
+      "requestsPerMinute": 30,
+      "answerTokens": 8192,
+      "knowledgePassages": 8,
+      "knowledgeContextChars": 9000,
+      "knowledgePages": 6
+    },
+    "usage": {
+      "requests": 0,
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "reasoningTokens": 0,
+      "totalTokens": 0,
+      "estimatedCostCny": 0,
+      "costKnown": true,
+      "unknownCostRequests": 0,
+      "exactTokens": true
+    }
+  },
+  "instanceId": "6c83e955-c431-4680-9eab-43f210374cf2",
+  "paperSha256": "8b9ccec04b42a53da4dedc96f01203ba7a1cb3c2a599371f2395186246db8188",
+  "passed": 39,
+  "failed": 0,
+  "results": [
+    {
+      "name": "environment A: a note is anchored to real text in the real paper",
+      "passed": true,
+      "detail": "127 characters"
+    },
+    {
+      "name": "environment A: the same PDF is attached to two separate paper records",
+      "passed": true,
+      "detail": "2"
+    },
+    {
+      "name": "environment A: the concept has the note as its evidence",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment A: one concept now links both projects",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment A: evidence jumps into the paper and marks the quotation",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment A: coming back from the paper keeps the graph and the concept",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment A: the reader stopped on page 2 and the app stored it",
+      "passed": true,
+      "detail": "[null,2,null,null]"
+    },
+    {
+      "name": "export: exporting does not modify the stored workspace",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "export: the file carries every kind of record",
+      "passed": true,
+      "detail": "{\"projects\":2,\"papers\":4,\"annotations\":1,\"concepts\":2,\"evidence\":1,\"relations\":1,\"rejections\":0,\"difficultyPages\":0}"
+    },
+    {
+      "name": "export: two papers that share one PDF produce one packed file",
+      "passed": true,
+      "detail": "1 file(s)"
+    },
+    {
+      "name": "safety: cancelling the restore leaves the empty browser empty",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment B: the preview names what will be added",
+      "passed": true,
+      "detail": "2 projects"
+    },
+    {
+      "name": "restore: both projects came back",
+      "passed": true,
+      "detail": "第二个项目, 迁移验收"
+    },
+    {
+      "name": "restore: four paper records, and every attached file has the original content hash",
+      "passed": true,
+      "detail": "4 papers"
+    },
+    {
+      "name": "restore: the reading position is the page the reader stopped on",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "restore: the note came back with its text and anchor",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "restore: concepts and their relation came back",
+      "passed": true,
+      "detail": "2 concepts"
+    },
+    {
+      "name": "restore: the theme preference was restored",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment B: the restored PDF renders its own text",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment B: the reader reopens on the restored page",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment B: the restored note is on the paper",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment B: a restored evidence record still opens the quoted passage",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "environment B: returning from the paper keeps the graph and the selected concept",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "restore: the shared concept appears in the other project too",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "restore: and it still says which projects it belongs to",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "layout: the backup dialog fits a narrow window in the restored dark theme",
+      "passed": true,
+      "detail": "0px overflow"
+    },
+    {
+      "name": "duplicate: a second import adds nothing",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate: the stored workspace is byte-identical afterwards",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: a truncated backup is refused before anything is written",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: a backup from a newer format version is refused, not guessed at",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "conflict: an object with the same id but different content needs an explicit choice",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "conflict: choosing the local version keeps the name this machine already had",
+      "passed": true,
+      "detail": "第二个项目, 迁移验收"
+    },
+    {
+      "name": "missing PDF: the restore waits for an explicit acknowledgement",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "missing PDF: the records are restored and the missing file is stated, not invented",
+      "passed": true,
+      "detail": "{\"papers\":4,\"annotations\":1}"
+    },
+    {
+      "name": "write failure: the restore reports the failure and rolls back every key",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "write failure: the original project is intact after a reload, and no recovery banner remains",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "safety: the service this run started was the offline mock",
+      "passed": true,
+      "detail": "instance 6c83e955"
+    },
+    {
+      "name": "safety: exporting and restoring made no assistant request at all",
+      "passed": true,
+      "detail": "0 request(s)"
+    },
+    {
+      "name": "console: nothing failed unexpectedly",
+      "passed": true,
+      "detail": "0 unexpected"
+    }
+  ],
+  "consoleIssues": []
+}

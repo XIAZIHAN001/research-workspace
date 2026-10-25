@@ -6,7 +6,14 @@ import {
   type AnnotationOrigin,
 } from './annotation';
 import type { Bookmark } from './bookmark';
-import { isReadingStatus, normalizeTags, type Paper, type ReadingStatus } from './papers';
+import type { GlossaryEntry } from './glossary';
+import {
+  isReadingStatus,
+  normalizeTags,
+  type Paper,
+  type ReadingStatus,
+  type PaperSummary,
+} from './papers';
 import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
 import type { ProjectsState } from './projectsState';
@@ -63,6 +70,7 @@ function parseAnnotation(value: unknown): Annotation | null {
     note,
     origin,
     sourceLabel,
+    resolvedAt,
     createdAt,
     updatedAt,
   } = value;
@@ -77,6 +85,15 @@ function parseAnnotation(value: unknown): Annotation | null {
   if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
   const provenance = parseOrigins(origin, sourceLabel);
   if (provenance === null) return null;
+  // Absence means the note is still open (every payload from before v7); a value that is
+  // present but not a timestamp is corruption, same rule as every other field here.
+  let parsedResolvedAt: number | undefined;
+  if (resolvedAt !== undefined) {
+    if (typeof resolvedAt !== 'number' || !Number.isFinite(resolvedAt) || resolvedAt < 0) {
+      return null;
+    }
+    parsedResolvedAt = resolvedAt;
+  }
   if (!Array.isArray(rects)) return null;
   const parsedRects: Annotation['rects'] = [];
   for (const rect of rects) {
@@ -99,9 +116,22 @@ function parseAnnotation(value: unknown): Annotation | null {
     kind: kind as AnnotationKind,
     note,
     ...provenance,
+    ...(parsedResolvedAt === undefined ? {} : { resolvedAt: parsedResolvedAt }),
     createdAt,
     updatedAt,
   };
+}
+
+/** A malformed glossary entry is rejected, like every other record here. */
+function parseGlossaryEntry(value: unknown): GlossaryEntry | null {
+  if (!isRecord(value)) return null;
+  const { id, paperId, term, definition, createdAt, updatedAt } = value;
+  if (typeof id !== 'string' || id === '') return null;
+  if (typeof paperId !== 'string' || paperId === '') return null;
+  if (typeof term !== 'string' || term.trim() === '') return null;
+  if (typeof definition !== 'string') return null;
+  if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
+  return { id, paperId, term, definition, createdAt, updatedAt };
 }
 
 /** A malformed bookmark is rejected, like a malformed highlight. */
@@ -152,6 +182,27 @@ function parsePaperStatus(value: unknown): ReadingStatus | undefined {
   return isReadingStatus(value) ? value : undefined;
 }
 
+/**
+ * A malformed summary card is dropped, not guessed at — same tolerance as the PDF binding and
+ * the tags. A card the reader chose to keep deserves better than half of it surviving a parse.
+ */
+function parsePaperSummary(value: unknown): PaperSummary | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return undefined;
+  const { text, provider, providerLabel, model, online, createdAt } = value;
+  if (typeof text !== 'string' || text === '') return undefined;
+  if (typeof provider !== 'string' || typeof providerLabel !== 'string') return undefined;
+  if (typeof model !== 'string' || typeof online !== 'boolean') return undefined;
+  if (typeof createdAt !== 'number') return undefined;
+  const summary: PaperSummary = { text, provider, providerLabel, model, online, createdAt };
+  // The origin file is optional; a value that is not a hash is dropped with the card kept —
+  // an unverifiable origin must not cost the reader their summary.
+  if (typeof value.pdfSha256 === 'string' && /^[0-9a-f]{64}$/.test(value.pdfSha256)) {
+    summary.pdfSha256 = value.pdfSha256;
+  }
+  return summary;
+}
+
 function parsePaper(value: unknown): Paper | null {
   if (!isRecord(value)) return null;
   const {
@@ -165,6 +216,7 @@ function parsePaper(value: unknown): Paper | null {
     reading,
     tags,
     status,
+    summary,
     createdAt,
     updatedAt,
   } = value;
@@ -184,6 +236,8 @@ function parsePaper(value: unknown): Paper | null {
   if (parsedTags !== undefined) paper.tags = parsedTags;
   const parsedStatus = parsePaperStatus(status);
   if (parsedStatus !== undefined) paper.status = parsedStatus;
+  const parsedSummary = parsePaperSummary(summary);
+  if (parsedSummary !== undefined) paper.summary = parsedSummary;
   return paper;
 }
 
@@ -270,9 +324,24 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
     if (new Set(bookmarks.map((bookmark) => bookmark.id)).size !== bookmarks.length) return null;
   }
 
+  // A payload written before the glossary existed has no list; anything else that is not an
+  // array of entries is corruption, the same rule the bookmarks list follows.
+  const rawGlossary = value.glossary;
+  const glossary: GlossaryEntry[] = [];
+  if (rawGlossary !== undefined) {
+    if (!Array.isArray(rawGlossary)) return null;
+    for (const entry of rawGlossary) {
+      const glossaryEntry = parseGlossaryEntry(entry);
+      if (glossaryEntry === null) return null;
+      if (papers[glossaryEntry.paperId] === undefined) return null;
+      glossary.push(glossaryEntry);
+    }
+    if (new Set(glossary.map((entry) => entry.id)).size !== glossary.length) return null;
+  }
+
   const known = projects.some((p) => p.id === value.selectedId);
   const selectedId = known ? (value.selectedId as string) : (projects[0]?.id ?? null);
-  return { projects, papers, annotations, bookmarks, selectedId };
+  return { projects, papers, annotations, bookmarks, glossary, selectedId };
 }
 
 /* ------------------------------------------------------------------ *

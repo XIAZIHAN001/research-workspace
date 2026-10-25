@@ -17,7 +17,19 @@ beforeEach(() => {
 
 function setup(onName = vi.fn((raw: string) => raw.trim() || '本地工作区')) {
   render(
-    <ProfilePanel name="本地工作区" onName={onName} stats={{ papers: 3, notes: 7, concepts: 2 }} />,
+    <ProfilePanel
+      name="本地工作区"
+      onName={onName}
+      stats={{ papers: 3, notes: 7, concepts: 2 }}
+      avatar={{
+        src: '/avatar/default.svg',
+        isCustom: false,
+        problem: null,
+        upload: () => Promise.resolve(),
+        reset: () => undefined,
+        dismiss: () => undefined,
+      }}
+    />,
   );
   return { input: screen.getByRole('textbox', { name: '昵称' }), onName };
 }

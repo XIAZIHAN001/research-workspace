@@ -21,6 +21,7 @@
 
 import type { Annotation } from './annotation';
 import type { Bookmark } from './bookmark';
+import type { GlossaryEntry } from './glossary';
 import {
   parseDifficultyState,
   trimDifficultyPages,
@@ -769,6 +770,21 @@ export function mergeRestore(
     bookmarks.push(mapped);
   }
 
+  /* Glossary entries are paper-scoped records like bookmarks and follow the same rules. */
+  const glossary: GlossaryEntry[] = [...current.projects.glossary];
+  for (const incoming of contents.projects.glossary) {
+    const mappedPaperId = paperIdMap.get(incoming.paperId) ?? incoming.paperId;
+    const mapped: GlossaryEntry =
+      mappedPaperId === incoming.paperId ? incoming : { ...incoming, paperId: mappedPaperId };
+    const index = glossary.findIndex((entry) => entry.id === incoming.id);
+    if (index >= 0) {
+      if (preferBackup && !sameJson(glossary[index], mapped)) glossary[index] = mapped;
+      continue;
+    }
+    if (papers[mappedPaperId] === undefined) continue;
+    glossary.push(mapped);
+  }
+
   /* Concepts are global: keep every one, and keep only project links that resolve. */
   const concepts: Concept[] = [...current.knowledge.concepts];
   for (const incoming of contents.knowledge.concepts) {
@@ -967,7 +983,7 @@ export function mergeRestore(
       : (projects[0]?.id ?? null);
 
   return {
-    projects: { projects, papers, annotations, bookmarks, selectedId },
+    projects: { projects, papers, annotations, bookmarks, glossary, selectedId },
     knowledge,
     difficulties,
     preferences,

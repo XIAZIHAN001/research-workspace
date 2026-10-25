@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-10-24T14:24:56.024Z",
+  "results": [
+    {
+      "name": "desktop: the window frame and controls are present",
+      "passed": true,
+      "detail": "3 window controls"
+    },
+    {
+      "name": "desktop ai: real IPC renders the desktop-only sections",
+      "passed": true,
+      "detail": "{\"desktopSections\":true,\"credentialRow\":true,\"notice\":null,\"choices\":2}"
+    },
+    {
+      "name": "desktop ai: no browser fallback notice",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop appearance: density and scroll edge attributes are applied",
+      "passed": true,
+      "detail": "{\"density\":\"standard\",\"scrollEdge\":\"soft\",\"groups\":[\"主题\",\"界面密度\",\"界面字号\",\"滚动边缘\"]}"
+    }
+  ]
+}

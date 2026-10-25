@@ -1,5 +1,6 @@
 import {
   HardDriveDownload,
+  GraduationCap,
   House,
   Library,
   NotebookPen,
@@ -31,6 +32,9 @@ interface SidebarProps {
   notesActive: boolean;
   /** How many notes exist across the workspace; shown beside the notes entry. */
   notesCount: number;
+  reviewActive: boolean;
+  /** How many review cards are due, including concepts never reviewed yet. */
+  reviewDue: number;
   now: number;
   managing: boolean;
   renamingId: string | null;
@@ -41,6 +45,7 @@ interface SidebarProps {
   onHome: () => void;
   onLibrary: () => void;
   onNotes: () => void;
+  onReview: () => void;
   /** Opens the workspace-wide search dialog (also bound to Ctrl/Cmd+K). */
   onSearch: () => void;
   onCollapse: () => void;
@@ -70,6 +75,7 @@ export function Sidebar(props: SidebarProps) {
     homeActive,
     libraryActive,
     notesActive,
+    reviewActive,
     now,
     managing,
     renamingId,
@@ -150,6 +156,18 @@ export function Sidebar(props: SidebarProps) {
           <NotebookPen size={15} aria-hidden="true" />
           <span>全部笔记</span>
           {props.notesCount > 0 && <span className="row-meta">{props.notesCount}</span>}
+        </button>
+
+        <button
+          type="button"
+          {...glowProps}
+          className="nav-item spot"
+          aria-current={reviewActive ? 'page' : undefined}
+          onClick={props.onReview}
+        >
+          <GraduationCap size={15} aria-hidden="true" />
+          <span>复习</span>
+          {props.reviewDue > 0 && <span className="row-meta">{props.reviewDue}</span>}
         </button>
 
         {recent.length > 0 && (

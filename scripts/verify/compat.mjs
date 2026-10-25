@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import {
   buildLongPdf,
@@ -164,6 +165,7 @@ async function main() {
     await writeFile(paths[key], fixture.buffer);
   }
 
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   const browser = await launchBrowser();
 

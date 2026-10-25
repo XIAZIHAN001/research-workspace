@@ -1,9 +1,10 @@
 /* global document, getComputedStyle, window */
 import { spawn } from 'node:child_process';
 import { setAppTheme } from './appearance.mjs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { buildRichTextPdf, buildTwoColumnPdf } from './sample-pdf.mjs';
 import {
@@ -136,6 +137,21 @@ async function reopenReader(page, projectName) {
 /** The floating toolbar over a selection. Scoped, because the reader bar has a "笔记" too. */
 const toolbarOf = (page) => page.getByRole('toolbar', { name: '批注' });
 
+/** The merged table of contents, which carries bookmarks and notes since 37493ba. */
+const outlinePanelOf = (page) => page.getByRole('complementary', { name: '论文目录' });
+
+/** Opens the outline from the rail when it is folded; waits for it either way. */
+async function openOutline(page) {
+  if ((await outlinePanelOf(page).count()) === 0) {
+    await page.getByRole('button', { name: '打开目录、书签和笔记' }).click();
+  }
+  await outlinePanelOf(page).waitFor({ timeout: 5000 });
+}
+
+/** The note row whose excerpt contains the given text. */
+const noteMark = (page, text) =>
+  outlinePanelOf(page).locator('.outline-mark[data-kind="note"]').filter({ hasText: text });
+
 /** Selects the given span/offset range and waits for the reader's toolbar to appear. */
 async function selectForAnnotation(page, pageNumber, start, end) {
   const selection = await selectSpans(page, pageNumber, start, end);
@@ -153,6 +169,7 @@ async function main() {
   await writeFile(twoColumn, buildTwoColumnPdf());
   await writeFile(richText, buildRichTextPdf());
 
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   const browser = await launchBrowser();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -254,22 +271,30 @@ async function main() {
     await toolbarOf(page).getByLabel('笔记内容').fill('右栏和左栏的阅读顺序不一样。');
     await toolbarOf(page).getByRole('button', { name: '保存' }).click();
 
-    await page.locator('.notes-panel').waitFor({ timeout: 5000 });
+    // The notes live in the table of contents since 37493ba; open it from the rail.
+    await openOutline(page);
+    const outline = outlinePanelOf(page);
+    const createdRow = noteMark(page, '右栏和左栏的阅读顺序不一样。');
     check(
-      'note: the panel shows the note with its kind and page',
-      (await page.locator('.note-item').count()) === 2 &&
-        (await page.getByText('右栏和左栏的阅读顺序不一样。').count()) === 1 &&
-        (await page.getByText('理解').count()) >= 1,
-      `${String(await page.locator('.note-item').count())} items`,
+      'note: the outline lists both marks with kind and page',
+      (await outline.locator('.outline-mark[data-kind="note"]').count()) === 2 &&
+        (await createdRow.count()) === 1 &&
+        ((await createdRow.locator('.outline-mark-kind').textContent()) ?? '').trim() === '理解' &&
+        /第 1 页/.test((await createdRow.locator('.outline-mark-page').textContent()) ?? ''),
+      `${String(await outline.locator('.outline-mark[data-kind="note"]').count())} marks`,
     );
     await page.screenshot({ path: fileURLToPath(new URL('11-annotations-light.png', SHOT_DIR)) });
 
     // ---- Clicking a note goes back to its text ---------------------------
-    const secondQuote = await page.locator('.note-item .note-quote').first().textContent();
-    await page
-      .locator('.note-item')
+    const secondQuote = await outline
+      .locator('.outline-mark[data-kind="note"]')
       .first()
-      .getByRole('button', { name: /回到原文/ })
+      .locator('.outline-mark-text')
+      .textContent();
+    await outline
+      .locator('.outline-mark[data-kind="note"]')
+      .first()
+      .locator('.outline-mark-main')
       .click();
     await page.waitForFunction(
       () => document.querySelector('.reader-page-jump input')?.value === '1',
@@ -284,20 +309,35 @@ async function main() {
     );
 
     // ---- Editing a note ---------------------------------------------------
-    await page.locator('.note-item').last().getByRole('button', { name: /编辑/ }).click();
-    await page
-      .locator('.note-item')
-      .last()
-      .getByLabel('笔记内容')
-      .fill('改成：疑问，为什么先左后右。');
-    await page.locator('.note-item').last().getByRole('button', { name: '疑问' }).click();
-    await page.locator('.note-item').last().getByRole('button', { name: '保存' }).click();
+    const editRow = noteMark(page, '右栏和左栏的阅读顺序不一样。');
+    // The row's actions reveal on hover or keyboard focus — hover is the mouse path.
+    await editRow.hover();
+    await editRow.getByRole('button', { name: /编辑/ }).click();
+    // Editing happens in place: one form per row, Enter or 保存笔记 commits.
+    const editForm = outline.locator('.outline-mark-edit--note');
+    await editForm.getByRole('textbox').fill('改成：为什么先左后右。');
+    await editForm.getByRole('button', { name: '保存笔记' }).click();
     const edited = await payloadOf(page);
-    const editedNote = edited.annotations.find((entry) => entry.note.startsWith('改成'));
+    const editedNote = edited.annotations.find((entry) => entry.note === '改成：为什么先左后右。');
     check(
-      'notes: an edit is saved with the new kind',
-      editedNote?.kind === 'question' && editedNote.note === '改成：疑问，为什么先左后右。',
+      'notes: an edit is saved in place and keeps its kind',
+      editedNote?.kind === 'insight',
       `${String(editedNote?.kind ?? '?')} / ${String(editedNote?.note ?? '')}`,
+    );
+
+    // ---- Export: the notes leave as Markdown ------------------------------
+    const downloadPromise = page.waitForEvent('download');
+    await outline.getByRole('button', { name: '导出笔记' }).click();
+    const download = await downloadPromise;
+    const exportPath = fileURLToPath(new URL('notes-export.md', WORK_DIR));
+    await download.saveAs(exportPath);
+    const exported = await readFile(exportPath, 'utf8');
+    check(
+      'export: the notes leave as Markdown carrying the note text',
+      download.suggestedFilename().endsWith('.md') &&
+        exported.includes('改成：为什么先左后右。') &&
+        exported.includes('The left column starts here and'),
+      download.suggestedFilename(),
     );
 
     // ---- Reload: same highlight, same place ------------------------------
@@ -313,10 +353,11 @@ async function main() {
       afterReload.length >= 4 && boxDistance(afterReloadRelative, beforeReload) <= 0.005,
       `off by ${(boxDistance(afterReloadRelative, beforeReload) * 1000).toFixed(1)}‰ of the page`,
     );
+    await openOutline(page);
     check(
-      'reload: the notes are still listed',
-      (await page.locator('.note-item').count()) === 2,
-      `${String(await page.locator('.note-item').count())} items`,
+      'reload: the notes are still listed in the outline',
+      (await outlinePanelOf(page).locator('.outline-mark[data-kind="note"]').count()) === 2,
+      `${String(await outlinePanelOf(page).locator('.outline-mark[data-kind="note"]').count())} marks`,
     );
 
     // ---- Zoom: the highlight follows the page ----------------------------
@@ -341,12 +382,21 @@ async function main() {
       boxDistance(zoomedRelative, beforeReload) <= 0.005,
       `${String(widthBefore)}px → ${String(zoomedWidth)}px, box off by ${(boxDistance(zoomedRelative, beforeReload) * 1000).toFixed(1)}‰`,
     );
-    const zoomedSelection = await selectSpans(
+    // Zooming rebuilds the text layer; wait for it to settle before re-selecting the words.
+    let zoomedSelection = await selectSpans(
       page,
       1,
       { span: 1, offset: 0 },
       { span: 5, offset: 26 },
     );
+    for (
+      let attempt = 0;
+      attempt < 10 && (zoomedSelection?.boxes?.length ?? 0) === 0;
+      attempt += 1
+    ) {
+      await sleep(400);
+      zoomedSelection = await selectSpans(page, 1, { span: 1, offset: 0 }, { span: 5, offset: 26 });
+    }
     const zoomedDrawn = unionBox(await highlightBoxes(page, created.id));
     check(
       'zoom: the drawn boxes still match a fresh selection of the same words',
@@ -403,12 +453,12 @@ async function main() {
     await fileRow().getByRole('button', { name: '加入' }).click();
     await page.getByRole('button', { name: 'Second Project' }).first().click();
     await page.getByRole('button', { name: '阅读' }).first().click();
-    await page.locator('.notes-panel').waitFor({ timeout: 20_000 });
+    await openOutline(page);
     check(
       'reuse: opening the same paper from another project shows the same notes',
-      (await page.locator('.note-item').count()) === 2 &&
+      (await outlinePanelOf(page).locator('.outline-mark[data-kind="note"]').count()) === 2 &&
         (await highlightBoxes(page, created.id)).length >= 4,
-      `${String(await page.locator('.note-item').count())} notes`,
+      `${String(await outlinePanelOf(page).locator('.outline-mark[data-kind="note"]').count())} marks`,
     );
 
     // ---- Repeated text: no guessing --------------------------------------
@@ -460,10 +510,11 @@ async function main() {
       `prefix "${repeated?.prefix ?? ''}"`,
     );
 
-    await page
-      .locator('.note-item')
+    await openOutline(page);
+    await outlinePanelOf(page)
+      .locator('.outline-mark[data-kind="note"]')
       .first()
-      .getByRole('button', { name: /回到原文/ })
+      .locator('.outline-mark-main')
       .click();
     await sleep(300);
     const ambiguousNotice = await page.getByText(/出现了多次/).count();
@@ -491,11 +542,11 @@ async function main() {
       .locator('.pdf-page[data-page="1"] .textLayer span')
       .first()
       .waitFor({ timeout: 20_000 });
-    await page.locator('.notes-panel').waitFor({ timeout: 5000 });
-    await page
-      .locator('.note-item')
+    await openOutline(page);
+    await outlinePanelOf(page)
+      .locator('.outline-mark[data-kind="note"]')
       .first()
-      .getByRole('button', { name: /回到原文/ })
+      .locator('.outline-mark-main')
       .click();
     const ambiguity = page.getByText(/出现了多次/);
     await ambiguity.waitFor({ timeout: 5000 });
@@ -515,7 +566,7 @@ async function main() {
     await replaceDialog.locator('input[type="file"][data-autofocus]').setInputFiles(twoColumn);
     await replaceDialog.getByRole('button', { name: '导入' }).click();
     await page.locator('.reader').waitFor({ timeout: 20_000 });
-    await page.locator('.notes-panel').waitFor({ timeout: 20_000 });
+    await openOutline(page);
     const afterReplace = await payloadOf(page);
     check(
       'replacement: the old notes are still stored',
@@ -532,7 +583,9 @@ async function main() {
     });
 
     // ---- Deleting asks first ---------------------------------------------
-    await page.locator('.note-item').first().getByRole('button', { name: /删除/ }).click();
+    const staleRow = outlinePanelOf(page).locator('.outline-mark[data-stale]').first();
+    await staleRow.hover();
+    await staleRow.getByRole('button', { name: /删除/ }).click();
     const confirm = page.getByRole('dialog', { name: '删除笔记' });
     await confirm.waitFor({ timeout: 5000 });
     await confirm.getByRole('button', { name: '取消' }).click();
@@ -541,7 +594,8 @@ async function main() {
       'delete: cancelling keeps the note',
       stillThere.annotations.length === afterReplace.annotations.length,
     );
-    await page.locator('.note-item').first().getByRole('button', { name: /删除/ }).click();
+    await staleRow.hover();
+    await staleRow.getByRole('button', { name: /删除/ }).click();
     await page
       .getByRole('dialog', { name: '删除笔记' })
       .getByRole('button', { name: '删除' })
@@ -551,6 +605,70 @@ async function main() {
       'delete: confirming removes exactly that note',
       afterDelete.annotations.length === afterReplace.annotations.length - 1,
       `${String(afterReplace.annotations.length)} → ${String(afterDelete.annotations.length)}`,
+    );
+
+    // ---- Knowledge loop: note → concept evidence → back to the paper ------
+    await page.getByRole('button', { name: '返回' }).click();
+    await page.getByRole('button', { name: 'Two Column Paper' }).first().click();
+    await page
+      .getByRole('group', { name: '项目内容' })
+      .getByRole('button', { name: '知识' })
+      .click();
+    await page.getByRole('button', { name: '新建概念' }).click();
+    const conceptName = page.getByRole('textbox', { name: '概念名称' });
+    await conceptName.fill('双栏阅读顺序');
+    await page.getByRole('button', { name: '创建', exact: true }).click();
+    // The new concept opens; its first evidence comes from the note written earlier.
+    await page.getByRole('button', { name: '从笔记里添加出处' }).click();
+    await page.getByRole('button', { name: '添加', exact: true }).first().click();
+    await page.locator('.evidence-row').first().waitFor({ timeout: 5000 });
+    await page.screenshot({
+      path: fileURLToPath(new URL('15-knowledge-evidence.png', SHOT_DIR)),
+    });
+    check(
+      'knowledge: a note can be filed as a concept evidence',
+      (await page.locator('.evidence-row').count()) === 1,
+      `${String(await page.locator('.evidence-row').count())} rows`,
+    );
+
+    // The evidence opens the paper on the exact words the note anchored.
+    await page.getByRole('button', { name: '打开原文' }).click();
+    await page.locator('.reader').waitFor({ timeout: 20_000 });
+    await page.waitForFunction(
+      () => document.querySelector('.reader-page-jump input')?.value === '1',
+    );
+    // The focus jump lands after the page's text layer is ready, so wait for the mark.
+    await page.locator('.pdf-highlight[data-spotlight="true"]').first().waitFor({ timeout: 8000 });
+    check(
+      'knowledge: the evidence opens the paper and marks the quoted words',
+      (await page.locator('.pdf-highlight[data-spotlight="true"]').count()) > 0,
+    );
+
+    // A restart keeps the concept, the evidence and the jump.
+    await page.reload();
+    await page.getByRole('button', { name: 'Two Column Paper' }).first().click();
+    await page
+      .getByRole('group', { name: '项目内容' })
+      .getByRole('button', { name: '知识' })
+      .click();
+    await page
+      .getByRole('button', { name: /双栏阅读顺序/ })
+      .first()
+      .click();
+    await page.locator('.evidence-row').first().waitFor({ timeout: 10_000 });
+    check(
+      'knowledge: the concept and its evidence survive a restart',
+      (await page.locator('.evidence-row').count()) === 1,
+    );
+    await page.getByRole('button', { name: '打开原文' }).click();
+    await page.locator('.reader').waitFor({ timeout: 20_000 });
+    await page.waitForFunction(
+      () => document.querySelector('.reader-page-jump input')?.value === '1',
+    );
+    await page.locator('.pdf-highlight[data-spotlight="true"]').first().waitFor({ timeout: 8000 });
+    check(
+      'knowledge: the evidence jump still works after a restart',
+      (await page.locator('.pdf-highlight[data-spotlight="true"]').count()) > 0,
     );
 
     check(

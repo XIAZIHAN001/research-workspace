@@ -1,11 +1,16 @@
-import { Bot, Palette, UserRound } from 'lucide-react';
+import { BookOpen, Bot, LayoutDashboard, Palette, UserRound } from 'lucide-react';
 import { AppearancePanel } from './AppearancePanel';
 import { AiSettingsPanel } from './AiSettingsPanel';
+import { LayoutPanel } from './LayoutPanel';
+import { ReadingPrefsPanel } from './ReadingPrefsPanel';
 import { ProfilePanel } from './ProfilePanel';
 import type { useAvatar } from '../home/useAvatar';
+import type { PaperModeController } from '../reader/usePaperMode';
+import type { Density, ScrollEdge, UiFont } from '../theme/appearancePrefs';
 import type { DarkLevel, ThemePref } from '../theme/theme';
+import type { LayoutPreset } from '../../app/layoutPrefs';
 
-export type SettingsSection = 'profile' | 'appearance' | 'ai';
+export type SettingsSection = 'profile' | 'appearance' | 'reading' | 'layout' | 'ai';
 
 interface SettingsViewProps {
   section: SettingsSection;
@@ -14,6 +19,19 @@ interface SettingsViewProps {
   level: DarkLevel;
   onChangePref: (pref: ThemePref) => void;
   onChangeLevel: (level: DarkLevel) => void;
+  density: Density;
+  uiFont: UiFont;
+  scrollEdge: ScrollEdge;
+  onChangeDensity: (density: Density) => void;
+  onChangeUiFont: (font: UiFont) => void;
+  onChangeScrollEdge: (edge: ScrollEdge) => void;
+  /** The lifted paper preference, shared with the reader's toolbar. */
+  paperMode: PaperModeController;
+  layoutPreset: LayoutPreset;
+  /** Applies the preset to storage and to the live layout. */
+  onChangeLayoutPreset: (preset: LayoutPreset) => void;
+  sidebarWidth: number;
+  onSidebarWidth: (width: number) => void;
   avatar: ReturnType<typeof useAvatar>;
   profileName: string;
   /** Stores the nickname and returns what is displayed after trimming. */
@@ -24,6 +42,8 @@ interface SettingsViewProps {
 const SECTIONS = [
   { value: 'profile', label: '个人', Icon: UserRound },
   { value: 'appearance', label: '外观', Icon: Palette },
+  { value: 'reading', label: '阅读偏好', Icon: BookOpen },
+  { value: 'layout', label: '工作区布局', Icon: LayoutDashboard },
   { value: 'ai', label: 'AI 服务', Icon: Bot },
 ] as const;
 
@@ -35,6 +55,17 @@ export function SettingsView({
   level,
   onChangePref,
   onChangeLevel,
+  density,
+  uiFont,
+  scrollEdge,
+  onChangeDensity,
+  onChangeUiFont,
+  onChangeScrollEdge,
+  paperMode,
+  layoutPreset,
+  onChangeLayoutPreset,
+  sidebarWidth,
+  onSidebarWidth,
   avatar,
   profileName,
   onProfileName,
@@ -65,12 +96,26 @@ export function SettingsView({
             level={level}
             onChangePref={onChangePref}
             onChangeLevel={onChangeLevel}
-            avatar={avatar}
+            density={density}
+            uiFont={uiFont}
+            scrollEdge={scrollEdge}
+            onChangeDensity={onChangeDensity}
+            onChangeUiFont={onChangeUiFont}
+            onChangeScrollEdge={onChangeScrollEdge}
+          />
+        ) : section === 'reading' ? (
+          <ReadingPrefsPanel paperMode={paperMode} />
+        ) : section === 'layout' ? (
+          <LayoutPanel
+            preset={layoutPreset}
+            onChangePreset={onChangeLayoutPreset}
+            sidebarWidth={sidebarWidth}
+            onSidebarWidth={onSidebarWidth}
           />
         ) : section === 'ai' ? (
           <AiSettingsPanel />
         ) : (
-          <ProfilePanel name={profileName} onName={onProfileName} stats={stats} />
+          <ProfilePanel name={profileName} onName={onProfileName} stats={stats} avatar={avatar} />
         )}
       </div>
     </section>

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T08:54:41.007Z",
+  "generatedAt": "2026-10-25T10:24:46.121Z",
   "baseUrl": "http://127.0.0.1:4178/",
   "viewportMatrix": [
     "1440x900",
@@ -13,29 +13,29 @@
   "contrast": [
     {
       "label": "home / dark 100",
-      "checked": 33,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
-          "label": "h2.home-panel-title \"继续阅读\" @393,320",
+          "label": "h2.home-panel-title \"继续阅读\" @381,349",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @862,321",
+          "label": "span.home-panel-count \"2\" @850,350",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @868,321",
+          "label": "span.home-panel-count \"篇\" @856,350",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-row-meta \"第 7 页 · 今天\" @403,387",
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,415",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
@@ -48,29 +48,29 @@
     },
     {
       "label": "home / dark 0",
-      "checked": 33,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
-          "label": "h2.home-panel-title \"继续阅读\" @393,320",
+          "label": "h2.home-panel-title \"继续阅读\" @381,349",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @862,321",
+          "label": "span.home-panel-count \"2\" @850,350",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @868,321",
+          "label": "span.home-panel-count \"篇\" @856,350",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-row-meta \"第 7 页 · 今天\" @403,387",
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,415",
           "ratio": 5.11,
           "need": 4.5,
           "translucent": false
@@ -83,29 +83,29 @@
     },
     {
       "label": "home / dark 50",
-      "checked": 33,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
-          "label": "h2.home-panel-title \"继续阅读\" @393,320",
+          "label": "h2.home-panel-title \"继续阅读\" @381,349",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"2\" @862,321",
+          "label": "span.home-panel-count \"2\" @850,350",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-panel-count \"篇\" @868,321",
+          "label": "span.home-panel-count \"篇\" @856,350",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.home-row-meta \"第 7 页 · 今天\" @403,387",
+          "label": "span.home-row-meta \"第 7 页 · 今天\" @391,415",
           "ratio": 6.65,
           "need": 4.5,
           "translucent": false
@@ -118,11 +118,17 @@
     },
     {
       "label": "home / light",
-      "checked": 33,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
-          "label": "h2.group-title \"项目\" @32,196",
+          "label": "kbd.sidebar-kbd \"Ctrl K\" @186,162",
+          "ratio": 4.66,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "h2.group-title \"项目\" @32,446",
           "ratio": 4.66,
           "need": 4.5,
           "translucent": false
@@ -138,12 +144,6 @@
           "ratio": 4.66,
           "need": 4.5,
           "translucent": false
-        },
-        {
-          "label": "button.btn \"设置\" @52,796",
-          "ratio": 4.66,
-          "need": 4.5,
-          "translucent": false
         }
       ],
       "skipped": {
@@ -153,29 +153,29 @@
     },
     {
       "label": "library / dark 100",
-      "checked": 33,
+      "checked": 43,
       "failures": [],
       "lowest": [
         {
-          "label": "input.input \"placeholder: 按标题、作者、DOI \" @455,145",
+          "label": "input.input \"placeholder: 按标题、作者、DOI \" @443,249",
           "ratio": 7.73,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"导入 PDF\" @1177,227",
+          "label": "button.btn \"导入 PDF\" @1165,383",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"导入 PDF\" @1177,376",
+          "label": "button.btn \"导入 PDF\" @1165,532",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"导入 PDF\" @1177,525",
+          "label": "button.btn \"导入 PDF\" @1165,681",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
@@ -188,29 +188,29 @@
     },
     {
       "label": "reader / dark 100",
-      "checked": 30,
+      "checked": 25,
       "failures": [],
       "lowest": [
         {
-          "label": "button.btn \"返回\" @313,84",
+          "label": "button.btn \"适应宽度\" @1258,188",
+          "ratio": 5.48,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "p.banner \"浏览器没有保存最近的改动，关闭窗口后可能丢失。\" @689,89",
+          "ratio": 8.54,
+          "need": 4.5,
+          "translucent": false
+        },
+        {
+          "label": "button.btn \"返回\" @289,186",
           "ratio": 8.73,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.reader-page-total \"/\" @914,86",
-          "ratio": 9.01,
-          "need": 4.5,
-          "translucent": false
-        },
-        {
-          "label": "span.reader-page-total \"3\" @922,86",
-          "ratio": 9.01,
-          "need": 4.5,
-          "translucent": false
-        },
-        {
-          "label": "span.reader-zoom-value \"118\" @1031,86",
+          "label": "span.reader-page-total \"/\" @1057,188",
           "ratio": 9.01,
           "need": 4.5,
           "translucent": false
@@ -223,71 +223,71 @@
     },
     {
       "label": "AI settings / dark 100",
-      "checked": 19,
+      "checked": 23,
       "failures": [],
       "lowest": [
         {
-          "label": "button.btn \"显示输入\" @448,578",
+          "label": "button.btn \"显示输入\" @445,638",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"删除已保存的 Key\" @539,578",
+          "label": "button.btn \"删除已保存的 Key\" @536,638",
           "ratio": 7.98,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @386,273",
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @383,333",
           "ratio": 8.09,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "h3.settings-section-title \"运行模式\" @344,208",
+          "label": "h3.settings-section-title \"运行模式\" @341,268",
           "ratio": 8.23,
           "need": 4.5,
           "translucent": false
         }
       ],
       "skipped": {
-        "modal": 33,
+        "modal": 39,
         "scrim": 0
       }
     },
     {
       "label": "AI settings / dark 0",
-      "checked": 19,
+      "checked": 23,
       "failures": [],
       "lowest": [
         {
-          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @386,273",
+          "label": "span.settings-choice__text \"不访问网络，不产生费用，适合演示与验收。\" @383,333",
           "ratio": 4.92,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"显示输入\" @448,578",
+          "label": "button.btn \"显示输入\" @445,638",
           "ratio": 4.96,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "button.btn \"删除已保存的 Key\" @539,578",
+          "label": "button.btn \"删除已保存的 Key\" @536,638",
           "ratio": 4.96,
           "need": 4.5,
           "translucent": false
         },
         {
-          "label": "input \"placeholder: sk-…\" @354,533",
+          "label": "input \"placeholder: sk-…\" @351,593",
           "ratio": 4.99,
           "need": 4.5,
           "translucent": false
         }
       ],
       "skipped": {
-        "modal": 33,
+        "modal": 39,
         "scrim": 0
       }
     }
@@ -344,14 +344,14 @@
       "detail": "{\"foreground\":\"rgb(29, 29, 31)\",\"background\":\"rgb(245, 245, 247)\",\"ratio\":15.46,\"backgroundChannels\":[245,245,247],\"foregroundChannels\":[29,29,31]}"
     },
     {
-      "name": "contrast: home / dark 100 — 33 text runs meet WCAG AA",
+      "name": "contrast: home / dark 100 — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 8.23"
     },
     {
-      "name": "layout: the sidebar sits within the 240–260px target",
+      "name": "layout: the sidebar sits within the 214–234px target",
       "passed": true,
-      "detail": "248px"
+      "detail": "224px"
     },
     {
       "name": "layout: the footer stays inside the sidebar",
@@ -399,12 +399,12 @@
       "detail": ""
     },
     {
-      "name": "contrast: home / dark 0 — 33 text runs meet WCAG AA",
+      "name": "contrast: home / dark 0 — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 5.11"
     },
     {
-      "name": "contrast: home / dark 50 — 33 text runs meet WCAG AA",
+      "name": "contrast: home / dark 50 — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 6.65"
     },
@@ -439,12 +439,12 @@
       "detail": "{\"app\":\"rgb(245, 245, 247)\",\"main\":\"rgb(255, 255, 255)\"}"
     },
     {
-      "name": "primary: light mode uses the accent blue with white text",
+      "name": "primary: light mode uses the near-black inverse with white text",
       "passed": true,
-      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(0, 102, 204)\",\"ratio\":5.57,\"backgroundChannels\":[0,102,204],\"foregroundChannels\":[255,255,255]}"
+      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(29, 29, 31)\",\"ratio\":16.83,\"backgroundChannels\":[29,29,31],\"foregroundChannels\":[255,255,255]}"
     },
     {
-      "name": "contrast: home / light — 33 text runs meet WCAG AA",
+      "name": "contrast: home / light — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 4.66"
     },
@@ -504,7 +504,7 @@
       "detail": ""
     },
     {
-      "name": "contrast: library / dark 100 — 33 text runs meet WCAG AA",
+      "name": "contrast: library / dark 100 — 43 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 7.73"
     },
@@ -514,9 +514,9 @@
       "detail": ""
     },
     {
-      "name": "contrast: reader / dark 100 — 30 text runs meet WCAG AA",
+      "name": "contrast: reader / dark 100 — 25 text runs meet WCAG AA",
       "passed": true,
-      "detail": "lowest 8.73"
+      "detail": "lowest 5.48"
     },
     {
       "name": "ai settings: the settings window shows both modes as compact rows",
@@ -536,10 +536,10 @@
     {
       "name": "ai settings: nothing overflows the settings window",
       "passed": true,
-      "detail": "572 / 980"
+      "detail": "566 / 980"
     },
     {
-      "name": "ai settings: no vendor name is shown",
+      "name": "ai settings: no vendor name is shown in the status or the notice",
       "passed": true,
       "detail": ""
     },
@@ -549,12 +549,12 @@
       "detail": "当前：离线模拟"
     },
     {
-      "name": "contrast: AI settings / dark 100 — 19 text runs meet WCAG AA",
+      "name": "contrast: AI settings / dark 100 — 23 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 7.98"
     },
     {
-      "name": "contrast: AI settings / dark 0 — 19 text runs meet WCAG AA",
+      "name": "contrast: AI settings / dark 0 — 23 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 4.92"
     },
@@ -616,5 +616,5 @@
   ],
   "passed": 64,
   "failed": 0,
-  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-21T08-54-14-ui\\"
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-25T10-24-19-ui\\"
 }

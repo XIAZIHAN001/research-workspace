@@ -101,6 +101,7 @@ const SAMPLE_STATE: ProjectsState = {
   },
   annotations: [],
   bookmarks: [],
+  glossary: [],
   selectedId: 'p2',
 };
 
@@ -263,6 +264,7 @@ describe('saveProjects', () => {
       papers: SAMPLE_STATE.papers,
       annotations: SAMPLE_STATE.annotations,
       bookmarks: SAMPLE_STATE.bookmarks,
+      glossary: SAMPLE_STATE.glossary,
       selectedId: SAMPLE_STATE.selectedId,
     });
   });

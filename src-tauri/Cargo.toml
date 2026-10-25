@@ -1,6 +1,6 @@
 [package]
 name = "research-workspace"
-version = "0.12.6"
+version = "0.13.1"
 description = "Local-first research paper reading workspace"
 authors = ["Research Workspace"]
 edition = "2021"

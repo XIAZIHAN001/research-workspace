@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { buildColourPdf } from './sample-pdf.mjs';
@@ -228,7 +229,7 @@ ${(await page.evaluate(() => document.body.innerText)).slice(0, 400)}
 
 /** Closes whichever side panel is open, so the rail can be checked. */
 async function closeSidePanel(page) {
-  for (const name of ['收起笔记', '关闭 AI 面板', '关闭难点面板']) {
+  for (const name of ['关闭目录', '关闭 AI 面板', '关闭相关知识']) {
     const button = page.getByRole('button', { name });
     if ((await button.count()) > 0) {
       await button.first().click();
@@ -366,6 +367,26 @@ async function waitForPaper(page, pageNumber, predicate, timeoutMs = 8000) {
   return last;
 }
 
+/**
+ * Chooses a paper mode through the toolbar's trigger menu. The modes are options inside the
+ * menu (with hints in their accessible name), so matching is by substring.
+ */
+async function choosePaperMode(page, label) {
+  const trigger = page.getByRole('button', { name: /纸张模式/ });
+  const menu = page.locator('.paper-modes__menu');
+  if (!(await menu.isVisible().catch(() => false))) {
+    await trigger.click();
+  }
+  await menu.waitFor({ state: 'visible' });
+  // Filter by the option's name span, not by the whole accessible name: the hints of the other
+  // options can carry the same substring ("跟随外观"的提示里就有"深灰"), and a bare substring
+  // would match two options at once. The name span holds exactly the mode's label.
+  await page
+    .locator('.paper-modes__option')
+    .filter({ has: page.locator('.paper-modes__name', { hasText: label }) })
+    .click();
+}
+
 async function main() {
   refuseIfConfiguredForRealProvider();
   await refuseIfPortTaken();
@@ -376,6 +397,7 @@ async function main() {
   await writeFile(colourFile, buildColourPdf());
 
   const service = await startService();
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   // The page talks through the preview proxy: check the identity of *that* path, and pin
   // it to the service process this run started.
@@ -422,7 +444,7 @@ async function main() {
       warm === null ? '' : `red ${String(warm.red)} blue ${String(warm.blue)}`,
     );
 
-    await page.getByRole('button', { name: '原始' }).click();
+    await choosePaperMode(page, '原始');
     const original = await waitForPaper(page, 1, (sample) =>
       near(sample.paper, [255, 255, 255], 2),
     );
@@ -434,7 +456,7 @@ async function main() {
       original === null ? '' : `paper ${String(original.paper)} mean ${original.mean.toFixed(0)}`,
     );
 
-    await page.getByRole('button', { name: '深灰' }).click();
+    await choosePaperMode(page, '深灰');
     const dark = await waitForPaper(
       page,
       1,
@@ -480,7 +502,7 @@ async function main() {
         ),
       );
     const darkBox = await highlightBox();
-    await page.getByRole('button', { name: '暖纸' }).click();
+    await choosePaperMode(page, '暖纸');
     await page.waitForTimeout(400);
     const warmBox = await highlightBox();
     const stillSelected = await selectSpans(
@@ -501,7 +523,7 @@ async function main() {
     );
 
     // The mode is a preference: it must survive a reload.
-    await page.getByRole('button', { name: '深灰' }).click();
+    await choosePaperMode(page, '深灰');
     await page.waitForTimeout(300);
     await page.reload();
     await reopenReader(page, '沉浸式阅读验收');
@@ -519,7 +541,7 @@ async function main() {
     );
 
     // Follow the app theme again, and check it really follows.
-    await page.getByRole('button', { name: '跟随外观' }).click();
+    await choosePaperMode(page, '跟随外观');
     await setAppTheme(page, '浅色');
     const followed = await waitForPaper(
       page,
@@ -562,9 +584,13 @@ async function main() {
         pageAsk.passages[0].page === 1,
       `scope ${String(pageAsk?.scope)} · ${String(pageAsk?.passages?.[0]?.text?.length ?? 0)} chars`,
     );
+    // Since 37493ba the reader sends the whole extracted paper when it is ready; what must
+    // hold either way is that the panel discloses exactly what the request carries.
     check(
-      'assistant: it does not send the paper, and says what it did send',
-      (pageAsk?.passages?.length ?? 0) === 1 && (await panel.innerText()).includes('这一页'),
+      'assistant: the range disclosure matches what the request carries',
+      (pageAsk?.scope === 'document') === (await panel.innerText()).includes('整篇论文') &&
+        (pageAsk?.passages?.length ?? 0) >= 1,
+      `scope ${String(pageAsk?.scope)}`,
     );
     await page.screenshot({ path: fileURLToPath(new URL('02-page-question.png', SHOT_DIR)) });
 
@@ -595,10 +621,11 @@ async function main() {
     await sidePanel(page).locator('.ai-answer-body').last().waitFor({ timeout: 20_000 });
     const selectionAsk = requests.ask.at(-1);
     const collapse = (text) => (text ?? '').replace(/\s+/g, ' ').trim();
+    // A selection ask may ride along with the whole paper now, but the selected words are
+    // still the passage the answer anchors to.
     check(
       'assistant: asking about a selection sends exactly that selection',
-      selectionAsk?.scope === 'selection' &&
-        selectionAsk.passages.find((passage) => passage.selection)?.text !== undefined &&
+      selectionAsk.passages.find((passage) => passage.selection)?.text !== undefined &&
         collapse(selectionAsk.passages.find((passage) => passage.selection).text) ===
           collapse(sent.text),
       `${String(collapse(sent.text).length)} chars selected`,
@@ -608,27 +635,27 @@ async function main() {
     // The side panel is already open on the assistant; the difficulty tab is beside it.
     const openDifficulty = async () => {
       if ((await sidePanel(page).count()) === 0) {
-        await page.getByRole('button', { name: '打开智能难点' }).click();
+        await page.getByRole('button', { name: '打开相关知识与难点' }).click();
       } else {
-        await page.getByRole('button', { name: /^难点( \d+)?$/ }).click();
+        await page.getByRole('button', { name: /^知识( \d+)?$/ }).click();
       }
-      await page.getByRole('complementary', { name: '智能难点' }).waitFor({ timeout: 5000 });
+      await page.getByRole('complementary', { name: '相关知识' }).waitFor({ timeout: 5000 });
     };
     await openDifficulty();
-    const difficulty = page.getByRole('complementary', { name: '智能难点' });
+    const difficulty = page.getByRole('complementary', { name: '相关知识' });
     await difficulty.waitFor({ timeout: 10_000 });
     check(
       'difficulty: the enable screen states what is sent, what it costs and what is covered',
-      (await difficulty.innerText()).includes('一次只有当前这一页') &&
-        (await difficulty.innerText()).includes('不会扫描整篇论文') &&
-        (await difficulty.innerText()).includes('不产生任何费用'),
+      (await difficulty.innerText()).includes('一次只分析当前页') &&
+        (await difficulty.innerText()).includes('不产生任何费用') &&
+        (await difficulty.innerText()).includes('缓存'),
     );
     check(
       'difficulty: nothing is analysed before the reader turns it on',
       requests.difficulty.length === 0,
     );
 
-    await difficulty.getByRole('button', { name: '启用智能难点标注' }).click();
+    await difficulty.getByRole('button', { name: '启用难点标注' }).click();
     await difficulty.getByRole('button', { name: '开始分析' }).click();
     await page.locator('.pdf-suggestion').first().waitFor({ timeout: 25_000 });
     const analysisRequest = requests.difficulty.at(-1);
@@ -676,16 +703,14 @@ async function main() {
     const deeperSelection = deeperAsk?.passages?.find((passage) => passage.selection)?.text;
     check(
       'difficulty: going deeper asks about the very passage the suggestion quoted',
-      deeperAsk?.scope === 'selection' &&
-        typeof deeperSelection === 'string' &&
-        deeperSelection.length > 10,
+      typeof deeperSelection === 'string' && deeperSelection.length > 10,
       `${String(deeperSelection?.length ?? 0)} chars of context`,
     );
 
     // Dismiss one, then hide them all.
     await openDifficulty();
     const before = await page.locator('.pdf-suggestion').count();
-    const firstTitle = await difficulty.locator('.difficulty-title').first().innerText();
+    const firstTitle = await difficulty.locator('.knowledge-difficulty-title').first().innerText();
     await page.locator('.pdf-suggestion').first().click();
     await page
       .getByRole('dialog', { name: /难点：/ })
@@ -703,7 +728,7 @@ async function main() {
     check(
       'difficulty: hiding the markers leaves the suggestions and the page intact',
       (await page.locator('.pdf-suggestion').count()) === 0 &&
-        (await difficulty.locator('.difficulty-item').count()) > 0,
+        (await difficulty.locator('.knowledge-difficulty-item').count()) > 0,
     );
     await page.screenshot({ path: fileURLToPath(new URL('04-markers-hidden.png', SHOT_DIR)) });
 

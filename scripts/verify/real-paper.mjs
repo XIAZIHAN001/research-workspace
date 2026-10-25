@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { clearSelection, selectSpans, unionBox } from './text-selection.mjs';
 
@@ -342,6 +343,7 @@ async function main() {
     return;
   }
 
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   const browser = await launchBrowser();
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });

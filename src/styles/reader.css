@@ -35,6 +35,80 @@
   white-space: nowrap;
 }
 
+/* The bar reads as semantic groups — identity (+ history), find, page, zoom, more. The lead
+   group owns the flexible space so the title truncates instead of squeezing the controls. */
+.reader-bar-lead {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Narrow-window overflow for the history, find and paper-mode tools. Shares the paper-mode
+   menu's visual language: one card, one shadow, options that light up as a row. */
+.reader-more {
+  position: relative;
+}
+
+.reader-more__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 240px;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow:
+    0 0 0 0.5px var(--card-edge),
+    0 18px 40px -18px rgb(0 0 0 / 0.35),
+    0 6px 14px -8px rgb(0 0 0 / 0.2);
+}
+
+.reader-more__label {
+  margin: 6px 8px 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.reader-more__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.reader-more__item:hover:not(:disabled) {
+  background: var(--row-hover);
+}
+
+.reader-more__item:disabled {
+  color: var(--text-3);
+}
+
+.reader-more__item[aria-checked='true'] {
+  background: var(--row-hover);
+}
+
+.reader-more__key {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .reader-page,
 .reader-zoom {
   display: flex;
@@ -578,18 +652,6 @@
   resize: vertical;
 }
 
-/* The notes, beside the paper rather than instead of it. */
-.notes-panel {
-  display: flex;
-  flex: 0 0 300px;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-lg);
-  background: var(--color-bg-panel);
-}
-
 /* --- The side panel shell -------------------------------------------------- */
 
 /* One column on the right that holds the assistant or the notes, so the reader has one place
@@ -654,15 +716,14 @@
   background: var(--accent);
 }
 
-.reader-side > .ai-panel,
-.reader-side > .notes-panel {
+.reader-side > .ai-panel {
   flex: 1 1 auto;
   width: 100%;
 }
 
-/* Six tabs do not fit on one line at the narrowest panel, so this row wraps — and a track
-   behind a wrapped row reads as a second card showing through the pills. The tabs stand on
-   the panel themselves instead; each pill carries its own edge. */
+/* Three chips — 目录, AI 助手, 知识 — do not need one line at the narrowest panel, so this
+   row wraps. A track behind a wrapped row reads as a second card showing through the pills;
+   the tabs stand on the panel themselves instead, and each pill carries its own edge. */
 .reader-side-tabs {
   display: flex;
   flex: 0 0 auto;
@@ -670,7 +731,7 @@
   gap: 4px;
 }
 
-/* Six tabs do not fit on one line at the narrowest panel: wrap the row, never the labels. */
+/* Wrap the row, never the labels. */
 .reader-side-tabs .chip {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -733,132 +794,6 @@
   text-align: center;
 }
 
-.notes-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--hairline);
-}
-
-.notes-title {
-  margin-right: auto;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.notes-count {
-  color: var(--text-3);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.notes-scroll {
-  overflow: auto;
-  padding: 8px;
-}
-
-.notes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.notes-empty {
-  margin: 0;
-  padding: 12px;
-  color: var(--text-3);
-  font-size: 13px;
-}
-
-.note-item {
-  padding: 8px 10px;
-  border: 1px solid var(--hairline);
-  border-left-width: 3px;
-  border-radius: var(--r-sm);
-  background: var(--glass-fill-strong);
-}
-
-.note-item[data-kind='question'] {
-  border-left-color: rgb(232 178 62);
-}
-
-.note-item[data-kind='insight'] {
-  border-left-color: rgb(84 160 208);
-}
-
-.note-item[data-kind='note'] {
-  border-left-color: rgb(118 190 132);
-}
-
-.note-item[data-active='true'] {
-  outline: 1px solid var(--accent);
-}
-
-.note-meta {
-  display: flex;
-  gap: 8px;
-  color: var(--text-3);
-  font-size: 11px;
-}
-
-.note-kind {
-  font-weight: 600;
-}
-
-/* The page number in a note's meta line. */
-.note-page {
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.note-quote {
-  margin: 4px 0;
-  color: var(--text);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.note-body {
-  margin: 4px 0;
-  color: var(--text-2);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.note-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.note-edit {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.notes-elsewhere {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--hairline);
-}
-
-.notes-subtitle {
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.notes-warning {
-  margin: 4px 0 8px;
-  color: var(--text-3);
-  font-size: 11px;
-}
-
 /* In a narrow window the panel covers the edge of the page instead of taking a column. */
 /*
  * Below 1100px the column becomes an overlay.
@@ -910,8 +845,9 @@
   display: flex;
   /* `min-width: 0` matters here: a flex item will not shrink below its min-content width, and a
      single long paragraph in the range disclosure would otherwise widen the panel until it and
-     the whole reader overflowed the window. */
-  flex: 0 0 360px;
+     the whole reader overflowed the window. The column width is owned by `--panel-w` on
+     `.reader-side`, which also overrides this element's flex value. */
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
@@ -1666,161 +1602,6 @@
   margin-bottom: 6px;
 }
 
-/* --- The suggestions panel ------------------------------------------------- */
-
-.difficulty-panel {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-lg);
-  background: var(--color-bg-panel);
-}
-
-.difficulty-intro {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  overflow-y: auto;
-  color: var(--text-2);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.difficulty-intro p {
-  margin: 0;
-}
-
-.difficulty-facts {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding-left: 16px;
-  font-size: 11.5px;
-}
-
-.difficulty-confirm {
-  display: flex;
-  gap: 6px;
-}
-
-.difficulty-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  overflow-y: auto;
-}
-
-.difficulty-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.difficulty-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-right: auto;
-  color: var(--text-2);
-  font-size: 11.5px;
-}
-
-.difficulty-status {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: 0;
-  color: var(--text-2);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.difficulty-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.difficulty-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--hairline);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--r-sm);
-  background: var(--glass-fill-strong);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.difficulty-item[data-located='false'] {
-  border-left-color: var(--ring);
-}
-
-.difficulty-kind {
-  color: var(--accent);
-  font-size: 10px;
-}
-
-.difficulty-title {
-  color: var(--text);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.difficulty-quick {
-  color: var(--text-2);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.difficulty-unlocated {
-  color: var(--text-2);
-  font-size: 10px;
-}
-
-.difficulty-empty {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 12px;
-}
-
-.difficulty-paused {
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
-}
-
-.difficulty-paused p {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 11.5px;
-  line-height: 1.6;
-}
-
-.difficulty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 /* --- Jump history and outline ---------------------------------------------- */
 
 .reader-history {
@@ -2039,6 +1820,22 @@
   border-radius: var(--r-sm);
 }
 
+/* Notes that belong to an older file version: visible so they are never lost, muted so they
+   do not read as marks of this file, and without a jump — the anchor cannot be trusted. */
+.outline-elsewhere {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
+}
+
+.outline-mark[data-stale] {
+  opacity: 0.68;
+}
+
+.outline-mark[data-stale]:hover {
+  background: transparent;
+}
+
 .outline-mark:hover,
 .outline-mark[data-active='true'] {
   background: var(--row-hover);
@@ -2099,6 +1896,11 @@
   background: var(--input-fill);
   color: var(--text-2);
   font-size: 10.5px;
+}
+
+/* A question the reader marked answered: the same pill, but it says so quietly. */
+.outline-mark-kind--resolved {
+  color: var(--ok);
 }
 
 .outline-mark-page {
@@ -2270,4 +2072,147 @@
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+}
+
+/* ---- Glossary: panel section and hover card -------------------------------- */
+
+.outline-glossary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.outline-glossary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-glossary-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+}
+
+.outline-glossary-item:hover {
+  background: var(--row-hover);
+}
+
+.outline-glossary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.outline-glossary-term {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.outline-glossary-definition {
+  color: var(--text-2);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.outline-glossary-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+}
+
+.outline-glossary-definition-input {
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.outline-glossary-add {
+  align-self: flex-start;
+}
+
+/*
+ * The hover card is anchored to the window like the annotation toolbar, and like it stays
+ * inside the viewport however close the reader is to an edge.
+ */
+.glossary-hover {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 260px;
+  padding: 9px 11px;
+  border-radius: var(--r-md);
+  pointer-events: none;
+}
+
+.glossary-hover-term {
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.glossary-hover-definition {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Summary card section --------------------------------------------------- */
+
+.outline-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--tile);
+}
+
+.outline-loose-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.outline-summary-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.outline-summary-meta {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.outline-summary-actions {
+  align-self: flex-start;
+}
+
+.outline-summary-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }

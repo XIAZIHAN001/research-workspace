@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(6);
+    expect(SCHEMA_VERSION).toBe(10);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -203,6 +203,7 @@ describe('migrateStoredPayload: current payloads', () => {
     papers: { pa, pb },
     annotations: [],
     bookmarks: [],
+    glossary: [],
     selectedId: 'a',
   };
 
@@ -482,6 +483,7 @@ describe('migrateStoredPayload: v2 → current', () => {
       papers: { pa: PAPER_V2 },
       annotations: [],
       bookmarks: [],
+      glossary: [],
       selectedId: 'p1',
     });
   });
@@ -716,5 +718,217 @@ describe('migrateStoredPayload: v5 → current', () => {
       state: migrated.state,
       from: SCHEMA_VERSION,
     });
+  });
+});
+
+describe('v6 → v7: question resolutions', () => {
+  const PAPER = {
+    id: 'pa',
+    title: 'Attention Is All You Need',
+    authors: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const PROJECT = {
+    id: 'p1',
+    name: '阅读',
+    corePaperId: 'pa',
+    relatedPaperIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const base = {
+    version: 6,
+    projects: [PROJECT],
+    papers: { pa: PAPER },
+    annotations: [
+      {
+        id: 'an1',
+        paperId: 'pa',
+        pdfSha256: 'a'.repeat(64),
+        page: 2,
+        quote: 'what does multi-head buy us',
+        prefix: 'we ask ',
+        suffix: ' in return',
+        rects: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.02 }],
+        kind: 'question',
+        note: '',
+        origin: 'user',
+        sourceLabel: '',
+        createdAt: 5,
+        updatedAt: 6,
+      },
+    ],
+    bookmarks: [],
+    glossary: [],
+    selectedId: 'p1',
+  };
+
+  it('reports the version it came from and changes nothing else', () => {
+    const outcome = migrateStoredPayload(JSON.stringify(base));
+    expect(outcome.ok && outcome.from).toBe(6);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.annotations[0]?.resolvedAt).toBeUndefined();
+    expect(outcome.state.bookmarks).toStrictEqual([]);
+  });
+
+  it('keeps a resolution the payload already carries', () => {
+    const payload = JSON.stringify({
+      ...base,
+      annotations: [{ ...base.annotations[0], resolvedAt: 42 }],
+    });
+    const outcome = migrateStoredPayload(payload);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.annotations[0]?.resolvedAt).toBe(42);
+  });
+
+  it('rejects a resolution that is not a timestamp', () => {
+    const payload = JSON.stringify({
+      ...base,
+      annotations: [{ ...base.annotations[0], resolvedAt: 'soon' }],
+    });
+    const outcome = migrateStoredPayload(payload);
+    expect(outcome.ok).toBe(false);
+  });
+});
+
+describe('v7 → v8: paper glossary', () => {
+  const base = {
+    version: 7,
+    projects: [
+      { id: 'p1', name: '读', corePaperId: 'pa', relatedPaperIds: [], createdAt: 1, updatedAt: 1 },
+    ],
+    papers: { pa: { id: 'pa', title: 'Paper', authors: [], createdAt: 1, updatedAt: 1 } },
+    annotations: [],
+    bookmarks: [],
+    selectedId: 'p1',
+  };
+
+  it('adds an empty glossary list and reports the version it came from', () => {
+    const outcome = migrateStoredPayload(JSON.stringify(base));
+    expect(outcome.ok && outcome.from).toBe(7);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.glossary).toStrictEqual([]);
+  });
+
+  it('round-trips a payload the current build writes', () => {
+    const state = {
+      ...JSON.parse(JSON.stringify(base)),
+      glossary: [
+        {
+          id: 'g1',
+          paperId: 'pa',
+          term: 'KZG',
+          definition: 'Kate–Zaverucha–Goldberg 多项式承诺',
+          createdAt: 5,
+          updatedAt: 6,
+        },
+      ],
+    };
+    const again = migrateStoredPayload(serializeProjects(state as never));
+    expect(again.ok).toBe(true);
+    expect(again.ok && again.state.glossary).toHaveLength(1);
+  });
+});
+
+describe('v8 → v9: paper summary cards', () => {
+  const base = {
+    version: 8,
+    projects: [],
+    papers: {
+      pa: { id: 'pa', title: 'Paper', authors: [], createdAt: 1, updatedAt: 1 },
+    },
+    annotations: [],
+    bookmarks: [],
+    glossary: [],
+    selectedId: null,
+  };
+
+  it('states the new version and keeps a card the payload already carries', () => {
+    const withCard = JSON.stringify({
+      ...base,
+      papers: {
+        pa: {
+          ...base.papers.pa,
+          summary: {
+            text: '问题、方法、结论三段。',
+            provider: 'mock',
+            providerLabel: '本地模拟',
+            model: 'mock-1',
+            online: false,
+            createdAt: 9,
+          },
+        },
+      },
+    });
+    const outcome = migrateStoredPayload(withCard);
+    expect(outcome.ok && outcome.from).toBe(8);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.papers.pa?.summary?.text).toContain('问题');
+  });
+
+  it('drops a malformed card rather than refusing the payload', () => {
+    const broken = JSON.stringify({
+      ...base,
+      papers: { pa: { ...base.papers.pa, summary: { text: 42 } } },
+    });
+    const outcome = migrateStoredPayload(broken);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.state.papers.pa?.summary).toBeUndefined();
+  });
+});
+
+describe('v9 → v10: summary origin hash', () => {
+  const card = (extra = {}) => ({
+    text: '问题、方法、结论三段。',
+    provider: 'mock',
+    providerLabel: '本地模拟',
+    model: 'mock-1',
+    online: false,
+    createdAt: 9,
+    ...extra,
+  });
+  const base = {
+    version: 9,
+    projects: [],
+    papers: {
+      pa: {
+        id: 'pa',
+        title: 'Paper',
+        authors: [],
+        summary: card({ pdfSha256: 'b'.repeat(64) }),
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    annotations: [],
+    bookmarks: [],
+    glossary: [],
+    selectedId: null,
+  };
+
+  it('carries a v9 card with its origin hash, and one without', () => {
+    const outcome = migrateStoredPayload(JSON.stringify(base));
+    expect(outcome.ok && outcome.from).toBe(9);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.papers.pa?.summary?.pdfSha256).toBe('b'.repeat(64));
+
+    const without = JSON.stringify({
+      ...base,
+      papers: { pa: { ...base.papers.pa, summary: card() } },
+    });
+    const again = migrateStoredPayload(without);
+    expect(again.ok && again.state.papers.pa?.summary?.pdfSha256).toBeUndefined();
+  });
+
+  it('drops an origin that is not a hash but keeps the card', () => {
+    const broken = JSON.stringify({
+      ...base,
+      papers: { pa: { ...base.papers.pa, summary: card({ pdfSha256: 'not-a-hash' }) } },
+    });
+    const outcome = migrateStoredPayload(broken);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.state.papers.pa?.summary?.text).toContain('问题');
+    expect(outcome.ok && outcome.state.papers.pa?.summary?.pdfSha256).toBeUndefined();
   });
 });

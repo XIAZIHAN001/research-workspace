@@ -3,15 +3,28 @@ import {
   BookmarkPlus,
   Check,
   ChevronRight,
+  CircleCheck,
+  BookMarked,
+  FileText,
+  Sparkles,
   Download,
   Pencil,
   StickyNote,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { PaperSummary } from '../../domain/papers';
 import { defaultBookmarkLabel, sortBookmarks, type Bookmark } from '../../domain/bookmark';
 import { ANNOTATION_KIND_LABEL, type Annotation } from '../../domain/annotation';
+import {
+  MAX_DEFINITION_LENGTH,
+  MAX_TERM_LENGTH,
+  sortGlossary,
+  type GlossaryEdit,
+  type GlossaryEntry,
+} from '../../domain/glossary';
 import {
   activeOutlineId,
   countOutlineEntries,
@@ -39,6 +52,8 @@ interface OutlinePanelProps {
    */
   bookmarks?: readonly Bookmark[];
   annotations?: readonly Annotation[];
+  /** Notes of this paper that belong to an older file version: stored, but not drawn. */
+  elsewhereNotes?: readonly Annotation[];
   activeNoteId?: string | null;
   onAddBookmark?: (label: string) => void;
   onRenameBookmark?: (id: string, label: string) => void;
@@ -46,6 +61,27 @@ interface OutlinePanelProps {
   onJumpToNote?: (annotation: Annotation) => void;
   onEditNote?: (id: string, note: string) => void;
   onDeleteNote?: (annotation: Annotation) => void;
+  /** Marks a question answered, or opens it again. Falls back to read-only when omitted. */
+  onResolveNote?: (id: string, resolvedAt: number | null) => void;
+  /** The paper's own vocabulary, listed in its own section of this panel. */
+  glossary?: readonly GlossaryEntry[];
+  /** The AI summary card, when one has been generated for this paper. */
+  summary?: PaperSummary;
+  /** True while a summary request is in flight. */
+  summaryBusy?: boolean;
+  /** What a failed generation said, or a transient note; shown in the summary section. */
+  summaryNotice?: string | null;
+  /** How much of the paper a request would carry, for the confirmation line. */
+  summaryScope?: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
+  /** True when the service is an online provider, so the confirm line can name the cost. */
+  summaryOnline?: boolean;
+  /** True when the card was generated from a different PDF file than the paper now holds. */
+  summaryStale?: boolean;
+  onGenerateSummary?: () => void;
+  onClearSummary?: () => void;
+  onAddGlossaryTerm?: (draft: { term: string; definition: string }) => void;
+  onEditGlossaryTerm?: (id: string, edit: GlossaryEdit) => void;
+  onRemoveGlossaryTerm?: (id: string) => void;
   onExportNotes?: () => void;
 }
 
@@ -71,6 +107,7 @@ export function OutlinePanel({
   onClose,
   bookmarks = [],
   annotations = [],
+  elsewhereNotes = [],
   activeNoteId = null,
   onAddBookmark,
   onRenameBookmark,
@@ -78,6 +115,19 @@ export function OutlinePanel({
   onJumpToNote,
   onEditNote,
   onDeleteNote,
+  onResolveNote,
+  glossary = [],
+  summary,
+  summaryBusy = false,
+  summaryNotice = null,
+  summaryScope = null,
+  summaryOnline = false,
+  summaryStale = false,
+  onGenerateSummary,
+  onClearSummary,
+  onAddGlossaryTerm,
+  onEditGlossaryTerm,
+  onRemoveGlossaryTerm,
   onExportNotes,
 }: OutlinePanelProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string> | null>(null);
@@ -102,10 +152,11 @@ export function OutlinePanel({
     onDeleteBookmark: onDeleteBookmark ?? (() => undefined),
     onEditNote: onEditNote ?? (() => undefined),
     onDeleteNote: onDeleteNote ?? (() => undefined),
+    onResolveNote: onResolveNote ?? (() => undefined),
     activeNoteId,
     readOnly: {
       bookmark: onRenameBookmark === undefined && onDeleteBookmark === undefined,
-      note: onEditNote === undefined && onDeleteNote === undefined,
+      note: onEditNote === undefined && onDeleteNote === undefined && onResolveNote === undefined,
     },
   };
 
@@ -160,6 +211,18 @@ export function OutlinePanel({
       </div>
 
       <div className="outline-scroll">
+        {(onGenerateSummary !== undefined || summary !== undefined) && (
+          <SummarySection
+            summary={summary}
+            busy={summaryBusy}
+            notice={summaryNotice}
+            scope={summaryScope}
+            online={summaryOnline}
+            stale={summaryStale}
+            onGenerate={onGenerateSummary}
+            onClear={onClearSummary}
+          />
+        )}
         {outline.status === 'loading' && <p className="outline-note">正在读取目录…</p>}
         {outline.status === 'error' && <p className="outline-note">目录读取失败。</p>}
         {outline.status === 'ready' && outline.items.length === 0 && (
@@ -187,8 +250,367 @@ export function OutlinePanel({
             onJump={onJump}
           />
         )}
+
+        {elsewhereNotes.length > 0 && (
+          <section className="outline-elsewhere" aria-label="另一份 PDF 上的笔记">
+            <p className="outline-loose-title">另一份 PDF 上的笔记（{elsewhereNotes.length}）</p>
+            <p className="outline-note">
+              这篇论文的 PDF 文件换过了，旧笔记不会画在新文件上——它们还在，只是位置对不上。
+            </p>
+            <ul className="outline-marks">
+              {elsewhereNotes.map((annotation) => {
+                const excerpt = annotation.note.trim() === '' ? annotation.quote : annotation.note;
+                return (
+                  <li key={annotation.id} className="outline-mark" data-kind="note" data-stale>
+                    <span className="outline-mark-main">
+                      <StickyNote size={12} aria-hidden="true" />
+                      <span className="outline-mark-text">{excerpt}</span>
+                      <span className="outline-mark-kind">
+                        {ANNOTATION_KIND_LABEL[annotation.kind]}
+                      </span>
+                      <span className="outline-mark-page">第 {annotation.page} 页</span>
+                    </span>
+                    {onDeleteNote !== undefined && (
+                      <span className="outline-mark-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`删除第 ${String(annotation.page)} 页的笔记`}
+                          onClick={() => {
+                            onDeleteNote(annotation);
+                          }}
+                        >
+                          <Trash2 size={11} aria-hidden="true" />
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+        <GlossarySection
+          entries={glossary}
+          editable={onAddGlossaryTerm !== undefined}
+          onAdd={onAddGlossaryTerm}
+          onEdit={onEditGlossaryTerm}
+          onRemove={onRemoveGlossaryTerm}
+        />
       </div>
     </aside>
+  );
+}
+
+interface GlossaryDraft {
+  /** The entry being edited, or null while the row is a brand-new term. */
+  id: string | null;
+  term: string;
+  definition: string;
+}
+
+/**
+ * The paper's one-page summary card, and the (confirmed) action that generates it.
+ *
+ * Generation is two clicks, like every model call in this app: the first opens the disclosure —
+ * what will be sent, and whether it costs — and only 开始生成 talks to the service.
+ */
+function SummarySection({
+  summary,
+  busy,
+  notice,
+  scope,
+  online,
+  stale,
+  onGenerate,
+  onClear,
+}: {
+  summary: PaperSummary | undefined;
+  busy: boolean;
+  notice: string | null;
+  scope: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
+  online: boolean;
+  stale: boolean;
+  onGenerate?: () => void;
+  onClear?: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const scopeText =
+    scope === null
+      ? '整篇论文的文字'
+      : `整篇论文 ${String(scope.pagesSent)}/${String(scope.pagesTotal)} 页的文字` +
+        (scope.truncated ? '（超长部分不发送）' : '');
+  const costText = online ? '将调用在线模型，可能产生费用。' : '当前是本地模拟，不产生任何费用。';
+
+  return (
+    <section className="outline-summary" aria-label="摘要卡">
+      <p className="outline-loose-title">
+        <FileText size={12} aria-hidden="true" /> 摘要卡
+      </p>
+      {summary !== undefined && (
+        <>
+          <p className="outline-summary-text">{summary.text}</p>
+          <p className="outline-summary-meta">
+            {summary.providerLabel} · {summary.model} · {summary.online ? '在线' : '本地模拟'} ·
+            生成于 {new Date(summary.createdAt).toLocaleDateString('zh-Hans-CN')}
+          </p>
+          {stale && (
+            <p className="outline-summary-stale" role="status">
+              这份摘要生成自另一个 PDF 版本；文件已更换，内容可能不再对应。重新生成即可更新。
+            </p>
+          )}
+        </>
+      )}
+      {confirming ? (
+        <div className="outline-summary-confirm">
+          <p className="outline-note">
+            将发送{scopeText}。{costText}
+          </p>
+          <div className="outline-mark-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false);
+                onGenerate?.();
+              }}
+            >
+              {busy ? '生成中…' : '开始生成'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setConfirming(false);
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : onGenerate !== undefined ? (
+        summary === undefined ? (
+          <div className="outline-summary-confirm">
+            <p className="outline-note">一句话看懂这篇论文：问题、方法、结论。</p>
+            <div className="outline-mark-actions">
+              <button
+                type="button"
+                className="btn btn-quiet"
+                disabled={busy}
+                onClick={() => {
+                  setConfirming(true);
+                }}
+              >
+                <Sparkles size={12} aria-hidden="true" />
+                生成摘要卡
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="outline-mark-actions outline-summary-actions">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(true);
+              }}
+            >
+              <Sparkles size={12} aria-hidden="true" />
+              重新生成
+            </button>
+            {onClear !== undefined && (
+              <button type="button" className="btn btn-quiet" onClick={onClear}>
+                移除
+              </button>
+            )}
+          </div>
+        )
+      ) : null}
+      {notice !== null && (
+        <p className="outline-note" role="status">
+          {notice}
+        </p>
+      )}
+      {busy && summary === undefined && <p className="outline-note">正在生成，稍候…</p>}
+    </section>
+  );
+}
+
+/**
+ * The paper's own vocabulary: terms the reader defined once and looks up while reading.
+ *
+ * Lives at the end of the outline panel because a term belongs to the whole paper, not to a
+ * chapter — unlike bookmarks and notes, which are anchored to a place and belong in the tree.
+ */
+function GlossarySection({
+  entries,
+  editable,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  entries: readonly GlossaryEntry[];
+  editable: boolean;
+  onAdd?: (draft: { term: string; definition: string }) => void;
+  onEdit?: (id: string, edit: GlossaryEdit) => void;
+  onRemove?: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState<GlossaryDraft | null>(null);
+  const sorted = sortGlossary(entries);
+  if (!editable && sorted.length === 0) return null;
+
+  const commit = (): void => {
+    if (draft === null || draft.term.trim() === '') return;
+    if (draft.id === null) onAdd?.({ term: draft.term, definition: draft.definition });
+    else onEdit?.(draft.id, { term: draft.term, definition: draft.definition });
+    setDraft(null);
+  };
+
+  const cancel = (): void => {
+    setDraft(null);
+  };
+
+  const editingNew = draft !== null && draft.id === null;
+
+  return (
+    <section className="outline-glossary" aria-label="术语表">
+      <p className="outline-loose-title">术语表（{String(sorted.length)}）</p>
+      {sorted.length === 0 && !editingNew && (
+        <p className="outline-note">阅读时选中一个缩写或名词，点「术语」，就能在这里查到它。</p>
+      )}
+      <ul className="outline-glossary-list">
+        {sorted.map((entry) =>
+          draft?.id === entry.id && draft !== null ? (
+            <GlossaryEditRow
+              key={entry.id}
+              draft={draft}
+              setDraft={setDraft}
+              commit={commit}
+              cancel={cancel}
+            />
+          ) : (
+            <li key={entry.id} className="outline-glossary-item">
+              <span className="outline-glossary-copy">
+                <span className="outline-glossary-term">{entry.term}</span>
+                {entry.definition !== '' && (
+                  <span className="outline-glossary-definition">{entry.definition}</span>
+                )}
+              </span>
+              {onEdit !== undefined && (
+                <span className="outline-mark-actions">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`编辑术语「${entry.term}」`}
+                    onClick={() => {
+                      setDraft({ id: entry.id, term: entry.term, definition: entry.definition });
+                    }}
+                  >
+                    <Pencil size={11} aria-hidden="true" />
+                  </button>
+                  {onRemove !== undefined && (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={`删除术语「${entry.term}」`}
+                      onClick={() => {
+                        onRemove(entry.id);
+                      }}
+                    >
+                      <Trash2 size={11} aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+              )}
+            </li>
+          ),
+        )}
+        {editingNew && draft !== null && (
+          <GlossaryEditRow
+            key="new-term"
+            draft={draft}
+            setDraft={setDraft}
+            commit={commit}
+            cancel={cancel}
+          />
+        )}
+      </ul>
+      {onAdd !== undefined && !editingNew && (
+        <button
+          type="button"
+          className="btn btn-quiet outline-glossary-add"
+          onClick={() => {
+            setDraft({ id: null, term: '', definition: '' });
+          }}
+        >
+          <BookMarked size={12} aria-hidden="true" />
+          添加术语
+        </button>
+      )}
+    </section>
+  );
+}
+
+function GlossaryEditRow({
+  draft,
+  setDraft,
+  commit,
+  cancel,
+}: {
+  draft: GlossaryDraft;
+  setDraft: (next: GlossaryDraft) => void;
+  commit: () => void;
+  cancel: () => void;
+}) {
+  return (
+    <li className="outline-glossary-edit">
+      <input
+        className="input"
+        type="text"
+        value={draft.term}
+        maxLength={MAX_TERM_LENGTH}
+        autoFocus
+        aria-label="术语"
+        placeholder="术语，如 KZG"
+        onChange={(event) => {
+          setDraft({ ...draft, term: event.target.value });
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === 'Escape') cancel();
+        }}
+      />
+      <textarea
+        className="input outline-glossary-definition-input"
+        value={draft.definition}
+        maxLength={MAX_DEFINITION_LENGTH}
+        rows={2}
+        aria-label="含义"
+        placeholder="它在这篇论文里是什么意思…"
+        onChange={(event) => {
+          setDraft({ ...draft, definition: event.target.value });
+        }}
+      />
+      <span className="outline-mark-actions">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="保存术语"
+          disabled={draft.term.trim() === ''}
+          onClick={commit}
+        >
+          <Check size={11} aria-hidden="true" />
+        </button>
+        <button type="button" className="icon-btn" aria-label="取消编辑术语" onClick={cancel}>
+          <X size={11} aria-hidden="true" />
+        </button>
+      </span>
+    </li>
   );
 }
 
@@ -199,6 +621,7 @@ interface MarkActions {
   onDeleteBookmark: (bookmark: Bookmark) => void;
   onEditNote: (id: string, note: string) => void;
   onDeleteNote: (annotation: Annotation) => void;
+  onResolveNote: (id: string, resolvedAt: number | null) => void;
   activeNoteId: string | null;
   readOnly: { bookmark: boolean; note: boolean };
 }
@@ -465,10 +888,37 @@ function OutlineMarkList({ marks, depth, actions }: OutlineMarkListProps) {
                   <span className="outline-mark-kind">
                     {ANNOTATION_KIND_LABEL[annotation.kind]}
                   </span>
+                  {annotation.kind === 'question' && annotation.resolvedAt !== undefined && (
+                    <span className="outline-mark-kind outline-mark-kind--resolved">已解决</span>
+                  )}
                   <span className="outline-mark-page">第 {annotation.page} 页</span>
                 </button>
                 {!actions.readOnly.note && (
                   <span className="outline-mark-actions">
+                    {annotation.kind === 'question' && (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={
+                          annotation.resolvedAt === undefined
+                            ? `标记第 ${String(annotation.page)} 页的疑问已解决`
+                            : `重新打开第 ${String(annotation.page)} 页的疑问`
+                        }
+                        aria-pressed={annotation.resolvedAt !== undefined}
+                        onClick={() => {
+                          actions.onResolveNote(
+                            annotation.id,
+                            annotation.resolvedAt === undefined ? Date.now() : null,
+                          );
+                        }}
+                      >
+                        {annotation.resolvedAt === undefined ? (
+                          <CircleCheck size={11} aria-hidden="true" />
+                        ) : (
+                          <Undo2 size={11} aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="icon-btn"

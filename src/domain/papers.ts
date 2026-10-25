@@ -1,6 +1,29 @@
 import { normalizeTitle } from './normalize';
 import type { PaperPdf, PaperReading } from './pdfFile';
 
+/**
+ * A one-page summary the reader chose to generate, with the provenance of whoever wrote it.
+ *
+ * The text is the model's answer verbatim — including its honesty about what the paper did not
+ * say. The provenance line is stored rather than re-derived so an old card keeps saying which
+ * model wrote it, the same rule assistant notes follow.
+ */
+export interface PaperSummary {
+  text: string;
+  /**
+   * The file the summary was generated from. Absent on cards written before v10: those simply
+   * cannot be checked, and say nothing either way.
+   */
+  pdfSha256?: string;
+  provider: string;
+  providerLabel: string;
+  model: string;
+  online: boolean;
+  createdAt: number;
+}
+
+export const MAX_SUMMARY_LENGTH = 6000;
+
 /** Where a paper is in the reading queue. Absence on a paper means `unread`. */
 export const READING_STATUSES = ['unread', 'reading', 'done'] as const;
 export type ReadingStatus = (typeof READING_STATUSES)[number];
@@ -67,6 +90,8 @@ export interface Paper {
   tags?: string[];
   /** Reading queue state. Absent means unread. */
   status?: ReadingStatus;
+  /** The AI summary card, kept until the reader regenerates or clears it. */
+  summary?: PaperSummary;
   /** Epoch milliseconds. */
   createdAt: number;
   /** Epoch milliseconds. */
@@ -102,6 +127,8 @@ export interface PaperEdit {
   tags?: string[] | null;
   /** `null` or `'unread'` clears the queue state back to unread. */
   status?: ReadingStatus | null;
+  /** Sets or clears the summary card; `undefined` leaves it alone. */
+  summary?: PaperSummary | null;
 }
 
 export type PaperEditFailure =
@@ -265,6 +292,11 @@ export function applyPaperEdit(
     // `unread` is the absence of a status, so both spellings produce the same record.
     if (edit.status === null || edit.status === 'unread') delete updated.status;
     else updated.status = edit.status;
+  }
+  if (edit.summary !== undefined) {
+    if (edit.summary === null) delete updated.summary;
+    else
+      updated.summary = { ...edit.summary, text: edit.summary.text.slice(0, MAX_SUMMARY_LENGTH) };
   }
 
   if (papersEqual(current, updated)) return { ok: true, paper: current };

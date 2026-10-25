@@ -1,4 +1,12 @@
-import { Highlighter, MessageSquarePlus, Network, SendHorizontal, Sparkles, X } from 'lucide-react';
+import {
+  BookMarked,
+  Highlighter,
+  MessageSquarePlus,
+  Network,
+  SendHorizontal,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
 import {
   ANNOTATION_KINDS,
@@ -7,6 +15,7 @@ import {
   type AnnotationKind,
 } from '../../domain/annotation';
 import { AI_MODE_LABEL, type AiMode } from '../../services/ai/types';
+import { MAX_DEFINITION_LENGTH, MAX_TERM_LENGTH } from '../../domain/glossary';
 import { useViewportSize } from '../../ui/useViewportSize';
 
 interface AnnotationToolbarProps {
@@ -20,6 +29,10 @@ interface AnnotationToolbarProps {
   onAsk: (mode: AiMode, question: string) => void;
   /** Opens the local knowledge panel for this selection. Does not call a model. */
   onKnowledge: () => void;
+  /** Saves the selection as a glossary term. Omitted where terms are not editable. */
+  onTerm?: (draft: { term: string; definition: string }) => void;
+  /** The selected text, to prefill the term when it is short enough to be one. */
+  selectionText?: string;
   onDismiss: () => void;
 }
 
@@ -52,13 +65,18 @@ export function AnnotationToolbar({
   onNote,
   onAsk,
   onKnowledge,
+  onTerm,
+  selectionText = '',
   onDismiss,
 }: AnnotationToolbarProps) {
   const [composing, setComposing] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [defining, setDefining] = useState(false);
   const [kind, setKind] = useState<AnnotationKind>('question');
   const [note, setNote] = useState('');
   const [question, setQuestion] = useState('');
+  const [term, setTerm] = useState('');
+  const [definition, setDefinition] = useState('');
 
   /*
    * The toolbar is placed against the window, so it needs the window — as a value it is told
@@ -127,6 +145,20 @@ export function AnnotationToolbar({
     event.preventDefault();
     if (question.trim() === '') return;
     onAsk('ask', question.trim());
+  };
+
+  const submitTerm = (event: SubmitEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (onTerm === undefined || term.trim() === '') return;
+    onTerm({ term: term.trim(), definition });
+  };
+
+  const beginTerm = (): void => {
+    // A selection of a word or two usually *is* the term; a whole sentence is not, and
+    // prefilling it would just have to be deleted.
+    setTerm(selectionText.trim().length <= MAX_TERM_LENGTH ? selectionText.trim() : '');
+    setDefinition('');
+    setDefining(true);
   };
 
   return (
@@ -228,6 +260,50 @@ export function AnnotationToolbar({
             </button>
           </div>
         </div>
+      ) : defining ? (
+        <form className="annotation-compose annotation-compose--term" onSubmit={submitTerm}>
+          <label>
+            <span className="sr-only">术语</span>
+            <input
+              className="input"
+              type="text"
+              value={term}
+              maxLength={MAX_TERM_LENGTH}
+              autoFocus
+              placeholder="术语，如 KZG"
+              onChange={(event) => {
+                setTerm(event.target.value);
+              }}
+            />
+          </label>
+          <label>
+            <span className="sr-only">含义</span>
+            <textarea
+              className="annotation-input"
+              value={definition}
+              maxLength={MAX_DEFINITION_LENGTH}
+              rows={3}
+              placeholder="它在这篇论文里是什么意思…"
+              onChange={(event) => {
+                setDefinition(event.target.value);
+              }}
+            />
+          </label>
+          <div className="annotation-actions">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setDefining(false);
+              }}
+            >
+              返回
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={term.trim() === ''}>
+              存为术语
+            </button>
+          </div>
+        </form>
       ) : (
         <div className="annotation-actions">
           <button type="button" className="btn btn-quiet" onClick={onHighlight}>
@@ -244,6 +320,12 @@ export function AnnotationToolbar({
             <MessageSquarePlus size={14} aria-hidden="true" />
             笔记
           </button>
+          {onTerm !== undefined && (
+            <button type="button" className="btn btn-quiet" onClick={beginTerm}>
+              <BookMarked size={14} aria-hidden="true" />
+              术语
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-quiet"

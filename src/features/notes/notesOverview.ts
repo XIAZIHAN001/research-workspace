@@ -2,6 +2,8 @@ import { sortAnnotations, type Annotation, type AnnotationKind } from '../../dom
 import type { Paper } from '../../domain/papers';
 
 export type NotesKindFilter = 'all' | AnnotationKind;
+/** The lifecycle of a question: open until the reader marks it answered. */
+export type QuestionStatusFilter = 'open' | 'resolved';
 
 export interface NotesOverviewFilter {
   /** Matched against the highlighted text and the reader's own note. */
@@ -9,6 +11,12 @@ export interface NotesOverviewFilter {
   kind: NotesKindFilter;
   /** One paper, or null for every paper. */
   paperId: string | null;
+  /**
+   * Narrows to questions in that state. Null leaves every kind in the list; setting it makes
+   * the view about questions only, whatever the kind filter said — a reader asking for
+   * "未解决" wants exactly that, not unanswered questions mixed with insights.
+   */
+  questionStatus?: QuestionStatusFilter | null;
 }
 
 export interface NotesOverviewGroup {
@@ -24,12 +32,25 @@ export function filterNotes(
   filter: NotesOverviewFilter,
 ): Annotation[] {
   const query = filter.query.trim().toLowerCase();
+  const status = filter.questionStatus ?? null;
   return annotations.filter((annotation) => {
+    if (status !== null) {
+      if (annotation.kind !== 'question') return false;
+      if (status === 'open' && annotation.resolvedAt !== undefined) return false;
+      if (status === 'resolved' && annotation.resolvedAt === undefined) return false;
+    }
     if (filter.kind !== 'all' && annotation.kind !== filter.kind) return false;
     if (filter.paperId !== null && annotation.paperId !== filter.paperId) return false;
     if (query === '') return true;
     return `${annotation.quote}\n${annotation.note}`.toLowerCase().includes(query);
   });
+}
+
+/** How many questions are still open across the workspace, for the page header. */
+export function openQuestionCount(annotations: readonly Annotation[]): number {
+  return annotations.filter(
+    (annotation) => annotation.kind === 'question' && annotation.resolvedAt === undefined,
+  ).length;
 }
 
 /**

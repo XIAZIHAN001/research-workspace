@@ -620,6 +620,17 @@ button.row-main:active {
   color: var(--text);
 }
 
+/* Text segments (Settings rows) carry a label instead of an icon: widen the track and the
+   sliding plate together through the same two variables the plate's transform reads. */
+.segmented--text {
+  --seg-w: 76px;
+}
+
+.segmented--text .seg {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 /* Without :has() there is no sliding layer; the pressed segment draws its own plate. */
 @supports not selector(:has(*)) {
   .seg[aria-pressed='true'] {
@@ -1241,9 +1252,10 @@ button.row-main:active {
   display: flex;
   flex-direction: column;
   width: min(1080px, calc(100vw - 32px));
-  /* One height for every section: switching tabs must not resize the sheet. This is the middle
-     between the tallest sections (个人, AI 服务) and the shortest (外观), so neither jumps. */
-  height: min(604px, 88vh);
+  /* Adaptive height: a short section ends where its content ends, a long one stops at the cap
+     and scrolls inside (.settings owns the scroll). Switching tabs may resize the sheet — the
+     alternative was every short page carrying a tall block of empty space. */
+  height: auto;
   max-height: min(88vh, 900px);
   /* The sheet itself never scrolls: the title stays put and only the settings column moves. */
   overflow: hidden;
@@ -1984,6 +1996,67 @@ button.row-main:active {
   outline-offset: 2px;
 }
 
+/*
+ * A question card is an article, not one button: the main region opens the paper and the
+ * lifecycle action sits beside it. The main region inherits the plain card look so the two
+ * layouts read as one list; the article keeps the hover, the inner button only the focus.
+ */
+.note-card--question {
+  cursor: default;
+}
+
+.note-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.note-card-main:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.note-card-resolve {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--input-fill);
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.note-card-resolve:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.note-card-resolve:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.note-card--question[data-resolved='true'] .note-card-resolve {
+  color: var(--text-3);
+}
+
+.note-kind--resolved {
+  color: var(--ok);
+}
+
 .note-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -2205,4 +2278,281 @@ button.row-main:active {
   border-top: 1px solid var(--hairline);
   color: var(--text-3);
   font-size: 11px;
+}
+
+/* ---- BibTeX import preview ------------------------------------------------ */
+
+/*
+ * A file can hold dozens of entries, so the preview is a capped, internally scrolling list
+ * inside the dialog rather than a page that grows past the window.
+ */
+.bibtex-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.bibtex-item {
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-sm);
+  background: var(--card);
+}
+
+.bibtex-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.bibtex-choice:has(input:disabled) {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.bibtex-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bibtex-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.bibtex-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+/* ---- Review (spaced repetition) -------------------------------------------- */
+
+.review-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.review-card-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.review-card-front {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.review-card-label {
+  color: var(--text-3);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+.review-card-name {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.review-card-back {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.review-card-summary {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.review-card-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--select-edge);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.review-card-quote footer {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+
+/* The registry lookup row in the paper edit dialog: action beside its status line. */
+.dialog-lookup {
+  align-items: center;
+  gap: 10px;
+}
+
+.dialog-lookup .hint {
+  margin: 0;
+  flex: 1;
+}
+
+/* ---- AI draft (notes view) -------------------------------------------------- */
+
+.notes-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--r-sm);
+}
+
+.notes-draft-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notes-draft-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.notes-draft-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notes-draft-head h3 {
+  margin: 0;
+  font-size: 14.5px;
+}
+
+.notes-draft-meta {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.notes-draft-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Draft review text: structure the model was asked to produce, kept readable. */
+.notes-draft-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, calc(100vw - 96px));
+}
+
+.notes-draft-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow: auto;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.notes-draft-h1,
+.notes-draft-h2,
+.notes-draft-h3,
+.notes-draft-h4 {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.notes-draft-h1 {
+  font-size: 15px;
+}
+
+.notes-draft-h2 {
+  font-size: 14px;
+}
+
+.notes-draft-h3,
+.notes-draft-h4 {
+  font-size: 13px;
+}
+
+.notes-draft-li {
+  margin: 0;
+  padding-left: 14px;
+  position: relative;
+}
+
+.notes-draft-li::before {
+  content: '·';
+  position: absolute;
+  left: 4px;
+}
+
+.notes-draft-p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Why each unreadable entry was skipped: said, not silently dropped. */
+.bibtex-skipped {
+  margin: 0;
+  padding: 0 0 0 16px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  list-style: square;
 }

@@ -4,6 +4,7 @@ import { setAppTheme } from './appearance.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { selectSpans } from './text-selection.mjs';
@@ -176,8 +177,25 @@ const panelOf = (page) => page.locator('.knowledge-panel');
 const detailOf = (page, name) => page.getByRole('region', { name: `概念：${name}` });
 const listOf = (page) => page.getByLabel('概念列表');
 
+/**
+ * Chooses a paper mode through the toolbar's trigger menu (see immersive.mjs): the modes are
+ * options inside the menu, and their hints carry overlapping substrings, so match the name span.
+ */
+async function choosePaperMode(page, label) {
+  const trigger = page.getByRole('button', { name: /纸张模式/ });
+  const menu = page.locator('.paper-modes__menu');
+  if (!(await menu.isVisible().catch(() => false))) {
+    await trigger.click();
+  }
+  await menu.waitFor({ state: 'visible' });
+  await page
+    .locator('.paper-modes__option')
+    .filter({ has: page.locator('.paper-modes__name', { hasText: label }) })
+    .click();
+}
+
 async function closeNotes(page) {
-  const close = page.getByRole('button', { name: '收起笔记' });
+  const close = page.getByRole('button', { name: '关闭目录' });
   if ((await close.count()) > 0) await close.click();
 }
 
@@ -368,10 +386,27 @@ async function ensureSelectionToolbar(page, quote, pageNumber) {
   throw new Error('the annotation toolbar did not appear after four selections');
 }
 
+/**
+ * Clicks a toolbar button, re-selecting when a late text-layer re-render dismisses the toolbar
+ * between the appearance check and the click. The short timeout keeps a vanished toolbar from
+ * eating the default 30s; a click that resolved has really happened, so retrying is safe.
+ */
+async function clickToolbarButton(page, quote, pageNumber, name) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await ensureSelectionToolbar(page, quote, pageNumber);
+    try {
+      await toolbarOf(page).getByRole('button', { name }).click({ timeout: 3000 });
+      return;
+    } catch {
+      await page.waitForTimeout(500);
+    }
+  }
+  throw new Error(`could not keep the toolbar up to click ${String(name)}`);
+}
+
 async function addHighlight(page, quote, pageNumber) {
   await closeNotes(page);
-  await ensureSelectionToolbar(page, quote, pageNumber);
-  await toolbarOf(page).getByRole('button', { name: '高亮' }).click();
+  await clickToolbarButton(page, quote, pageNumber, '高亮');
   await page.waitForTimeout(400);
 }
 
@@ -385,8 +420,7 @@ async function annotationCount(page) {
 async function addNote(page, quote, pageNumber, kind, note) {
   await closeNotes(page);
   const before = await annotationCount(page);
-  await ensureSelectionToolbar(page, quote, pageNumber);
-  await toolbarOf(page).getByRole('button', { name: '笔记' }).click();
+  await clickToolbarButton(page, quote, pageNumber, '笔记');
   if (kind !== '记录') await toolbarOf(page).getByRole('button', { name: kind }).click();
   await toolbarOf(page).getByLabel('笔记内容').fill(note);
   await toolbarOf(page).getByRole('button', { name: '保存' }).click();
@@ -448,8 +482,7 @@ async function runMockAnalysis(page, quote, pageNumber) {
   await closeNotes(page);
   await closeKnowledgePanel(page);
   await gotoPage(page, pageNumber);
-  await ensureSelectionToolbar(page, quote, pageNumber);
-  await toolbarOf(page).getByRole('button', { name: '查看相关知识' }).click();
+  await clickToolbarButton(page, quote, pageNumber, '查看相关知识');
   const panel = panelOf(page);
   await panel.waitFor({ timeout: 10_000 });
   await panel.getByRole('button', { name: '分析知识关联' }).click();
@@ -507,6 +540,7 @@ async function main() {
   await mkdir(fileURLToPath(WORK_DIR), { recursive: true });
 
   const service = await startService();
+  assertFreshBuild(import.meta.url);
   const preview = await startPreview();
   await requireOfflineProxy(ORIGIN, {
     expectedInstance: service.health.instanceId,
@@ -577,12 +611,12 @@ async function main() {
     await page.screenshot({
       path: fileURLToPath(new URL('01-dlm-annotations.png', SHOT_DIR)),
     });
-    await page.getByRole('button', { name: '暖纸' }).click();
+    await choosePaperMode(page, '暖纸');
     await page.waitForTimeout(300);
     await page.screenshot({
       path: fileURLToPath(new URL('01b-dlm-warm-paper.png', SHOT_DIR)),
     });
-    await page.getByRole('button', { name: '深灰' }).click();
+    await choosePaperMode(page, '深灰');
     await page.waitForTimeout(300);
     const darkReader = await page.evaluate(() => {
       const reader = document.querySelector('.reader');
@@ -601,7 +635,7 @@ async function main() {
     await page.screenshot({
       path: fileURLToPath(new URL('01c-dlm-dark-paper.png', SHOT_DIR)),
     });
-    await page.getByRole('button', { name: '原始' }).click();
+    await choosePaperMode(page, '原始');
 
     // ---- Reading position through zoom and the side panel ------------------
     await gotoPage(page, 4);

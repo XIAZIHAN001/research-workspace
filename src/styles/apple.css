@@ -1208,9 +1208,7 @@ select.input {
   font-size: var(--fs-micro);
 }
 
-.notes-panel,
 .ai-panel,
-.difficulty-panel,
 .knowledge-panel {
   border: 1px solid var(--hairline);
   border-radius: var(--r-xl);
@@ -1219,14 +1217,11 @@ select.input {
 
 /* A panel is a narrow column: a full-bleed primary button in it reads as a banner. */
 .ai-panel .btn-primary,
-.knowledge-panel .btn-primary,
-.difficulty-panel .btn-primary,
-.notes-panel .btn-primary {
+.knowledge-panel .btn-primary {
   align-self: flex-start;
   padding: 0 18px;
 }
 
-.notes-title,
 .panel-title {
   font-size: 15px;
   font-weight: 600;
