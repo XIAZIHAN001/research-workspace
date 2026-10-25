@@ -79,7 +79,18 @@ export function ConceptDetail({
   const projectConcepts = state.concepts.filter((entry) => entry.projectIds.includes(projectId));
   const evidence = state.evidence
     .filter((entry) => entry.conceptId === concept.id && entry.relationId === undefined)
-    .sort((one, other) => other.createdAt - one.createdAt);
+    // Grouped by paper, then in the paper's own page order: the interesting question about a
+    // shared concept is how the *other* papers phrase it, and that comparison only reads when
+    // each paper's quotations sit together. Newest-first interleaved the papers instead.
+    .sort((one, other) => {
+      const oneTitle = papers[one.paperId]?.title ?? '￿';
+      const otherTitle = papers[other.paperId]?.title ?? '￿';
+      return (
+        oneTitle.localeCompare(otherTitle, 'zh-Hans-CN') ||
+        one.page - other.page ||
+        one.createdAt - other.createdAt
+      );
+    });
   const relations = relationsFor(state, concept.id);
   const suggested = suggestionsFor(state, concept.id);
   const usedPapers = papersOf(state, concept.id);
