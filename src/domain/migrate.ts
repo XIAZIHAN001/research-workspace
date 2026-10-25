@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -186,12 +186,23 @@ function migrateV5ToV6(payload: Record<string, unknown>): Record<string, unknown
   return { ...payload, version: 6, bookmarks: [] };
 }
 
+/**
+ * v6 → v7 added an optional `resolvedAt` to annotations: when a reader marked a question
+ * answered. The field needs no rewriting — absent means still open — so the step only states
+ * the new version, the same way v5 → v6 treated optional paper fields.
+ */
+function migrateV6ToV7(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 7 };
+}
+
 const MIGRATIONS: Record<number, MigrationStep> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
   4: migrateV4ToV5,
   5: migrateV5ToV6,
+  6: migrateV6ToV7,
 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {

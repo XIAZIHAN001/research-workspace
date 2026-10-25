@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
@@ -90,5 +91,62 @@ describe('NotesView', () => {
       target: { value: 'nothing here' },
     });
     expect(screen.getByText('没有符合筛选条件的笔记。')).toBeTruthy();
+  });
+
+  it('marks a question resolved and reopens it, through the callback', () => {
+    const seen: Array<[string, number | null]> = [];
+    function Harness() {
+      const [annotations, setAnnotations] = useState<Annotation[]>([b1]);
+      return (
+        <NotesView
+          annotations={annotations}
+          papers={papers}
+          onOpenPaper={vi.fn()}
+          onResolveQuestion={(id, resolvedAt) => {
+            seen.push([id, resolvedAt]);
+            setAnnotations((current) =>
+              current.map((annotation) => ({
+                ...annotation,
+                ...(resolvedAt === null
+                  ? { resolvedAt: undefined }
+                  : { resolvedAt: resolvedAt ?? undefined }),
+              })),
+            );
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: '标记已解决' }));
+    expect(seen[0]).toStrictEqual([b1.id, expect.any(Number)]);
+    // The badge says the question is closed, and the action offers to undo it. The filter
+    // chip also reads 已解决, so the badge is counted rather than matched alone.
+    expect(screen.getAllByText('已解决').length).toBe(2);
+    fireEvent.click(screen.getByRole('button', { name: '重新打开' }));
+    expect(seen[1]).toStrictEqual([b1.id, null]);
+    expect(screen.getAllByText('已解决').length).toBe(1);
+  });
+
+  it('shows the open-question count and filters by resolution', () => {
+    renderView();
+    expect(screen.getByText(/1 个未解决疑问/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^未解决/ }));
+    expect(screen.getByText('Why masked?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '已解决' }));
+    expect(screen.getByText('没有符合筛选条件的笔记。')).toBeTruthy();
+  });
+
+  it('still opens the paper from inside a question card', () => {
+    const onOpenPaper = vi.fn();
+    render(
+      <NotesView
+        annotations={[b1]}
+        papers={papers}
+        onOpenPaper={onOpenPaper}
+        onResolveQuestion={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText('Why masked?').closest('button')!);
+    expect(onOpenPaper).toHaveBeenCalledWith('p2', { page: 2, quote: 'Why masked?' });
   });
 });

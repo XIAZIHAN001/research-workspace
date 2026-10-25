@@ -1898,6 +1898,11 @@
   font-size: 10.5px;
 }
 
+/* A question the reader marked answered: the same pill, but it says so quietly. */
+.outline-mark-kind--resolved {
+  color: var(--ok);
+}
+
 .outline-mark-page {
   flex: none;
   margin-left: auto;

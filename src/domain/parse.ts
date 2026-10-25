@@ -63,6 +63,7 @@ function parseAnnotation(value: unknown): Annotation | null {
     note,
     origin,
     sourceLabel,
+    resolvedAt,
     createdAt,
     updatedAt,
   } = value;
@@ -77,6 +78,15 @@ function parseAnnotation(value: unknown): Annotation | null {
   if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
   const provenance = parseOrigins(origin, sourceLabel);
   if (provenance === null) return null;
+  // Absence means the note is still open (every payload from before v7); a value that is
+  // present but not a timestamp is corruption, same rule as every other field here.
+  let parsedResolvedAt: number | undefined;
+  if (resolvedAt !== undefined) {
+    if (typeof resolvedAt !== 'number' || !Number.isFinite(resolvedAt) || resolvedAt < 0) {
+      return null;
+    }
+    parsedResolvedAt = resolvedAt;
+  }
   if (!Array.isArray(rects)) return null;
   const parsedRects: Annotation['rects'] = [];
   for (const rect of rects) {
@@ -99,6 +109,7 @@ function parseAnnotation(value: unknown): Annotation | null {
     kind: kind as AnnotationKind,
     note,
     ...provenance,
+    ...(parsedResolvedAt === undefined ? {} : { resolvedAt: parsedResolvedAt }),
     createdAt,
     updatedAt,
   };

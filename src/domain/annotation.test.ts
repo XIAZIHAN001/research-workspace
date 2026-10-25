@@ -178,6 +178,27 @@ describe('applyAnnotationEdit', () => {
     const updated = applyAnnotationEdit(annotation, { note: 'n'.repeat(MAX_NOTE_LENGTH + 10) }, 20);
     expect(updated.note).toHaveLength(MAX_NOTE_LENGTH);
   });
+
+  it('marks a question resolved and stamps the time', () => {
+    const updated = applyAnnotationEdit(annotation, { resolvedAt: 30 }, 30);
+    expect(updated.resolvedAt).toBe(30);
+    expect(updated.updatedAt).toBe(30);
+    expect('resolvedAt' in updated).toBe(true);
+  });
+
+  it('clearing the resolution really removes the key', () => {
+    const resolved = applyAnnotationEdit(annotation, { resolvedAt: 30 }, 30);
+    const reopened = applyAnnotationEdit(resolved, { resolvedAt: null }, 40);
+    expect(reopened.resolvedAt).toBeUndefined();
+    expect('resolvedAt' in reopened).toBe(false);
+    expect(reopened.updatedAt).toBe(40);
+  });
+
+  it('leaves the resolution alone when the edit does not mention it', () => {
+    const resolved = applyAnnotationEdit(annotation, { resolvedAt: 30 }, 30);
+    const updated = applyAnnotationEdit(resolved, { note: 'sharper' }, 50);
+    expect(updated.resolvedAt).toBe(30);
+  });
 });
 
 describe('sortAnnotations', () => {

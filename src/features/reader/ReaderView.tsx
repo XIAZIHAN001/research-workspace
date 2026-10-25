@@ -1666,6 +1666,9 @@ export function ReaderView({
                   onEditNote={(id, note) => {
                     onEditAnnotation(id, { note });
                   }}
+                  onResolveNote={(id, resolvedAt) => {
+                    onEditAnnotation(id, { resolvedAt });
+                  }}
                   onDeleteNote={setPendingDelete}
                   onExportNotes={() => {
                     downloadTextFile(

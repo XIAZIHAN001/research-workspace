@@ -705,7 +705,14 @@ export function App({
             }}
           />
         ) : view === 'notes' ? (
-          <NotesView annotations={annotations} papers={papers} onOpenPaper={openReader} />
+          <NotesView
+            annotations={annotations}
+            papers={papers}
+            onOpenPaper={openReader}
+            onResolveQuestion={(id, resolvedAt) => {
+              actions.updateAnnotation(id, { resolvedAt });
+            }}
+          />
         ) : showProject ? (
           <ProjectView
             project={selected}

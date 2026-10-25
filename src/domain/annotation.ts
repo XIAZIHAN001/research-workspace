@@ -55,6 +55,14 @@ export interface Annotation {
   origin: AnnotationOrigin;
   /** Which provider and model wrote an assistant note; empty for the reader's own. */
   sourceLabel: string;
+  /**
+   * When the reader marked a question answered, in epoch ms. Absence means still open.
+   *
+   * Only questions carry the notion in the UI, but the field is not narrowed to them: a
+   * resolution is a fact about a note, and refusing to store it for other kinds would make
+   * "change a note's kind" destroy a state the reader never asked to lose.
+   */
+  resolvedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -164,6 +172,8 @@ export function createAnnotation(
 export interface AnnotationEdit {
   note?: string;
   kind?: AnnotationKind;
+  /** Sets or clears the resolution. `undefined` leaves it alone, like every other field. */
+  resolvedAt?: number | null;
 }
 
 export function applyAnnotationEdit(
@@ -173,8 +183,24 @@ export function applyAnnotationEdit(
 ): Annotation {
   const note = edit.note === undefined ? annotation.note : edit.note.slice(0, MAX_NOTE_LENGTH);
   const kind = edit.kind ?? annotation.kind;
-  if (note === annotation.note && kind === annotation.kind) return annotation;
-  return { ...annotation, note, kind, updatedAt: now };
+  let resolvedAt = annotation.resolvedAt;
+  if (edit.resolvedAt !== undefined) {
+    resolvedAt = edit.resolvedAt === null ? undefined : Math.max(0, Math.floor(edit.resolvedAt));
+  }
+  if (
+    note === annotation.note &&
+    kind === annotation.kind &&
+    resolvedAt === annotation.resolvedAt
+  ) {
+    return annotation;
+  }
+  // The spread first, the optional field after: `undefined` must really remove the key,
+  // not leave a stale `resolvedAt: undefined` behind for JSON.stringify to skip silently —
+  // the payload should say what it means.
+  const updated = { ...annotation, note, kind, updatedAt: now };
+  if (resolvedAt === undefined) delete updated.resolvedAt;
+  else updated.resolvedAt = resolvedAt;
+  return updated;
 }
 
 /** Newest first, which is the order the notes panel lists them in. */

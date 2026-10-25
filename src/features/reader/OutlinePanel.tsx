@@ -3,10 +3,12 @@ import {
   BookmarkPlus,
   Check,
   ChevronRight,
+  CircleCheck,
   Download,
   Pencil,
   StickyNote,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -48,6 +50,8 @@ interface OutlinePanelProps {
   onJumpToNote?: (annotation: Annotation) => void;
   onEditNote?: (id: string, note: string) => void;
   onDeleteNote?: (annotation: Annotation) => void;
+  /** Marks a question answered, or opens it again. Falls back to read-only when omitted. */
+  onResolveNote?: (id: string, resolvedAt: number | null) => void;
   onExportNotes?: () => void;
 }
 
@@ -81,6 +85,7 @@ export function OutlinePanel({
   onJumpToNote,
   onEditNote,
   onDeleteNote,
+  onResolveNote,
   onExportNotes,
 }: OutlinePanelProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string> | null>(null);
@@ -105,10 +110,11 @@ export function OutlinePanel({
     onDeleteBookmark: onDeleteBookmark ?? (() => undefined),
     onEditNote: onEditNote ?? (() => undefined),
     onDeleteNote: onDeleteNote ?? (() => undefined),
+    onResolveNote: onResolveNote ?? (() => undefined),
     activeNoteId,
     readOnly: {
       bookmark: onRenameBookmark === undefined && onDeleteBookmark === undefined,
-      note: onEditNote === undefined && onDeleteNote === undefined,
+      note: onEditNote === undefined && onDeleteNote === undefined && onResolveNote === undefined,
     },
   };
 
@@ -242,6 +248,7 @@ interface MarkActions {
   onDeleteBookmark: (bookmark: Bookmark) => void;
   onEditNote: (id: string, note: string) => void;
   onDeleteNote: (annotation: Annotation) => void;
+  onResolveNote: (id: string, resolvedAt: number | null) => void;
   activeNoteId: string | null;
   readOnly: { bookmark: boolean; note: boolean };
 }
@@ -508,10 +515,37 @@ function OutlineMarkList({ marks, depth, actions }: OutlineMarkListProps) {
                   <span className="outline-mark-kind">
                     {ANNOTATION_KIND_LABEL[annotation.kind]}
                   </span>
+                  {annotation.kind === 'question' && annotation.resolvedAt !== undefined && (
+                    <span className="outline-mark-kind outline-mark-kind--resolved">已解决</span>
+                  )}
                   <span className="outline-mark-page">第 {annotation.page} 页</span>
                 </button>
                 {!actions.readOnly.note && (
                   <span className="outline-mark-actions">
+                    {annotation.kind === 'question' && (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={
+                          annotation.resolvedAt === undefined
+                            ? `标记第 ${String(annotation.page)} 页的疑问已解决`
+                            : `重新打开第 ${String(annotation.page)} 页的疑问`
+                        }
+                        aria-pressed={annotation.resolvedAt !== undefined}
+                        onClick={() => {
+                          actions.onResolveNote(
+                            annotation.id,
+                            annotation.resolvedAt === undefined ? Date.now() : null,
+                          );
+                        }}
+                      >
+                        {annotation.resolvedAt === undefined ? (
+                          <CircleCheck size={11} aria-hidden="true" />
+                        ) : (
+                          <Undo2 size={11} aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="icon-btn"

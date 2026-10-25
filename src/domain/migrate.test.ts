@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(6);
+    expect(SCHEMA_VERSION).toBe(7);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -716,5 +716,75 @@ describe('migrateStoredPayload: v5 → current', () => {
       state: migrated.state,
       from: SCHEMA_VERSION,
     });
+  });
+});
+
+describe('v6 → v7: question resolutions', () => {
+  const PAPER = {
+    id: 'pa',
+    title: 'Attention Is All You Need',
+    authors: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const PROJECT = {
+    id: 'p1',
+    name: '阅读',
+    corePaperId: 'pa',
+    relatedPaperIds: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const base = {
+    version: 6,
+    projects: [PROJECT],
+    papers: { pa: PAPER },
+    annotations: [
+      {
+        id: 'an1',
+        paperId: 'pa',
+        pdfSha256: 'a'.repeat(64),
+        page: 2,
+        quote: 'what does multi-head buy us',
+        prefix: 'we ask ',
+        suffix: ' in return',
+        rects: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.02 }],
+        kind: 'question',
+        note: '',
+        origin: 'user',
+        sourceLabel: '',
+        createdAt: 5,
+        updatedAt: 6,
+      },
+    ],
+    bookmarks: [],
+    selectedId: 'p1',
+  };
+
+  it('reports the version it came from and changes nothing else', () => {
+    const outcome = migrateStoredPayload(JSON.stringify(base));
+    expect(outcome.ok && outcome.from).toBe(6);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.annotations[0]?.resolvedAt).toBeUndefined();
+    expect(outcome.state.bookmarks).toStrictEqual([]);
+  });
+
+  it('keeps a resolution the payload already carries', () => {
+    const payload = JSON.stringify({
+      ...base,
+      annotations: [{ ...base.annotations[0], resolvedAt: 42 }],
+    });
+    const outcome = migrateStoredPayload(payload);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.annotations[0]?.resolvedAt).toBe(42);
+  });
+
+  it('rejects a resolution that is not a timestamp', () => {
+    const payload = JSON.stringify({
+      ...base,
+      annotations: [{ ...base.annotations[0], resolvedAt: 'soon' }],
+    });
+    const outcome = migrateStoredPayload(payload);
+    expect(outcome.ok).toBe(false);
   });
 });
