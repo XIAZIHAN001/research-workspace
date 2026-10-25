@@ -1159,6 +1159,8 @@ export function ReaderView({
       }
       onSaveSummary({
         text: result.answer.answer,
+        // The card keeps naming the file it was written from, so a replaced PDF can be caught.
+        ...(pdfSha256 === null ? {} : { pdfSha256 }),
         provider: result.answer.provider,
         providerLabel: result.answer.providerLabel,
         model: result.answer.model,
@@ -1756,6 +1758,10 @@ export function ReaderView({
                         }
                   }
                   summaryOnline={health?.online === true}
+                  summaryStale={
+                    paper.summary?.pdfSha256 !== undefined &&
+                    paper.summary.pdfSha256 !== (paper.pdf?.sha256 ?? paper.summary.pdfSha256)
+                  }
                   onGenerateSummary={onSaveSummary === undefined ? undefined : generateSummary}
                   onClearSummary={onClearSummary}
                   onAddGlossaryTerm={onAddTerm}

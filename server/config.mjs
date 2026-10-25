@@ -113,6 +113,14 @@ export const LIMITS = {
   documentPassages: 200,
   documentPassageChars: 12_000,
   documentContextChars: 350_000,
+  /**
+   * Draft mode: the reader asked for their own notes to be organised, so the notes themselves
+   * travel beside the quotations. Like document scope this is an explicit "large input"
+   * request, with its own ceiling — 64 notes is a long paper's worth of margin notes already.
+   */
+  draftPassages: 64,
+  draftNoteChars: 4000,
+  draftContextChars: 200_000,
   questionChars: 1000,
   historyTurns: 6,
   historyChars: 2000,

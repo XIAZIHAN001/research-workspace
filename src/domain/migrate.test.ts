@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(9);
+    expect(SCHEMA_VERSION).toBe(10);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -875,5 +875,60 @@ describe('v8 → v9: paper summary cards', () => {
     const outcome = migrateStoredPayload(broken);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.state.papers.pa?.summary).toBeUndefined();
+  });
+});
+
+describe('v9 → v10: summary origin hash', () => {
+  const card = (extra = {}) => ({
+    text: '问题、方法、结论三段。',
+    provider: 'mock',
+    providerLabel: '本地模拟',
+    model: 'mock-1',
+    online: false,
+    createdAt: 9,
+    ...extra,
+  });
+  const base = {
+    version: 9,
+    projects: [],
+    papers: {
+      pa: {
+        id: 'pa',
+        title: 'Paper',
+        authors: [],
+        summary: card({ pdfSha256: 'b'.repeat(64) }),
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    annotations: [],
+    bookmarks: [],
+    glossary: [],
+    selectedId: null,
+  };
+
+  it('carries a v9 card with its origin hash, and one without', () => {
+    const outcome = migrateStoredPayload(JSON.stringify(base));
+    expect(outcome.ok && outcome.from).toBe(9);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.papers.pa?.summary?.pdfSha256).toBe('b'.repeat(64));
+
+    const without = JSON.stringify({
+      ...base,
+      papers: { pa: { ...base.papers.pa, summary: card() } },
+    });
+    const again = migrateStoredPayload(without);
+    expect(again.ok && again.state.papers.pa?.summary?.pdfSha256).toBeUndefined();
+  });
+
+  it('drops an origin that is not a hash but keeps the card', () => {
+    const broken = JSON.stringify({
+      ...base,
+      papers: { pa: { ...base.papers.pa, summary: card({ pdfSha256: 'not-a-hash' }) } },
+    });
+    const outcome = migrateStoredPayload(broken);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.state.papers.pa?.summary?.text).toContain('问题');
+    expect(outcome.ok && outcome.state.papers.pa?.summary?.pdfSha256).toBeUndefined();
   });
 });

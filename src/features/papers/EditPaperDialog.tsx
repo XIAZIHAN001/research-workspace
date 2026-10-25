@@ -1,5 +1,5 @@
 import { CloudDownload } from 'lucide-react';
-import { useState, type SubmitEvent } from 'react';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { MAX_TITLE_LENGTH } from '../../domain/normalize';
 import {
   paperStatus,
@@ -62,16 +62,30 @@ function EditForm({
   const [error, setError] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
   const [lookup, setLookup] = useState<string | null>(null);
+  /*
+   * The fields the lookup may fill, as they are right now — read at answer time, not at click
+   * time. A reader who types a title while the request is in flight has said the last word on
+   * that field; a closure captured at click would not know and would overwrite it.
+   */
+  const latestFields = useRef({ title, authors, year });
+  useEffect(() => {
+    latestFields.current = { title, authors, year };
+  });
+  /** Answers that arrive after a newer click (or unmount) are dropped by number. */
+  const lookupSeq = useRef(0);
 
   /*
    * Fills only what is still empty: a title the reader already corrected wins over the
    * registry's, and the lookup is a convenience rather than an authority.
    */
   const fillFromRegistries = async (): Promise<void> => {
+    const token = lookupSeq.current + 1;
+    lookupSeq.current = token;
     setLooking(true);
     setLookup(null);
     try {
       const outcome = await fetchMetadata({ doi: doi.trim(), arxivId: arxivId.trim() });
+      if (token !== lookupSeq.current) return;
       if (outcome.status === 'no-identifier') {
         setLookup('先填 DOI 或 arXiv ID，才能按它查找。');
         return;
@@ -84,20 +98,21 @@ function EditForm({
         setLookup('登记库里查不到这个标识符，没有修改任何字段。');
         return;
       }
+      const now = latestFields.current;
       const filled: string[] = [];
-      if (outcome.metadata.title !== undefined && title.trim() === '') {
+      if (outcome.metadata.title !== undefined && now.title.trim() === '') {
         setTitle(outcome.metadata.title.slice(0, MAX_TITLE_LENGTH));
         filled.push('标题');
       }
       if (
         outcome.metadata.authors !== undefined &&
         outcome.metadata.authors.length > 0 &&
-        authors.trim() === ''
+        now.authors.trim() === ''
       ) {
         setAuthors(outcome.metadata.authors.join(', '));
         filled.push('作者');
       }
-      if (outcome.metadata.year !== undefined && year.trim() === '') {
+      if (outcome.metadata.year !== undefined && now.year.trim() === '') {
         setYear(String(outcome.metadata.year));
         filled.push('年份');
       }

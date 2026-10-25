@@ -75,6 +75,8 @@ interface OutlinePanelProps {
   summaryScope?: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
   /** True when the service is an online provider, so the confirm line can name the cost. */
   summaryOnline?: boolean;
+  /** True when the card was generated from a different PDF file than the paper now holds. */
+  summaryStale?: boolean;
   onGenerateSummary?: () => void;
   onClearSummary?: () => void;
   onAddGlossaryTerm?: (draft: { term: string; definition: string }) => void;
@@ -120,6 +122,7 @@ export function OutlinePanel({
   summaryNotice = null,
   summaryScope = null,
   summaryOnline = false,
+  summaryStale = false,
   onGenerateSummary,
   onClearSummary,
   onAddGlossaryTerm,
@@ -215,6 +218,7 @@ export function OutlinePanel({
             notice={summaryNotice}
             scope={summaryScope}
             online={summaryOnline}
+            stale={summaryStale}
             onGenerate={onGenerateSummary}
             onClear={onClearSummary}
           />
@@ -317,6 +321,7 @@ function SummarySection({
   notice,
   scope,
   online,
+  stale,
   onGenerate,
   onClear,
 }: {
@@ -325,6 +330,7 @@ function SummarySection({
   notice: string | null;
   scope: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
   online: boolean;
+  stale: boolean;
   onGenerate?: () => void;
   onClear?: () => void;
 }) {
@@ -348,6 +354,11 @@ function SummarySection({
             {summary.providerLabel} · {summary.model} · {summary.online ? '在线' : '本地模拟'} ·
             生成于 {new Date(summary.createdAt).toLocaleDateString('zh-Hans-CN')}
           </p>
+          {stale && (
+            <p className="outline-summary-stale" role="status">
+              这份摘要生成自另一个 PDF 版本；文件已更换，内容可能不再对应。重新生成即可更新。
+            </p>
+          )}
         </>
       )}
       {confirming ? (

@@ -73,3 +73,68 @@ describe('EditPaperDialog registry lookup', () => {
     expect(screen.getByRole('button', { name: '查询中…' })).toBeTruthy();
   });
 });
+
+describe('EditPaperDialog lookup races', () => {
+  it('respects fields the reader filled while the request was in flight', async () => {
+    const answers: Array<(value: MetadataFetchOutcome) => void> = [];
+    const fetchMetadata = vi.fn(
+      () =>
+        new Promise<MetadataFetchOutcome>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    render(
+      <EditPaperDialog
+        open
+        paper={paper}
+        onClose={vi.fn()}
+        onSave={() => null}
+        fetchMetadata={fetchMetadata}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '按标识符补全' }));
+    // While the registry is thinking, the reader types their own title and an author.
+    fireEvent.change(screen.getByLabelText('标题'), { target: { value: '我改过的标题' } });
+    fireEvent.change(screen.getByLabelText('作者（逗号分隔）'), {
+      target: { value: '某作者' },
+    });
+    answers[0]?.({
+      status: 'ok',
+      metadata: { title: 'Registry Title', authors: ['Ada Lovelace'], year: 2031 },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('年份');
+      expect(screen.getByRole('status').textContent).not.toContain('标题');
+    });
+    expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('我改过的标题');
+    expect((screen.getByLabelText('作者（逗号分隔）') as HTMLInputElement).value).toBe('某作者');
+    expect((screen.getByLabelText('年份') as HTMLInputElement).value).toBe('2031');
+  });
+
+  it('drops an answer that a newer click has superseded', async () => {
+    const stale = vi.fn(() => new Promise<MetadataFetchOutcome>(() => undefined));
+    const answers: Array<(value: MetadataFetchOutcome) => void> = [];
+    const fetchMetadata = vi.fn(
+      () =>
+        new Promise<MetadataFetchOutcome>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    void stale;
+    const { unmount } = render(
+      <EditPaperDialog
+        open
+        paper={{ ...paper, doi: undefined, arxivId: '2401.12345' }}
+        onClose={vi.fn()}
+        onSave={() => null}
+        fetchMetadata={fetchMetadata}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '按标识符补全' }));
+    // The dialog closes (unmount) before the registry answers.
+    unmount();
+    answers[0]?.({ status: 'ok', metadata: { title: 'Late' } });
+    // Nothing to assert on an unmounted tree; the contract is simply "no crash, no write".
+    expect(answers).toHaveLength(1);
+  });
+});

@@ -171,3 +171,83 @@ describe('reportFileName', () => {
     expect(reportFileName(named)).not.toMatch(/[\\/:*?"<>|]/);
   });
 });
+
+describe('summary card and glossary in the report', () => {
+  it('carries the AI summary with its provenance and a stale marker after a file swap', () => {
+    const sha = 'a'.repeat(64);
+    const report = buildPaperReport({
+      paper: {
+        ...paper,
+        summary: {
+          text: '问题：X。方法：Y。结论：Z。',
+          pdfSha256: 'b'.repeat(64),
+          provider: 'mock',
+          providerLabel: '本地模拟',
+          model: 'mock-1',
+          online: false,
+          createdAt: Date.parse('2026-10-25T08:00:00'),
+        },
+      },
+      annotations: [],
+      knowledge: { concepts: [], evidence: [], relations: [] },
+      projects: [],
+      exportedAt: new Date('2026-10-25T09:00:00'),
+    });
+    void sha;
+    expect(report).toContain('## AI 摘要卡');
+    expect(report).toContain('本地模拟 · mock-1 · 本地模拟 · 生成于 2026-10-25 08:00');
+    expect(report).toContain('生成自另一个 PDF 版本');
+    // Without an origin hash the card is carried and claims nothing about staleness.
+    const quiet = buildPaperReport({
+      paper: {
+        ...paper,
+        summary: {
+          text: 't',
+          provider: 'm',
+          providerLabel: 'l',
+          model: 'm',
+          online: false,
+          createdAt: 1,
+        },
+      },
+      annotations: [],
+      knowledge: { concepts: [], evidence: [], relations: [] },
+      projects: [],
+    });
+    expect(quiet).not.toContain('另一个 PDF 版本');
+  });
+
+  it('lists only this paper’s glossary terms, alphabetically', () => {
+    const report = buildPaperReport({
+      paper,
+      annotations: [],
+      knowledge: { concepts: [], evidence: [], relations: [] },
+      projects: [],
+      glossary: [
+        {
+          id: 'g2',
+          paperId: 'pa',
+          term: 'SNARK',
+          definition: '简洁证明',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        { id: 'g1', paperId: 'pa', term: 'KZG', definition: '', createdAt: 1, updatedAt: 1 },
+        { id: 'g3', paperId: 'other', term: '别篇', definition: '', createdAt: 1, updatedAt: 1 },
+      ],
+    });
+    const section = report.slice(report.indexOf('## 术语表'));
+    expect(section).toContain('- **KZG**');
+    expect(section.indexOf('KZG')).toBeLessThan(section.indexOf('SNARK'));
+    expect(section).toContain('- **SNARK**：简洁证明');
+    expect(section).not.toContain('别篇');
+    // No glossary at all: the section stays away entirely.
+    const bare = buildPaperReport({
+      paper,
+      annotations: [],
+      knowledge: { concepts: [], evidence: [], relations: [] },
+      projects: [],
+    });
+    expect(bare).not.toContain('## 术语表');
+  });
+});

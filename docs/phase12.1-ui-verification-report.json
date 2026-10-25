@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-25T03:16:11.818Z",
+  "generatedAt": "2026-10-25T05:41:42.513Z",
   "baseUrl": "http://127.0.0.1:4178/",
   "viewportMatrix": [
     "1440x900",
@@ -13,7 +13,7 @@
   "contrast": [
     {
       "label": "home / dark 100",
-      "checked": 43,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
@@ -48,7 +48,7 @@
     },
     {
       "label": "home / dark 0",
-      "checked": 43,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
@@ -83,7 +83,7 @@
     },
     {
       "label": "home / dark 50",
-      "checked": 43,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
@@ -118,7 +118,7 @@
     },
     {
       "label": "home / light",
-      "checked": 43,
+      "checked": 44,
       "failures": [],
       "lowest": [
         {
@@ -128,7 +128,7 @@
           "translucent": false
         },
         {
-          "label": "h2.group-title \"项目\" @32,390",
+          "label": "h2.group-title \"项目\" @32,446",
           "ratio": 4.66,
           "need": 4.5,
           "translucent": false
@@ -153,7 +153,7 @@
     },
     {
       "label": "library / dark 100",
-      "checked": 40,
+      "checked": 43,
       "failures": [],
       "lowest": [
         {
@@ -188,7 +188,7 @@
     },
     {
       "label": "reader / dark 100",
-      "checked": 24,
+      "checked": 25,
       "failures": [],
       "lowest": [
         {
@@ -252,7 +252,7 @@
         }
       ],
       "skipped": {
-        "modal": 38,
+        "modal": 39,
         "scrim": 0
       }
     },
@@ -287,7 +287,7 @@
         }
       ],
       "skipped": {
-        "modal": 38,
+        "modal": 39,
         "scrim": 0
       }
     }
@@ -344,7 +344,7 @@
       "detail": "{\"foreground\":\"rgb(29, 29, 31)\",\"background\":\"rgb(245, 245, 247)\",\"ratio\":15.46,\"backgroundChannels\":[245,245,247],\"foregroundChannels\":[29,29,31]}"
     },
     {
-      "name": "contrast: home / dark 100 — 43 text runs meet WCAG AA",
+      "name": "contrast: home / dark 100 — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 8.23"
     },
@@ -399,12 +399,12 @@
       "detail": ""
     },
     {
-      "name": "contrast: home / dark 0 — 43 text runs meet WCAG AA",
+      "name": "contrast: home / dark 0 — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 5.11"
     },
     {
-      "name": "contrast: home / dark 50 — 43 text runs meet WCAG AA",
+      "name": "contrast: home / dark 50 — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 6.65"
     },
@@ -439,12 +439,12 @@
       "detail": "{\"app\":\"rgb(245, 245, 247)\",\"main\":\"rgb(255, 255, 255)\"}"
     },
     {
-      "name": "primary: light mode uses the accent blue with white text",
+      "name": "primary: light mode uses the near-black inverse with white text",
       "passed": true,
-      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(0, 102, 204)\",\"ratio\":5.57,\"backgroundChannels\":[0,102,204],\"foregroundChannels\":[255,255,255]}"
+      "detail": "{\"foreground\":\"rgb(255, 255, 255)\",\"background\":\"rgb(29, 29, 31)\",\"ratio\":16.83,\"backgroundChannels\":[29,29,31],\"foregroundChannels\":[255,255,255]}"
     },
     {
-      "name": "contrast: home / light — 43 text runs meet WCAG AA",
+      "name": "contrast: home / light — 44 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 4.66"
     },
@@ -504,7 +504,7 @@
       "detail": ""
     },
     {
-      "name": "contrast: library / dark 100 — 40 text runs meet WCAG AA",
+      "name": "contrast: library / dark 100 — 43 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 7.73"
     },
@@ -514,7 +514,7 @@
       "detail": ""
     },
     {
-      "name": "contrast: reader / dark 100 — 24 text runs meet WCAG AA",
+      "name": "contrast: reader / dark 100 — 25 text runs meet WCAG AA",
       "passed": true,
       "detail": "lowest 5.48"
     },
@@ -616,5 +616,5 @@
   ],
   "passed": 64,
   "failed": 0,
-  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-25T03-15-45-ui\\"
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-25T05-41-15-ui\\"
 }

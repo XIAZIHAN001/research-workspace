@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyGlossaryEdit, createGlossaryEntry, matchGlossary, sortGlossary } from './glossary';
+import {
+  applyGlossaryEdit,
+  createGlossaryEntry,
+  matchGlossary,
+  matchGlossaryAt,
+  sortGlossary,
+} from './glossary';
 
 describe('createGlossaryEntry', () => {
   it('builds an entry and normalizes the term', () => {
@@ -65,5 +71,29 @@ describe('matchGlossary', () => {
   it('ignores one-character terms and text without any term', () => {
     expect(matchGlossary(entries, 'x marks the spot')?.id).toBeUndefined();
     expect(matchGlossary(entries, 'nothing here')).toBeNull();
+  });
+});
+
+describe('matchGlossaryAt', () => {
+  const entries = [
+    { id: '1', paperId: 'p', term: 'KZG', definition: '', createdAt: 1, updatedAt: 1 },
+    { id: '2', paperId: 'p', term: 'KZG commitment', definition: '', createdAt: 1, updatedAt: 1 },
+  ];
+  const text = 'uses a KZG commitment here';
+
+  it('matches only when the caret offset is inside the term occurrence', () => {
+    // 'KZG commitment' occupies offsets 7..20; 12 is inside the longer term only.
+    expect(matchGlossaryAt(entries, text, 12)?.id).toBe('2');
+    // Offset 2 is 'e' of "uses" — no term covers it, even though the span contains one.
+    expect(matchGlossaryAt(entries, text, 2)).toBeNull();
+  });
+
+  it('prefers the longer term when both cover the offset', () => {
+    // Offset 7 is the 'K' of both terms; the longer one wins.
+    expect(matchGlossaryAt(entries, text, 7)?.id).toBe('2');
+  });
+
+  it('is case-insensitive in the same way as the span match', () => {
+    expect(matchGlossaryAt(entries, 'USES kzg HERE', 6)?.id).toBe('1');
   });
 });

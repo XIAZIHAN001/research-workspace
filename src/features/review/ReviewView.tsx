@@ -33,6 +33,13 @@ interface ReviewViewProps {
  */
 export function ReviewView({ concepts, evidence, papers, cards, now, onGrade }: ReviewViewProps) {
   const [revealed, setRevealed] = useState(false);
+  /*
+   * The session's own order. "忘了" keeps a card due immediately, so the due-date sort alone
+   * would show it again on the very next card — an endless loop on one hard concept. The
+   * session list re-inserts a forgotten card three places back; it stays honest to the
+   * schedule (the store's dueAt is unchanged) while giving the reader other cards first.
+   */
+  const [session, setSession] = useState<string[] | null>(null);
 
   const queue = useMemo(() => {
     const byId = new Map(concepts.map((concept) => [concept.id, concept]));
@@ -48,12 +55,29 @@ export function ReviewView({ concepts, evidence, papers, cards, now, onGrade }: 
     return [...scheduled, ...fresh];
   }, [concepts, cards, now]);
 
-  const current = queue[0] ?? null;
+  // The live session: what is left of the chosen order, plus due cards that arrived since.
+  const dueIds = queue.map((concept) => concept.id);
+  const order =
+    session === null
+      ? dueIds
+      : [
+          ...session.filter((id) => dueIds.includes(id)),
+          ...dueIds.filter((id) => !session.includes(id)),
+        ];
+  const currentId = order[0] ?? null;
+  const current = currentId === null ? null : (concepts.find((c) => c.id === currentId) ?? null);
 
   const grade = (value: ReviewGrade): void => {
     if (current === null) return;
     onGrade(current.id, value);
     setRevealed(false);
+    if (value === 'again') {
+      const rest = order.slice(1);
+      const at = Math.min(3, rest.length);
+      setSession([...rest.slice(0, at), current.id, ...rest.slice(at)]);
+      return;
+    }
+    setSession(order.slice(1).length === 0 ? null : order.slice(1));
   };
 
   const nextDueAt = useMemo(() => {
@@ -74,7 +98,9 @@ export function ReviewView({ concepts, evidence, papers, cards, now, onGrade }: 
         </h1>
         <span className="library-count">
           {queue.length > 0
-            ? `到期 ${String(queue.length)} 张`
+            ? session === null
+              ? `到期 ${String(queue.length)} 张`
+              : `本次还剩 ${String(order.length)} 张`
             : concepts.length > 0
               ? '没有到期的卡片'
               : '还没有可复习的概念'}

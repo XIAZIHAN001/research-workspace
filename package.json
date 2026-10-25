@@ -1,6 +1,6 @@
 {
   "name": "research-workspace",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": true,
   "type": "module",
   "description": "Local-first research paper reading workspace (Phase 0 prototype)",

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { GLOSSARY_HOVER_DELAY, matchGlossary, type GlossaryEntry } from '../../domain/glossary';
+import {
+  GLOSSARY_HOVER_DELAY,
+  matchGlossary,
+  matchGlossaryAt,
+  type GlossaryEntry,
+} from '../../domain/glossary';
 
 interface GlossaryHoverProps {
   /** The terms defined for the paper being read. Empty disables every listener. */
@@ -14,8 +19,10 @@ const EDGE = 10;
  *
  * It listens to the text layer the browser already renders — no spans are added, moved or
  * styled, so nothing about the reading surface changes until the reader pauses on a word.
- * Matching is limited to a term wholly inside one span (see `matchGlossary`): that keeps this
- * feature clear of the reader's measurement chains, which nothing may touch.
+ * The card follows the character under the pointer, not the whole span: where the caret API
+ * exists the term must actually cover the pointer's offset, so a sentence that merely mentions
+ * a term somewhere else does not open its card. Matching stays within one span (see
+ * `matchGlossary`), which keeps this feature clear of the reader's measurement chains.
  */
 export function GlossaryHover({ entries }: GlossaryHoverProps) {
   const [card, setCard] = useState<{ term: GlossaryEntry; x: number; y: number } | null>(null);
@@ -40,7 +47,23 @@ export function GlossaryHover({ entries }: GlossaryHoverProps) {
       const span = target.closest('span');
       const text = span?.textContent ?? target.textContent;
       if (text === null || text === undefined) return;
-      const match = matchGlossary(entries, text);
+
+      const match = (() => {
+        // Character-level precision where the platform offers it: the term must cover the
+        // caret offset at the pointer. Without the API (older engines, jsdom) the span-level
+        // match stands — still correct, only coarser.
+        const owner = (event.target as HTMLElement | null)?.ownerDocument ?? null;
+        const range =
+          owner !== null && typeof owner.caretRangeFromPoint === 'function'
+            ? owner.caretRangeFromPoint(event.clientX, event.clientY)
+            : null;
+        if (range !== null && range.startContainer.nodeType === Node.TEXT_NODE) {
+          const data = range.startContainer.textContent ?? '';
+          return matchGlossaryAt(entries, data, range.startOffset);
+        }
+        return matchGlossary(entries, text);
+      })();
+
       if (match === null) {
         hide();
         return;
@@ -51,12 +74,20 @@ export function GlossaryHover({ entries }: GlossaryHoverProps) {
       }, GLOSSARY_HOVER_DELAY);
     };
 
+    const onOut = (event: MouseEvent): void => {
+      // Only leave when the pointer has really left the text layer: hops between adjacent
+      // spans fire mouseout too, and hiding on each would flicker the card away mid-hover.
+      const to = event.relatedTarget;
+      if (to instanceof HTMLElement && to.closest('.textLayer') !== null) return;
+      hide();
+    };
+
     window.addEventListener('mouseover', onOver);
-    window.addEventListener('mouseout', hide);
+    window.addEventListener('mouseout', onOut);
     window.addEventListener('scroll', hide, true);
     return () => {
       window.removeEventListener('mouseover', onOver);
-      window.removeEventListener('mouseout', hide);
+      window.removeEventListener('mouseout', onOut);
       window.removeEventListener('scroll', hide, true);
       if (timer !== null) window.clearTimeout(timer);
     };

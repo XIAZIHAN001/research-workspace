@@ -1,6 +1,7 @@
 import { CircleCheck, Download, NotebookPen, Search, Sparkles, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { downloadTextFile } from '../../services/download';
+import { Dialog } from '../../ui/Dialog';
 import type { AiClient } from '../reader/useAiReading';
 import { ANNOTATION_KINDS, ANNOTATION_KIND_LABEL, type Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
@@ -31,6 +32,9 @@ const QUESTION_STATUS_LABEL: Record<'all' | QuestionStatusFilter, string> = {
   open: '未解决',
   resolved: '已解决',
 };
+
+/** Matches the service's draft-mode passage ceiling (server/config.mjs LIMITS.draftPassages). */
+const DRAFT_NOTE_LIMIT = 64;
 
 /**
  * Every note in the workspace, grouped by paper.
@@ -69,15 +73,26 @@ export function NotesView({
     setDraftBusy(true);
     setDraftError(null);
     try {
-      const passages = group.items.map((annotation, index) => ({
+      /*
+       * The service's draft ceiling. The group arrives in the paper's own page order, so the
+       * cut keeps the front of the paper — the same order a reader would re-read in.
+       */
+      const carried = group.items.slice(0, DRAFT_NOTE_LIMIT);
+      const passages = carried.map((annotation, index) => ({
         id: `n${String(index + 1)}`,
         page: annotation.page,
         text: annotation.quote,
         selection: index === 0,
       }));
+      const draftNotes = carried
+        .map((annotation, index) => ({
+          passageId: `n${String(index + 1)}`,
+          note: annotation.note,
+        }))
+        .filter((entry) => entry.note.trim() !== '');
       const result = await ai.ask({
         mode: 'draft',
-        question: `请把这 ${String(group.items.length)} 条笔记整理成一篇连贯的精读笔记草稿。`,
+        question: `请把这 ${String(carried.length)} 条笔记整理成一篇连贯的精读笔记草稿。`,
         paper: {
           id: group.paperId,
           title: group.title,
@@ -85,6 +100,7 @@ export function NotesView({
           pdfSha256: group.items[0]?.pdfSha256 ?? '0'.repeat(64),
         },
         passages,
+        draftNotes,
       });
       if (!result.ok) {
         setDraftError(`整理失败：${result.failure.message}`);
@@ -250,47 +266,54 @@ export function NotesView({
         </div>
       )}
 
-      {draftResult !== null && (
-        <div className="notes-draft-result" role="dialog" aria-label="笔记草稿">
-          <header className="notes-draft-head">
-            <h3>《{draftResult.paperTitle}》精读笔记草稿</h3>
-            <span className="notes-draft-meta">
-              {draftResult.providerLabel} · {draftResult.model}
-            </span>
-          </header>
-          {/*
-           * The draft is a suggestion, not a record: shown in full for review and kept only if
-           * the reader downloads it. Nothing is written back into the workspace.
-           */}
-          <p className="notes-draft-text">{draftResult.text}</p>
-          <div className="dialog-actions">
-            <button
-              type="button"
-              className="btn btn-quiet"
-              onClick={() => {
-                setDraftResult(null);
-              }}
-            >
-              关闭
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                const safe = draftResult.paperTitle.replace(/[\\/:*?"<>|]/g, ' ').trim() || '论文';
-                downloadTextFile(
-                  `${safe.slice(0, 60)}-笔记草稿.md`,
-                  `# 《${draftResult.paperTitle}》精读笔记草稿\n\n${draftResult.text}\n`,
-                  'text/markdown;charset=utf-8',
-                );
-              }}
-            >
-              <Download size={14} aria-hidden="true" />
-              下载 .md
-            </button>
+      {/*
+       * The draft is a suggestion, not a record: shown in full for review and kept only if
+       * the reader downloads it. Nothing is written back into the workspace. The native
+       * dialog gives the review focus, Escape to close, and inerts the page behind it.
+       */}
+      <Dialog
+        open={draftResult !== null}
+        title="笔记草稿"
+        onClose={() => {
+          setDraftResult(null);
+        }}
+      >
+        {draftResult !== null && (
+          <div className="notes-draft-result">
+            <p className="notes-draft-meta">
+              《{draftResult.paperTitle}》· {draftResult.providerLabel} · {draftResult.model}
+            </p>
+            <DraftText text={draftResult.text} />
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="btn btn-quiet"
+                onClick={() => {
+                  setDraftResult(null);
+                }}
+              >
+                关闭
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const safe =
+                    draftResult.paperTitle.replace(/[\\/:*?"<>|]/g, ' ').trim() || '论文';
+                  downloadTextFile(
+                    `${safe.slice(0, 60)}-笔记草稿.md`,
+                    `# 《${draftResult.paperTitle}》精读笔记草稿\n\n${draftResult.text}\n`,
+                    'text/markdown;charset=utf-8',
+                  );
+                }}
+              >
+                <Download size={14} aria-hidden="true" />
+                下载 .md
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Dialog>
     </section>
   );
 }
@@ -359,7 +382,13 @@ function NotesGroup({
           {draftActive ? (
             <>
               <p className="hint" role="status">
-                将发送这 {String(group.items.length)} 条笔记的原文引用与内容。
+                将发送 {String(Math.min(group.items.length, DRAFT_NOTE_LIMIT))} 条笔记的原文引用
+                {group.items.some((annotation) => annotation.note.trim() !== '')
+                  ? '与对应的笔记内容'
+                  : ''}
+                （尚未写过正文的笔记只发引用）。
+                {group.items.length > DRAFT_NOTE_LIMIT &&
+                  `论文笔记超过 ${String(DRAFT_NOTE_LIMIT)} 条，只发送按页序靠前的部分。`}
                 {draftBusy ? '正在整理…' : '若 AI 服务为在线模式，将产生费用；本地模拟则免费。'}
               </p>
               <div className="notes-draft-actions">
@@ -446,6 +475,44 @@ function NotesGroup({
         })}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Markdown-lite for a draft the reader is reviewing: headings, list dashes and paragraphs.
+ *
+ * The model's answer is Markdown, and a review window that flattens it to one grey lump hides
+ * the structure the reader is supposed to judge. This renders just the shapes the draft
+ * contract produces — nothing clever, no HTML, citations stay as [n] text.
+ */
+function DraftText({ text }: { text: string }) {
+  return (
+    <div className="notes-draft-text">
+      {text.split('\n').map((line, index) => {
+        const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+        if (heading !== null) {
+          return (
+            <p key={String(index)} className={`notes-draft-h${String(heading[1]?.length)}`}>
+              {heading[2]}
+            </p>
+          );
+        }
+        const item = /^\s*[-*]\s+(.*)$/.exec(line);
+        if (item !== null) {
+          return (
+            <p key={String(index)} className="notes-draft-li">
+              {item[1]}
+            </p>
+          );
+        }
+        if (line.trim() === '') return null;
+        return (
+          <p key={String(index)} className="notes-draft-p">
+            {line}
+          </p>
+        );
+      })}
+    </div>
   );
 }
 

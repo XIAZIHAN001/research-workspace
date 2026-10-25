@@ -4,6 +4,10 @@ import type { Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
 import { NotesView } from './NotesView';
 
+vi.mock('../../ui/Dialog', () => ({
+  Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
 function note(id: string, paperId: string, overrides: Partial<Annotation> = {}): Annotation {
   return {
     id,
@@ -27,8 +31,13 @@ function note(id: string, paperId: string, overrides: Partial<Annotation> = {}):
 const papers = { p1: { id: 'p1', title: 'Attention', authors: [], createdAt: 0, updatedAt: 0 } };
 
 const two = [
-  note('a1', 'p1', { kind: 'insight', quote: 'softmax 近似' }),
-  note('b1', 'p1', { kind: 'question', quote: '为什么除以 √d', page: 2 }),
+  note('a1', 'p1', { kind: 'insight', quote: 'softmax 近似', note: 'softmax 把得分变成分布' }),
+  note('b1', 'p1', {
+    kind: 'question',
+    quote: '为什么除以 √d',
+    page: 2,
+    note: '没想明白这里的缩放',
+  }),
 ];
 
 describe('NotesView AI draft flow', () => {
@@ -65,11 +74,12 @@ describe('NotesView AI draft flow', () => {
     // Two clicks, not one: the disclosure sits between them.
     fireEvent.click(screen.getByRole('button', { name: 'AI 整理成稿' }));
     expect(ask).not.toHaveBeenCalled();
-    expect(screen.getByText(/将发送这 2 条笔记/)).toBeTruthy();
+    expect(screen.getByText(/将发送 2 条笔记的原文引用与对应的笔记内容/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '开始整理' }));
     await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: '笔记草稿' })).toBeTruthy();
+      // The review window: provenance line plus the draft itself.
+      expect(screen.getByText(/《Attention》.*本地模拟 · mock-1/)).toBeTruthy();
     });
     expect(ask).toHaveBeenCalledTimes(1);
     const request = ask.mock.calls[0]?.[0] as Record<string, never> & {
@@ -85,8 +95,15 @@ describe('NotesView AI draft flow', () => {
       text: '为什么除以 √d',
       selection: false,
     });
+    // The reader's own words travel beside their quotations, pinned to the same ids.
+    expect(request.draftNotes).toStrictEqual([
+      { passageId: 'n1', note: 'softmax 把得分变成分布' },
+      { passageId: 'n2', note: '没想明白这里的缩放' },
+    ]);
     expect(request.paper.pdfSha256).toBe('a'.repeat(64));
-    expect(screen.getByText('## 论点一（模拟草稿）')).toBeTruthy();
+    // Markdown-lite: the heading marker is rendered as structure, not left as literal text.
+    expect(screen.getByText('论点一（模拟草稿）')).toBeTruthy();
+    expect(screen.queryByText('## 论点一（模拟草稿）')).toBeNull();
   });
 
   it('reports a failure without pretending a draft exists', async () => {
@@ -110,7 +127,7 @@ describe('NotesView AI draft flow', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toContain('整理失败');
     });
-    expect(screen.queryByRole('dialog', { name: '笔记草稿' })).toBeNull();
+    expect(screen.queryByText(/本地模拟 · mock-1/)).toBeNull();
   });
 
   it('offers nothing without a client, or with a single note', () => {

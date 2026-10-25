@@ -10,6 +10,11 @@ import type { PaperPdf, PaperReading } from './pdfFile';
  */
 export interface PaperSummary {
   text: string;
+  /**
+   * The file the summary was generated from. Absent on cards written before v10: those simply
+   * cannot be checked, and say nothing either way.
+   */
+  pdfSha256?: string;
   provider: string;
   providerLabel: string;
   model: string;

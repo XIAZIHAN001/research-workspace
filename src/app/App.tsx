@@ -802,6 +802,7 @@ export function App({
                 annotations,
                 knowledge: knowledgeApi.state,
                 projects,
+                glossary,
               });
               downloadTextFile(reportFileName(paper), report, 'text/markdown;charset=utf-8');
               setNotice(`已导出《${paper.title}》的阅读报告。`);

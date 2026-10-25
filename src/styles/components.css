@@ -2490,3 +2490,69 @@ button.row-main:active {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Draft review text: structure the model was asked to produce, kept readable. */
+.notes-draft-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(560px, 80vw);
+}
+
+.notes-draft-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow: auto;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.notes-draft-h1,
+.notes-draft-h2,
+.notes-draft-h3,
+.notes-draft-h4 {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.notes-draft-h1 {
+  font-size: 15px;
+}
+
+.notes-draft-h2 {
+  font-size: 14px;
+}
+
+.notes-draft-h3,
+.notes-draft-h4 {
+  font-size: 13px;
+}
+
+.notes-draft-li {
+  margin: 0;
+  padding-left: 14px;
+  position: relative;
+}
+
+.notes-draft-li::before {
+  content: '·';
+  position: absolute;
+  left: 4px;
+}
+
+.notes-draft-p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Why each unreadable entry was skipped: said, not silently dropped. */
+.bibtex-skipped {
+  margin: 0;
+  padding: 0 0 0 16px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  list-style: square;
+}

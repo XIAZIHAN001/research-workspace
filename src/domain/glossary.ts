@@ -94,6 +94,37 @@ export function sortGlossary(entries: readonly GlossaryEntry[]): GlossaryEntry[]
  * of the reader), the match is honest about what it can see: a term wholly inside the hovered
  * span. Abbreviations — the terms glossaries exist for — almost always fit.
  */
+/**
+ * The entry whose occurrence covers a caret offset in the span text, if any.
+ *
+ * This is the hover's precision rule: the card follows the *character under the pointer*, not
+ * the whole span — a sentence that merely mentions a term somewhere does not open its card.
+ * Longer terms win at the same position, mirroring `matchGlossary`.
+ */
+export function matchGlossaryAt(
+  entries: readonly GlossaryEntry[],
+  spanText: string,
+  offset: number,
+): GlossaryEntry | null {
+  const haystack = spanText.toLowerCase();
+  let best: GlossaryEntry | null = null;
+  for (const entry of entries) {
+    if (entry.term.length < 2) continue;
+    const needle = entry.term.toLowerCase();
+    let from = 0;
+    for (;;) {
+      const at = haystack.indexOf(needle, from);
+      if (at < 0) break;
+      if (offset >= at && offset < at + needle.length) {
+        if (best === null || entry.term.length > best.term.length) best = entry;
+        break;
+      }
+      from = at + 1;
+    }
+  }
+  return best;
+}
+
 export function matchGlossary(
   entries: readonly GlossaryEntry[],
   spanText: string,

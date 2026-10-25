@@ -1,6 +1,6 @@
 import { FileText } from 'lucide-react';
 import { useState } from 'react';
-import { parseBibtex, type BibtexEntry } from '../../domain/bibtexImport';
+import { parseBibtex, type BibtexEntry, type BibtexSkipped } from '../../domain/bibtexImport';
 import type { Paper, PaperInput } from '../../domain/papers';
 import { Dialog } from '../../ui/Dialog';
 
@@ -29,7 +29,7 @@ interface PreviewRow {
  */
 export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXImportDialogProps) {
   const [rows, setRows] = useState<PreviewRow[] | null>(null);
-  const [skipped, setSkipped] = useState<number>(0);
+  const [skipped, setSkipped] = useState<BibtexSkipped[]>([]);
   const [fileName, setFileName] = useState('');
   const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -44,12 +44,16 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
         existing: findExisting(papers, entry),
       }));
       setRows(nextRows);
-      setSkipped(result.skipped.length);
+      setSkipped(result.skipped);
       setFileName(file.name);
+      // Existing papers and within-file duplicates are both off by default: importing either
+      // would either duplicate a record or fail the registry's identity rules.
       setChecked(
         new Set(
           nextRows
-            .map((row, index) => (row.existing === null ? index : -1))
+            .map((row, index) =>
+              row.existing === null && row.entry.duplicate === undefined ? index : -1,
+            )
             .filter((index) => index >= 0),
         ),
       );
@@ -116,8 +120,17 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
           <>
             <p className="hint">
               {fileName}：{String(rows.length)} 条可导入
-              {skipped > 0 ? `，${String(skipped)} 条无法解析（已跳过）` : ''}。
+              {skipped.length > 0 ? `，${String(skipped.length)} 条无法解析（已跳过）` : ''}。
             </p>
+            {skipped.length > 0 && (
+              <ul className="bibtex-skipped">
+                {skipped.map((item, index) => (
+                  <li key={`${item.key}-${String(index)}`}>
+                    「{item.key === '' ? '（无键）' : item.key}」：{item.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
             {rows.length === 0 ? (
               <p className="hint">文件里没有可识别的条目。</p>
             ) : (
@@ -128,7 +141,7 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
                       <input
                         type="checkbox"
                         checked={checked.has(index)}
-                        disabled={existing !== null}
+                        disabled={existing !== null || entry.duplicate !== undefined}
                         onChange={() => {
                           toggle(index);
                         }}
@@ -139,7 +152,11 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
                           <FileText size={12} aria-hidden="true" />
                           {entry.authors.length > 0 ? `${entry.authors[0]} 等 · ` : ''}
                           {entry.year === undefined ? '年份未知' : String(entry.year)}
-                          {existing !== null ? ` · 库里已有《${existing.title}》` : ' · 新条目'}
+                          {existing !== null
+                            ? ` · 库里已有《${existing.title}》`
+                            : entry.duplicate !== undefined
+                              ? ` · 与文件内「${entry.duplicate.ofKey}」的 ${entry.duplicate.field === 'doi' ? 'DOI' : 'arXiv ID'} 重复`
+                              : ' · 新条目'}
                         </span>
                       </span>
                     </label>

@@ -201,7 +201,13 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
           passageChars: limits.documentPassageChars ?? limits.passageChars,
           totalContextChars: limits.documentContextChars ?? limits.totalContextChars,
         }
-      : limits;
+      : raw.mode === 'draft'
+        ? {
+            passages: limits.draftPassages ?? limits.passages,
+            passageChars: limits.passageChars,
+            totalContextChars: limits.draftContextChars ?? limits.totalContextChars,
+          }
+        : limits;
 
   if (!Array.isArray(raw.passages) || raw.passages.length === 0) {
     return { ok: false, message: '缺少 passages。' };
@@ -241,6 +247,39 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
     return { ok: false, message: '必须且只能有一段被标记为 selection。' };
   }
 
+  /*
+   * Draft mode carries the reader's own notes beside the quotations. Each entry names the
+   * passage its note belongs to, so the model (and the citation check) can only ever pair a
+   * note with the quotation the reader actually marked. Any other mode refuses the field:
+   * a note that arrives where nothing asked for it would be silently ignored otherwise.
+   */
+  const draftNotes = [];
+  if (raw.draftNotes !== undefined) {
+    if (raw.mode !== 'draft') {
+      return { ok: false, message: 'draftNotes 只在 draft 模式下允许。' };
+    }
+    if (!Array.isArray(raw.draftNotes)) {
+      return { ok: false, message: 'draftNotes 必须是数组。' };
+    }
+    const known = new Set(passages.map((passage) => passage.id));
+    for (const entry of raw.draftNotes) {
+      if (typeof entry !== 'object' || entry === null) {
+        return { ok: false, message: 'draftNotes 格式不对。' };
+      }
+      if (typeof entry.passageId !== 'string' || !known.has(entry.passageId)) {
+        return { ok: false, message: 'draftNotes 引用了不存在的 passageId。' };
+      }
+      const note = boundedText(entry.note ?? '', limits.draftNoteChars ?? 4000);
+      if (note === null) {
+        return { ok: false, message: `单条笔记超过 ${String(limits.draftNoteChars ?? 4000)} 字。` };
+      }
+      if (note.trim() !== '') draftNotes.push({ passageId: entry.passageId, note });
+    }
+  }
+  if (raw.mode === 'draft' && draftNotes.length === 0) {
+    return { ok: false, message: 'draft 模式需要至少一条非空笔记（draftNotes）。' };
+  }
+
   const question =
     raw.question === undefined ? '' : boundedText(raw.question, limits.questionChars);
   if (question === null)
@@ -274,7 +313,16 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
 
   return {
     ok: true,
-    value: { mode: raw.mode, question, paper, passages, history, layoutNotice, scope },
+    value: {
+      mode: raw.mode,
+      question,
+      paper,
+      passages,
+      history,
+      layoutNotice,
+      scope,
+      draftNotes,
+    },
   };
 }
 
@@ -316,6 +364,29 @@ export function renderPaperBlock(request) {
 }
 
 /**
+ * The reader's own notes, beside the quotations they belong to.
+ *
+ * Notes are the reader's words, not paper text, so they get their own delimited block rather
+ * than a place inside <paper_text>: what the model may cite is still only the passages, and a
+ * note can never be mistaken for a quotation. Delimiters inside a note are neutralised for the
+ * same reason as everywhere else.
+ */
+function renderNotesBlock(draftNotes) {
+  const lines = [
+    '',
+    '<reader_notes>',
+    '读者在阅读这篇论文时写下的笔记。每条笔记对应上面同编号 [n] 的原文引用——' +
+      '「读者笔记」是读者自己的话，「原文」是他们标出的部分。整理草稿时保留读者的措辞与疑问，' +
+      '论断只依据这些原文；引用标注 [n] 指向的始终是原文编号。',
+  ];
+  for (const entry of draftNotes) {
+    lines.push('', `[${entry.passageId}] 读者笔记：${neutraliseDelimiters(entry.note)}`);
+  }
+  lines.push('', '</reader_notes>');
+  return `\n${lines.join('\n')}`;
+}
+
+/**
  * The message list for a request.
  *
  * `messages` never contains the system role: the only system message is the one built here from
@@ -328,9 +399,15 @@ export function buildMessages(request) {
   for (const turn of request.history) {
     messages.push({ role: turn.role, content: neutraliseDelimiters(turn.content) });
   }
+  const notesBlock =
+    request.draftNotes !== undefined && request.draftNotes.length > 0
+      ? renderNotesBlock(request.draftNotes)
+      : '';
   messages.push({
     role: 'user',
-    content: `${renderPaperBlock(request)}\n\n${modeInstruction(request.mode, request.question, request.scope ?? 'selection')}`,
+    content:
+      `${renderPaperBlock(request)}${notesBlock}\n\n` +
+      `${modeInstruction(request.mode, request.question, request.scope ?? 'selection')}`,
   });
   return { system: GUARDRAILS, messages };
 }

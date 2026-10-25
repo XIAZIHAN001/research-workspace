@@ -15,7 +15,9 @@
 
 /* global window, document, getComputedStyle, HTMLInputElement */
 import { spawn } from 'node:child_process';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { launchBrowser } from './browser.mjs';
@@ -40,6 +42,31 @@ function check(name, passed, detail = '') {
   process.stdout.write(
     `${passed ? 'PASS' : 'FAIL'}  ${name}${detail === '' ? '' : `  (${detail})`}\n`,
   );
+}
+
+/**
+ * A preview gate is only evidence when it serves the sources it claims to. A stale dist once
+ * let a design change pass a check it had actually inverted (blue button read as the
+ * near-black design, PR #2 review): the gate now refuses to run on an older build than the code.
+ */
+function assertFreshBuild() {
+  const distIndex = fileURLToPath(new URL('../../dist/index.html', import.meta.url));
+  const distMtime = existsSync(distIndex) ? statSync(distIndex).mtimeMs : 0;
+  const newest = (dir) => {
+    let latest = 0;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const full = join(dir, entry.name);
+      latest = Math.max(latest, entry.isDirectory() ? newest(full) : statSync(full).mtimeMs);
+    }
+    return latest;
+  };
+  const srcNewest = newest(fileURLToPath(new URL('../../src', import.meta.url)));
+  if (distMtime < srcNewest) {
+    throw new Error(
+      'dist/ 比最新源码旧：本门禁服务生产构建，请先 npm run build 再跑（否则验证的是旧界面）。',
+    );
+  }
 }
 
 async function startPreview() {
@@ -372,6 +399,7 @@ async function main() {
   await mkdir(fileURLToPath(new URL('.cache/verify/', ROOT)), { recursive: true });
   await writeFile(SAMPLE_FILE, buildSamplePdf());
 
+  assertFreshBuild();
   const server = await startPreview();
   const browser = await launchBrowser();
   const context = await browser.newContext({
@@ -676,11 +704,14 @@ async function main() {
       JSON.stringify({ app: white.app.css, main: white.main.css }),
     );
     check(
-      'primary: light mode uses the accent blue with white text',
+      'primary: light mode uses the near-black inverse with white text',
       primaryLight !== null &&
         primaryLight.ratio >= 4.5 &&
-        primaryLight.backgroundChannels[2] >= 150 &&
-        primaryLight.backgroundChannels[0] <= 40 &&
+        // A near-neutral dark fill: every channel low, and no hue left between channels.
+        Math.max(...primaryLight.backgroundChannels) <= 60 &&
+        Math.max(...primaryLight.backgroundChannels) -
+          Math.min(...primaryLight.backgroundChannels) <=
+          8 &&
         primaryLight.foregroundChannels.every((channel) => channel >= 240),
       JSON.stringify(primaryLight),
     );

@@ -100,3 +100,24 @@ describe('parseBibtex', () => {
     expect(result.entries[0]?.doi).toBe('10.1000/rt');
   });
 });
+
+describe('within-file duplicate identifiers', () => {
+  it('flags the later entry and names the one that owns the identifier', () => {
+    const result = parseBibtex(
+      '@article{first, title = {The Original}, doi = {10.1000/abc}} ' +
+        '@article{second, title = {The Copy}, doi = {10.1000/ABC}} ' +
+        '@article{third, title = {Unrelated}}',
+    );
+    expect(result.skipped).toStrictEqual([]);
+    expect(result.entries[0]?.duplicate).toBeUndefined();
+    expect(result.entries[1]?.duplicate).toStrictEqual({ field: 'doi', ofKey: 'first' });
+    expect(result.entries[2]?.duplicate).toBeUndefined();
+  });
+
+  it('flags arXiv duplicates the same way, version suffixes normalised away first', () => {
+    const result = parseBibtex(
+      '@misc{a, title = {One}, eprint = {2401.12345v1}} @misc{b, title = {Two}, eprint = {2401.12345}}',
+    );
+    expect(result.entries[1]?.duplicate).toStrictEqual({ field: 'arxivId', ofKey: 'a' });
+  });
+});

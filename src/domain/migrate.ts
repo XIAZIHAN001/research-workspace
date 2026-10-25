@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -215,6 +215,15 @@ function migrateV8ToV9(payload: Record<string, unknown>): Record<string, unknown
   return { ...payload, version: 9 };
 }
 
+/**
+ * v9 → v10 added an optional `pdfSha256` to a paper's summary card, so a card can say whether
+ * it still describes the file the reader has. Optional inside an optional: no rewriting.
+ */
+function migrateV9ToV10(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 10 };
+}
+
 const MIGRATIONS: Record<number, MigrationStep> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
@@ -224,6 +233,7 @@ const MIGRATIONS: Record<number, MigrationStep> = {
   6: migrateV6ToV7,
   7: migrateV7ToV8,
   8: migrateV8ToV9,
+  9: migrateV9ToV10,
 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {

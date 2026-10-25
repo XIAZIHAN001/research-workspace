@@ -132,3 +132,78 @@ describe('ReviewView', () => {
     expect(screen.getByText(/还没有可复习的概念/)).toBeTruthy();
   });
 });
+
+describe('ReviewView session queue', () => {
+  const five = ['c1', 'c2', 'c3', 'c4', 'c5'].map((id, index) =>
+    concept(id, `概念${String(index + 1)}`),
+  );
+
+  function Harness() {
+    const [cards, setCards] = useState<Record<string, ReturnType<typeof beginCard>>>({});
+    return (
+      <ReviewView
+        concepts={five}
+        evidence={[]}
+        papers={{}}
+        cards={cards}
+        now={NOW}
+        onGrade={(conceptId, grade) => {
+          setCards((current) => ({
+            ...current,
+            [conceptId]: applyGrade(current[conceptId] ?? beginCard(conceptId, NOW), grade, NOW),
+          }));
+        }}
+      />
+    );
+  }
+
+  it('a forgotten card comes back three cards later, not immediately', () => {
+    render(<Harness />);
+    // 概念1 is graded 忘了: the store keeps it due, but the session moves it three back.
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '忘了' }));
+    expect(screen.getByText('概念2')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '良好' }));
+    expect(screen.getByText('概念3')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '良好' }));
+    expect(screen.getByText('概念4')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '良好' }));
+    // Three other cards have passed; the forgotten one is back.
+    expect(screen.getByText('概念1')).toBeTruthy();
+  });
+
+  it('a forgotten card with fewer than three left reappears after them, and again at the end', () => {
+    const pair = [concept('a', '甲'), concept('b', '乙')];
+    function Pair() {
+      const [cards, setCards] = useState<Record<string, ReturnType<typeof beginCard>>>({});
+      return (
+        <ReviewView
+          concepts={pair}
+          evidence={[]}
+          papers={{}}
+          cards={cards}
+          now={NOW}
+          onGrade={(conceptId, grade) => {
+            setCards((current) => ({
+              ...current,
+              [conceptId]: applyGrade(current[conceptId] ?? beginCard(conceptId, NOW), grade, NOW),
+            }));
+          }}
+        />
+      );
+    }
+    render(<Pair />);
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '忘了' }));
+    expect(screen.getByText('乙')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '良好' }));
+    expect(screen.getByText('甲')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '良好' }));
+    expect(screen.getByText(/没有到期的卡片/)).toBeTruthy();
+  });
+});

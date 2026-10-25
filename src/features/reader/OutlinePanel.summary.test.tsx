@@ -73,3 +73,44 @@ describe('OutlinePanel summary card', () => {
     expect(screen.getByText('生成失败：服务未启动')).toBeTruthy();
   });
 });
+
+describe('OutlinePanel summary staleness', () => {
+  it('warns when the card came from a different PDF file, and stays quiet when it matches', () => {
+    const { rerender } = render(
+      <OutlinePanel
+        outline={{ status: 'idle', items: [] }}
+        currentPage={1}
+        summary={{ ...summary, pdfSha256: 'b'.repeat(64) }}
+        summaryStale
+        onJump={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/生成自另一个 PDF 版本/)).toBeTruthy();
+    rerender(
+      <OutlinePanel
+        outline={{ status: 'idle', items: [] }}
+        currentPage={1}
+        summary={{ ...summary, pdfSha256: 'b'.repeat(64) }}
+        summaryStale={false}
+        onJump={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/生成自另一个 PDF 版本/)).toBeNull();
+  });
+
+  it('a pre-v10 card without an origin hash claims nothing either way', () => {
+    render(
+      <OutlinePanel
+        outline={{ status: 'idle', items: [] }}
+        currentPage={1}
+        summary={summary}
+        summaryStale={false}
+        onJump={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/另一个 PDF 版本/)).toBeNull();
+  });
+});

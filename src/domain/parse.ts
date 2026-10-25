@@ -194,7 +194,13 @@ function parsePaperSummary(value: unknown): PaperSummary | undefined {
   if (typeof provider !== 'string' || typeof providerLabel !== 'string') return undefined;
   if (typeof model !== 'string' || typeof online !== 'boolean') return undefined;
   if (typeof createdAt !== 'number') return undefined;
-  return { text, provider, providerLabel, model, online, createdAt };
+  const summary: PaperSummary = { text, provider, providerLabel, model, online, createdAt };
+  // The origin file is optional; a value that is not a hash is dropped with the card kept —
+  // an unverifiable origin must not cost the reader their summary.
+  if (typeof value.pdfSha256 === 'string' && /^[0-9a-f]{64}$/.test(value.pdfSha256)) {
+    summary.pdfSha256 = value.pdfSha256;
+  }
+  return summary;
 }
 
 function parsePaper(value: unknown): Paper | null {

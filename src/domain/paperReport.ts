@@ -1,6 +1,7 @@
 import { ANNOTATION_KIND_LABEL, ORIGIN_LABEL, type Annotation } from './annotation';
 import type { Concept, ConceptEvidence } from './knowledge';
 import { EVIDENCE_SOURCE_LABEL, RELATION_KIND_LABEL, type ConceptRelation } from './knowledge';
+import { sortGlossary, type GlossaryEntry } from './glossary';
 import { formatExportTime, notesFileName } from './notesMarkdown';
 import { READING_STATUS_LABEL, paperStatus, type Paper } from './papers';
 import type { Project } from './project';
@@ -16,6 +17,8 @@ export interface PaperReportInput {
     relations: readonly ConceptRelation[];
   };
   projects: readonly Project[];
+  /** The workspace glossary; entries for this paper are listed in their own section. */
+  glossary?: readonly GlossaryEntry[];
   exportedAt?: Date;
 }
 
@@ -30,6 +33,7 @@ export function buildPaperReport({
   annotations,
   knowledge,
   projects,
+  glossary = [],
   exportedAt = new Date(),
 }: PaperReportInput): string {
   const notes = annotations
@@ -65,6 +69,33 @@ export function buildPaperReport({
     `批注 ${String(notes.length)} 条${open > 0 ? ` · 未解决疑问 ${String(open)} 个` : ''}`,
   );
   lines.push(detail.join('，'), `导出时间：${formatExportTime(exportedAt)}`, '');
+
+  // ---- The summary card, when one exists --------------------------------------------
+  if (paper.summary !== undefined) {
+    const summary = paper.summary;
+    const stale =
+      summary.pdfSha256 !== undefined && summary.pdfSha256 !== (paper.pdf?.sha256 ?? null);
+    lines.push('## AI 摘要卡', '');
+    lines.push(
+      `（${summary.providerLabel} · ${summary.model} · ${summary.online ? '在线' : '本地模拟'} · 生成于 ${formatExportTime(new Date(summary.createdAt))}${stale ? ' · 生成自另一个 PDF 版本' : ''}）`,
+      '',
+    );
+    lines.push(summary.text, '');
+  }
+
+  // ---- The paper's own vocabulary ----------------------------------------------------
+  const terms = sortGlossary(glossary.filter((entry) => entry.paperId === paper.id));
+  if (terms.length > 0) {
+    lines.push('## 术语表', '');
+    for (const entry of terms) {
+      lines.push(
+        entry.definition === ''
+          ? `- **${entry.term}**`
+          : `- **${entry.term}**：${entry.definition}`,
+      );
+    }
+    lines.push('');
+  }
 
   // ---- Annotations, in the paper's own page order ----------------------------------
   if (notes.length === 0) {

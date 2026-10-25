@@ -19,6 +19,12 @@ export interface BibtexEntry {
   doi?: string;
   /** Normalized arXiv id. From `eprint` (with an arXiv prefix) or a recognizable URL. */
   arxivId?: string;
+  /**
+   * Set when a *later* entry in the same file repeats an identifier an earlier entry already
+   * claimed. The registry would refuse the second record, so the preview says so up front
+   * instead of letting the import fail one entry in.
+   */
+  duplicate?: { field: 'doi' | 'arxivId'; ofKey: string };
 }
 
 /** One entry the parser refused, with the reason in the reader's language. */
@@ -223,6 +229,30 @@ export function parseBibtex(text: string): BibtexParseResult {
     if (eprint !== null) entry.arxivId = eprint;
     else if (fromUrl.arxivId !== undefined) entry.arxivId = fromUrl.arxivId;
     entries.push(entry);
+  }
+
+  // Within-file duplicates: the first entry owns the identifier, later ones are flagged.
+  const firstByDoi = new Map<string, BibtexEntry>();
+  const firstByArxiv = new Map<string, BibtexEntry>();
+  for (const entry of entries) {
+    if (entry.doi !== undefined && !firstByDoi.has(entry.doi)) firstByDoi.set(entry.doi, entry);
+    if (entry.arxivId !== undefined && !firstByArxiv.has(entry.arxivId)) {
+      firstByArxiv.set(entry.arxivId, entry);
+    }
+  }
+  for (const entry of entries) {
+    const doiOwner = entry.doi !== undefined ? firstByDoi.get(entry.doi) : undefined;
+    if (doiOwner !== undefined && doiOwner !== entry) {
+      entry.duplicate = { field: 'doi', ofKey: doiOwner.key === '' ? '（无键）' : doiOwner.key };
+      continue;
+    }
+    const arxivOwner = entry.arxivId !== undefined ? firstByArxiv.get(entry.arxivId) : undefined;
+    if (arxivOwner !== undefined && arxivOwner !== entry) {
+      entry.duplicate = {
+        field: 'arxivId',
+        ofKey: arxivOwner.key === '' ? '（无键）' : arxivOwner.key,
+      };
+    }
   }
 
   return { entries, skipped };

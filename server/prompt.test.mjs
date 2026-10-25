@@ -352,3 +352,81 @@ describe('a question about the whole paper', () => {
     expect(buildMessages(documentAsk()).system).toBe(buildMessages(accepted(validAsk())).system);
   });
 });
+
+describe('draft mode: notes beside the quotations', () => {
+  function draftAsk(overrides = {}) {
+    return validAsk({
+      mode: 'draft',
+      question: '请把这些笔记整理成草稿。',
+      passages: [
+        { id: 'n1', page: 1, text: 'first quotation', selection: true },
+        { id: 'n2', page: 2, text: 'second quotation', selection: false },
+      ],
+      draftNotes: [
+        { passageId: 'n1', note: '为什么需要这一步？' },
+        { passageId: 'n2', note: '这条是读者自己的理解。' },
+      ],
+      ...overrides,
+    });
+  }
+
+  it('accepts the notes, keeps them out of the paper block, and pairs them by id', () => {
+    const value = accepted(draftAsk());
+    expect(value.draftNotes).toHaveLength(2);
+    const messages = buildMessages(value).messages;
+    const user = messages.at(-1).content;
+    expect(user).toContain('<reader_notes>');
+    expect(user).toContain('[n1] 读者笔记：为什么需要这一步？');
+    // The note text never leaks into the paper-text block itself.
+    expect(user.slice(user.indexOf('<paper_text>'), user.indexOf('</paper_text>'))).not.toContain(
+      '读者笔记',
+    );
+  });
+
+  it('allows far more passages than a selection question, and still draws a line', () => {
+    const many = Array.from({ length: 20 }, (_, index) => ({
+      id: `n${String(index + 1)}`,
+      page: index + 1,
+      text: `quotation ${String(index + 1)}`,
+      selection: index === 0,
+    }));
+    expect(normalizeAskRequest(draftAsk({ passages: many })).ok).toBe(true);
+    const tooMany = Array.from({ length: (LIMITS.draftPassages ?? 64) + 1 }, (_, index) => ({
+      id: `n${String(index + 1)}`,
+      page: 1,
+      text: 'q',
+      selection: index === 0,
+    }));
+    const refused = normalizeAskRequest(draftAsk({ passages: tooMany }));
+    expect(refused.ok).toBe(false);
+    expect(refused.message).toContain('passages 最多');
+  });
+
+  it('refuses notes that name a passage the request did not carry', () => {
+    const result = normalizeAskRequest(
+      draftAsk({ draftNotes: [{ passageId: 'ghost', note: '孤儿笔记' }] }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('不存在的 passageId');
+  });
+
+  it('refuses the field outside draft mode, and draft mode without any note', () => {
+    const smuggled = validAsk({ draftNotes: [{ passageId: 'selection', note: 'x' }] });
+    expect(normalizeAskRequest(smuggled).ok).toBe(false);
+    const empty = normalizeAskRequest(draftAsk({ draftNotes: [] }));
+    expect(empty.ok).toBe(false);
+    expect(empty.message).toContain('至少一条非空笔记');
+  });
+
+  it('drops quote-only entries: a note with no text is not a note', () => {
+    const value = accepted(
+      draftAsk({
+        draftNotes: [
+          { passageId: 'n1', note: '   ' },
+          { passageId: 'n2', note: 'keep me' },
+        ],
+      }),
+    );
+    expect(value.draftNotes).toStrictEqual([{ passageId: 'n2', note: 'keep me' }]);
+  });
+});
