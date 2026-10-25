@@ -17,3 +17,15 @@
 | F11 按标识符补全（追加轮） | `55e35b8` | Crossref/arXiv 按钮触发查找（应用首个网络读，仅手动、无后台）、只填空白字段、CSP 放行两域名；+8 测试                                                     |
 | F9 AI 摘要卡（追加轮二）   | `4ac9e77` | schema v8→v9（Paper.summary + 溯源）、目录面板两击确认生成（document 范围披露）；服务端 summarize 模式                                                   |
 | F10 笔记成稿（追加轮二）   | `4ac9e77` | 全部笔记页「AI 整理成稿」：笔记引用作为 passage（引用契约一致）、两击确认、结果审阅+下载不写回；服务端 draft 模式                                        |
+
+## 7. PR #2 审查修复轮（v0.13.1，`21da681`）
+
+P0/P1/P2 九项全修复（draftNotes 协议与 64 段独立边界、复习会话队列、摘要卡溯源
+schema v10、元数据竞态双保险、hover 字符级命中、BibTeX 文件内重复与失败原因、报告
+纳入摘要/术语表、草稿 Markdown 渲染与原生 Dialog）。+23 测试；全门禁在重建 dist 上
+复跑全绿（check 1722 / reader 29 / annotations 31 / immersive 33 / backup 39 /
+graph 17 / ui-phase12 64）。
+
+**门禁事故与守卫（如实）**：ui-phase12 两次历史 64/64 实为旧 dist 误过（断言旧
+蓝色设计），Phase14 截图视觉确认有误读；断言已改近黑设计并加 dist 新鲜度守卫，
+旧批次截图已从证据移除。建议其余 preview 型门禁后续同接入守卫。
