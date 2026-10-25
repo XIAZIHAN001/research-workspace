@@ -96,3 +96,22 @@
    backup 39/39、ui-phase12 64/64、immersive 33/33、graph 17/17、research-workflow 30/30、
    knowledge-real 16/16；`npm run check` 90 文件/1645 测试全绿。
    desktop/desktop-dev 仅做选择器对齐，桌面门禁未复跑（需 cargo 构建）。
+
+## 10. P1 backlog 收尾（2026-10-25，主按钮近黑 + 死代码清理）
+
+P1 诊断 backlog 中标注"本轮实现"但 P2–P8 期间漏掉的两项，补做完成：
+
+1. **浅色主按钮改近黑**（P2 backlog #1）：`--color-primary-bg` #0066cc→#1d1d1f、
+   hover→#000，白字不变；伴生投影 `--primary-shadow/--primary-glow` 同步去蓝，蓝色只保留
+   给链接与强调（`--color-accent`/`--link`/`--focus` 未动）。深色主题本就是白底黑字的
+   反转方案，零改动。证据：`docs/screenshots-phase12/2026-10-25T00-09-00-ui/`
+   （浅色首页「新建项目」近黑胶囊；对比度审计 home/light 最低 4.66 仍达 WCAG AA）。
+2. **NotesPanel/DifficultyPanel 死代码清理**（P2 backlog #5，范围比挂账略大）：两个组件
+   均为 Phase 13 面板合并后的死代码（笔记→目录面板、难点→知识面板），删除组件与测试
+   （-23 测试），清理 reader.css 41 个死选择器及 apple.css/layout.css 的 7 处死引用；
+   `note-kind/note-origin/note-page` 为 NotesView（全部笔记）共用，经核实其样式在
+   components.css `.note-card` 作用域自足，未受影响。
+
+门禁：`npm run check` 1622 测试全绿（90 文件）；verify:ui-phase12 64/64（含四档主题
+对比度与矩阵截图）；verify:annotations 31/31；verify:reader 29/29。至此 P1 backlog
+全部闭环，处置明细见 `docs/phase14/P1-design-review.md` 处置记录表。

@@ -41,3 +41,13 @@ Phase 13 已建立间距/控件高度/密度/UI 字号 Token（`tokens.css`）�
 ## 明确不做
 
 - 不重排首页/项目页信息架构；不引入新 UI 框架；不动 PDF 渲染链路；不做桌面端无法验证的"体验优化"。
+
+## 处置记录（2026-10-25 补，backlog 收尾）
+
+| #   | 处置                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------- |
+| P2-1 | **已完成**：`--color-primary-bg` #0066cc→#1d1d1f、hover #005cba→#000；伴生 `--primary-shadow/--primary-glow` 同步去蓝（rgb(0 102 204/…)→中性黑），过期注释"blue pill"一并改写。消费面核实仅 `.btn-primary`（components.css 与 apple.css 两份均走 token，无硬编码）。 |
+| P2-2 | 评估后不改（总报告 §5.4：与论文库共用样式，顶部对齐为一致模式）。                                                            |
+| P2-3 | P2 施工时核实为不成立：设置导航在自己的网格列内，下方无内容穿过，无需背景层。                                                 |
+| P2-4 | 明确记录不改（自然留白）。                                                                                                   |
+| P2-5 | **已完成（清理）**：NotesPanel 与 DifficultyPanel 均为面板合并后的死代码（无任何渲染入口，只剩各自测试）。删除 2 组件 + 2 测试 + reader.css 41 个死选择器（notes 区 21 + difficulty 区 20）+ apple.css 5 行 + layout.css 2 行死选择器。共用类核实：`note-kind/note-origin/note-page` 归 NotesView（components.css `.note-card` 作用域，自足）保留；KnowledgePanel 用自有 `knowledge-difficulty-*`，不涉旧类。 |
