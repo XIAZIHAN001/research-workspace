@@ -2437,3 +2437,56 @@ button.row-main:active {
   margin: 0;
   flex: 1;
 }
+
+/* ---- AI draft (notes view) -------------------------------------------------- */
+
+.notes-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--hairline);
+  border-radius: var(--r-sm);
+}
+
+.notes-draft-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notes-draft-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.notes-draft-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notes-draft-head h3 {
+  margin: 0;
+  font-size: 14.5px;
+}
+
+.notes-draft-meta {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.notes-draft-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

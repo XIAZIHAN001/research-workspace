@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(8);
+    expect(SCHEMA_VERSION).toBe(9);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -828,5 +828,52 @@ describe('v7 → v8: paper glossary', () => {
     const again = migrateStoredPayload(serializeProjects(state as never));
     expect(again.ok).toBe(true);
     expect(again.ok && again.state.glossary).toHaveLength(1);
+  });
+});
+
+describe('v8 → v9: paper summary cards', () => {
+  const base = {
+    version: 8,
+    projects: [],
+    papers: {
+      pa: { id: 'pa', title: 'Paper', authors: [], createdAt: 1, updatedAt: 1 },
+    },
+    annotations: [],
+    bookmarks: [],
+    glossary: [],
+    selectedId: null,
+  };
+
+  it('states the new version and keeps a card the payload already carries', () => {
+    const withCard = JSON.stringify({
+      ...base,
+      papers: {
+        pa: {
+          ...base.papers.pa,
+          summary: {
+            text: '问题、方法、结论三段。',
+            provider: 'mock',
+            providerLabel: '本地模拟',
+            model: 'mock-1',
+            online: false,
+            createdAt: 9,
+          },
+        },
+      },
+    });
+    const outcome = migrateStoredPayload(withCard);
+    expect(outcome.ok && outcome.from).toBe(8);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.papers.pa?.summary?.text).toContain('问题');
+  });
+
+  it('drops a malformed card rather than refusing the payload', () => {
+    const broken = JSON.stringify({
+      ...base,
+      papers: { pa: { ...base.papers.pa, summary: { text: 42 } } },
+    });
+    const outcome = migrateStoredPayload(broken);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.state.papers.pa?.summary).toBeUndefined();
   });
 });

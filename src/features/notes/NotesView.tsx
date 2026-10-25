@@ -1,5 +1,7 @@
-import { CircleCheck, NotebookPen, Search, Undo2 } from 'lucide-react';
+import { CircleCheck, Download, NotebookPen, Search, Sparkles, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { downloadTextFile } from '../../services/download';
+import type { AiClient } from '../reader/useAiReading';
 import { ANNOTATION_KINDS, ANNOTATION_KIND_LABEL, type Annotation } from '../../domain/annotation';
 import type { Paper } from '../../domain/papers';
 import {
@@ -18,6 +20,8 @@ interface NotesViewProps {
   onOpenPaper: (paperId: string, focus: { page: number; quote: string }) => void;
   /** Marks a question answered, or opens it again. Omitted in read-only hosts. */
   onResolveQuestion?: (id: string, resolvedAt: number | null) => void;
+  /** The assistant's transport; offered where the host has one. Enables AI 整理成稿. */
+  ai?: Pick<AiClient, 'ask'>;
 }
 
 const KIND_FILTERS: readonly NotesKindFilter[] = ['all', ...ANNOTATION_KINDS];
@@ -34,7 +38,70 @@ const QUESTION_STATUS_LABEL: Record<'all' | QuestionStatusFilter, string> = {
  * The reader's notes are already beside each paper; this page answers the other question —
  * "what have I written down, anywhere?" — without making them open papers one by one.
  */
-export function NotesView({ annotations, papers, onOpenPaper, onResolveQuestion }: NotesViewProps) {
+export function NotesView({
+  annotations,
+  papers,
+  onOpenPaper,
+  onResolveQuestion,
+  ai,
+}: NotesViewProps) {
+  /* The draft flow: per-paper confirm, one call, a dialog with the result. */
+  const [draftFor, setDraftFor] = useState<string | null>(null);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftResult, setDraftResult] = useState<{
+    paperTitle: string;
+    text: string;
+    providerLabel: string;
+    model: string;
+  } | null>(null);
+
+  /**
+   * Sends one paper's notes as passages and asks for a coherent draft back.
+   *
+   * Each note's quotation travels as a passage, so the citation contract holds exactly as it
+   * does over paper text: a claim the draft makes is checked against a quotation the reader
+   * really marked, not against the model's memory. The note's own file hash is what the notes
+   * were anchored on, so it names the file without the registry having to.
+   */
+  const runDraft = async (group: NotesOverviewGroup): Promise<void> => {
+    if (ai === undefined || draftBusy) return;
+    setDraftBusy(true);
+    setDraftError(null);
+    try {
+      const passages = group.items.map((annotation, index) => ({
+        id: `n${String(index + 1)}`,
+        page: annotation.page,
+        text: annotation.quote,
+        selection: index === 0,
+      }));
+      const result = await ai.ask({
+        mode: 'draft',
+        question: `请把这 ${String(group.items.length)} 条笔记整理成一篇连贯的精读笔记草稿。`,
+        paper: {
+          id: group.paperId,
+          title: group.title,
+          page: group.items[0]?.page ?? 1,
+          pdfSha256: group.items[0]?.pdfSha256 ?? '0'.repeat(64),
+        },
+        passages,
+      });
+      if (!result.ok) {
+        setDraftError(`整理失败：${result.failure.message}`);
+        return;
+      }
+      setDraftResult({
+        paperTitle: group.title,
+        text: result.answer.answer,
+        providerLabel: result.answer.providerLabel,
+        model: result.answer.model,
+      });
+      setDraftFor(null);
+    } finally {
+      setDraftBusy(false);
+    }
+  };
+
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<NotesKindFilter>('all');
   const [paperId, setPaperId] = useState('');
@@ -163,8 +230,65 @@ export function NotesView({ annotations, papers, onOpenPaper, onResolveQuestion 
               query={query}
               onOpenPaper={onOpenPaper}
               onResolveQuestion={onResolveQuestion}
+              draftEnabled={ai !== undefined && group.items.length >= 2}
+              draftActive={draftFor === group.paperId}
+              draftBusy={draftBusy}
+              draftError={draftError}
+              onStartDraft={() => {
+                setDraftFor(group.paperId);
+                setDraftError(null);
+              }}
+              onRunDraft={() => {
+                void runDraft(group);
+              }}
+              onCancelDraft={() => {
+                setDraftFor(null);
+                setDraftError(null);
+              }}
             />
           ))}
+        </div>
+      )}
+
+      {draftResult !== null && (
+        <div className="notes-draft-result" role="dialog" aria-label="笔记草稿">
+          <header className="notes-draft-head">
+            <h3>《{draftResult.paperTitle}》精读笔记草稿</h3>
+            <span className="notes-draft-meta">
+              {draftResult.providerLabel} · {draftResult.model}
+            </span>
+          </header>
+          {/*
+           * The draft is a suggestion, not a record: shown in full for review and kept only if
+           * the reader downloads it. Nothing is written back into the workspace.
+           */}
+          <p className="notes-draft-text">{draftResult.text}</p>
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setDraftResult(null);
+              }}
+            >
+              关闭
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                const safe = draftResult.paperTitle.replace(/[\\/:*?"<>|]/g, ' ').trim() || '论文';
+                downloadTextFile(
+                  `${safe.slice(0, 60)}-笔记草稿.md`,
+                  `# 《${draftResult.paperTitle}》精读笔记草稿\n\n${draftResult.text}\n`,
+                  'text/markdown;charset=utf-8',
+                );
+              }}
+            >
+              <Download size={14} aria-hidden="true" />
+              下载 .md
+            </button>
+          </div>
         </div>
       )}
     </section>
@@ -176,6 +300,13 @@ interface NotesGroupProps {
   query: string;
   onOpenPaper: (paperId: string, focus: { page: number; quote: string }) => void;
   onResolveQuestion?: (id: string, resolvedAt: number | null) => void;
+  draftEnabled: boolean;
+  draftActive: boolean;
+  draftBusy: boolean;
+  draftError: string | null;
+  onStartDraft: () => void;
+  onRunDraft: () => void;
+  onCancelDraft: () => void;
 }
 
 /** The card's clickable body. A question card wraps this in an article to host the resolve action. */
@@ -201,7 +332,19 @@ function NoteCardBody({ annotation, query }: { annotation: Annotation; query: st
   );
 }
 
-function NotesGroup({ group, query, onOpenPaper, onResolveQuestion }: NotesGroupProps) {
+function NotesGroup({
+  group,
+  query,
+  onOpenPaper,
+  onResolveQuestion,
+  draftEnabled,
+  draftActive,
+  draftBusy,
+  draftError,
+  onStartDraft,
+  onRunDraft,
+  onCancelDraft,
+}: NotesGroupProps) {
   return (
     <section className="notes-group-page" aria-labelledby={`notes-group-${group.paperId}`}>
       <header className="notes-group-head">
@@ -211,6 +354,46 @@ function NotesGroup({ group, query, onOpenPaper, onResolveQuestion }: NotesGroup
         </h2>
         <span className="notes-group-count">{group.items.length} 条</span>
       </header>
+      {draftEnabled && (
+        <div className="notes-draft">
+          {draftActive ? (
+            <>
+              <p className="hint" role="status">
+                将发送这 {String(group.items.length)} 条笔记的原文引用与内容。
+                {draftBusy ? '正在整理…' : '若 AI 服务为在线模式，将产生费用；本地模拟则免费。'}
+              </p>
+              <div className="notes-draft-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={draftBusy}
+                  onClick={onRunDraft}
+                >
+                  {draftBusy ? '整理中…' : '开始整理'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={draftBusy}
+                  onClick={onCancelDraft}
+                >
+                  取消
+                </button>
+              </div>
+            </>
+          ) : (
+            <button type="button" className="btn btn-quiet" onClick={onStartDraft}>
+              <Sparkles size={13} aria-hidden="true" />
+              AI 整理成稿
+            </button>
+          )}
+          {draftError !== null && (
+            <p className="hint hint-error" role="alert">
+              {draftError}
+            </p>
+          )}
+        </div>
+      )}
       <ul className="notes-page-list">
         {group.items.map((annotation) => {
           const open = (): void => {

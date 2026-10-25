@@ -49,6 +49,20 @@ export const MODES = {
     label: '自由提问',
     instruction: '读者针对选中原文提出了自己的问题。直接回答这个问题，仍然以提供的原文为主要依据。',
   },
+  summarize: {
+    label: '生成摘要卡',
+    instruction:
+      '读者想要这篇论文的一页摘要卡。分三小节输出：「问题」这项研究要解决什么；' +
+      '「方法」核心做法与关键机制；「结论」作者报告了什么结果与适用范围。' +
+      '每节两三句话，只依据提供的原文；原文没有说的不要写，宁可写"原文未明确"。',
+  },
+  draft: {
+    label: '整理笔记草稿',
+    instruction:
+      '读者提供了自己在读这篇论文时留下的笔记（每条都带原文引用）。把这些笔记整理成一篇连贯的' +
+      '精读笔记草稿：按论点组织而不是按页码罗列，保留读者自己的措辞和疑问，' +
+      '每一处论断都要用 [n] 标注它依据的是哪条笔记的原文引用。不要添加笔记和原文之外的论断。',
+  },
 };
 
 export const MODE_NAMES = Object.keys(MODES);
@@ -156,7 +170,8 @@ export function normalizeAskRequest(raw, limits = LIMITS) {
   if (!isMode(raw.mode)) {
     return {
       ok: false,
-      message: 'mode 必须是 explain / walkthrough / formula / translate / ask 之一。',
+      message:
+        'mode 必须是 explain / walkthrough / formula / translate / ask / summarize / draft 之一。',
     };
   }
 

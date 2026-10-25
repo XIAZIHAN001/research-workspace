@@ -7,6 +7,8 @@ import {
   normalizeDoi,
   resolvePaperIdentity,
   type Paper,
+  MAX_SUMMARY_LENGTH,
+  type PaperSummary,
 } from './papers';
 
 function sequentialIds(): () => string {
@@ -470,5 +472,56 @@ describe('applyPaperEdit', () => {
       5,
     );
     expect(cleared.ok && cleared.paper).not.toHaveProperty('status');
+  });
+});
+
+describe('PaperSummary edits', () => {
+  const base: Paper = {
+    id: 'p1',
+    title: 'A Paper',
+    authors: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const card: PaperSummary = {
+    text: '问题、方法、结论。',
+    provider: 'mock',
+    providerLabel: '本地模拟',
+    model: 'mock-1',
+    online: false,
+    createdAt: 5,
+  };
+
+  it('sets a card and clears it back to absence', () => {
+    const withCard = applyPaperEdit({ p1: base }, 'p1', { summary: card }, 10);
+    expect(withCard.ok && withCard.paper.summary).toStrictEqual(card);
+    const cleared = applyPaperEdit(
+      withCard.ok ? { p1: withCard.paper } : {},
+      'p1',
+      { summary: null },
+      11,
+    );
+    expect(cleared.ok && 'summary' in (cleared.paper as Paper)).toBe(false);
+  });
+
+  it('caps an oversized card instead of refusing it', () => {
+    const long = applyPaperEdit(
+      { p1: base },
+      'p1',
+      { summary: { ...card, text: 'x'.repeat(MAX_SUMMARY_LENGTH + 100) } },
+      10,
+    );
+    expect(long.ok && long.paper.summary?.text).toHaveLength(MAX_SUMMARY_LENGTH);
+  });
+
+  it('leaves the card alone when the edit does not mention it', () => {
+    const withCard = applyPaperEdit({ p1: base }, 'p1', { summary: card }, 10);
+    const touched = applyPaperEdit(
+      withCard.ok ? { p1: withCard.paper } : {},
+      'p1',
+      { title: 'Renamed' },
+      12,
+    );
+    expect(touched.ok && touched.paper.summary).toStrictEqual(card);
   });
 });

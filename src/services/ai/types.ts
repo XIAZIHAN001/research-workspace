@@ -7,7 +7,8 @@
  */
 
 /** The kinds of help the reader can ask for at a selection. */
-export type AiMode = 'explain' | 'walkthrough' | 'formula' | 'translate' | 'ask';
+export type AiMode =
+  'explain' | 'walkthrough' | 'formula' | 'translate' | 'ask' | 'summarize' | 'draft';
 
 export const AI_MODE_LABEL: Record<AiMode, string> = {
   explain: '解释这段话',
@@ -15,6 +16,8 @@ export const AI_MODE_LABEL: Record<AiMode, string> = {
   formula: '解释数学公式',
   translate: '翻译为中文',
   ask: '自由提问',
+  summarize: '生成摘要卡',
+  draft: '整理笔记草稿',
 };
 
 /** One block of原文 the model is allowed to rely on. Exactly one is the reader's selection. */

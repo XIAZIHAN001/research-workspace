@@ -7,7 +7,13 @@ import {
 } from './annotation';
 import type { Bookmark } from './bookmark';
 import type { GlossaryEntry } from './glossary';
-import { isReadingStatus, normalizeTags, type Paper, type ReadingStatus } from './papers';
+import {
+  isReadingStatus,
+  normalizeTags,
+  type Paper,
+  type ReadingStatus,
+  type PaperSummary,
+} from './papers';
 import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
 import type { ProjectsState } from './projectsState';
@@ -176,6 +182,21 @@ function parsePaperStatus(value: unknown): ReadingStatus | undefined {
   return isReadingStatus(value) ? value : undefined;
 }
 
+/**
+ * A malformed summary card is dropped, not guessed at — same tolerance as the PDF binding and
+ * the tags. A card the reader chose to keep deserves better than half of it surviving a parse.
+ */
+function parsePaperSummary(value: unknown): PaperSummary | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return undefined;
+  const { text, provider, providerLabel, model, online, createdAt } = value;
+  if (typeof text !== 'string' || text === '') return undefined;
+  if (typeof provider !== 'string' || typeof providerLabel !== 'string') return undefined;
+  if (typeof model !== 'string' || typeof online !== 'boolean') return undefined;
+  if (typeof createdAt !== 'number') return undefined;
+  return { text, provider, providerLabel, model, online, createdAt };
+}
+
 function parsePaper(value: unknown): Paper | null {
   if (!isRecord(value)) return null;
   const {
@@ -189,6 +210,7 @@ function parsePaper(value: unknown): Paper | null {
     reading,
     tags,
     status,
+    summary,
     createdAt,
     updatedAt,
   } = value;
@@ -208,6 +230,8 @@ function parsePaper(value: unknown): Paper | null {
   if (parsedTags !== undefined) paper.tags = parsedTags;
   const parsedStatus = parsePaperStatus(status);
   if (parsedStatus !== undefined) paper.status = parsedStatus;
+  const parsedSummary = parsePaperSummary(summary);
+  if (parsedSummary !== undefined) paper.summary = parsedSummary;
   return paper;
 }
 

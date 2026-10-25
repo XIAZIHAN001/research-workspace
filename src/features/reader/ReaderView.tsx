@@ -53,6 +53,8 @@ import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { GlossaryHover } from './GlossaryHover';
+import { buildAskContext, MAX_DOCUMENT_PASSAGES } from '../../services/ai/context';
+import type { PaperSummary } from '../../domain/papers';
 import type { GlossaryEdit, GlossaryEntry } from '../../domain/glossary';
 import { FindBar } from './FindBar';
 import { KnowledgePanel } from './KnowledgePanel';
@@ -107,6 +109,9 @@ interface ReaderViewProps {
   glossary?: readonly GlossaryEntry[];
   /** Saves a term the reader defined from a selection or in the outline panel. */
   onAddTerm?: (draft: { term: string; definition: string }) => void;
+  /** Stores a generated summary card on the paper. */
+  onSaveSummary?: (summary: PaperSummary) => void;
+  onClearSummary?: () => void;
   onEditTerm?: (id: string, edit: GlossaryEdit) => void;
   onRemoveTerm?: (id: string) => void;
   onClose: () => void;
@@ -239,6 +244,8 @@ export function ReaderView({
   onAddTerm,
   onEditTerm,
   onRemoveTerm,
+  onSaveSummary,
+  onClearSummary,
   aiClient,
   theme,
   layoutPreset = 'balanced',
@@ -446,6 +453,8 @@ export function ReaderView({
   );
   const [health, setHealth] = useState<AiHealth | null>(null);
   const ai = useAiReading(aiClient);
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryNotice, setSummaryNotice] = useState<string | null>(null);
 
   const pdfSha256 = paper.pdf?.sha256 ?? null;
   // Read in the background, once per file: the assistant answers from the whole paper, not the page.
@@ -1112,6 +1121,57 @@ export function ReaderView({
     if (anchor !== null) clearSelection();
   };
 
+  /**
+   * Generates the paper's summary card: the whole document as passages, one confirmed click.
+   *
+   * The answer is stored verbatim with its provenance, the same rule an assistant note follows:
+   * a card keeps saying which model wrote it, forever, even after that model is long gone.
+   */
+  const generateSummary = async (): Promise<void> => {
+    if (aiClient === undefined || summaryBusy || onSaveSummary === undefined) return;
+    setSummaryNotice(null);
+    if (documentText.pages.length === 0) {
+      setSummaryNotice('论文文字还没有提取好，稍等一下再试。');
+      return;
+    }
+    const pageSource = sourceFor(currentPage, null);
+    if (pageSource === null) {
+      setSummaryNotice('当前页还没有渲染好，暂时无法组织请求。');
+      return;
+    }
+    setSummaryBusy(true);
+    try {
+      const request = buildAskContext({
+        paperId: paper.id,
+        title: paper.title,
+        pdfSha256: pdfSha256 ?? '',
+        page: currentPage,
+        pageText: pageSource.pageText,
+        layoutNotice: null,
+        documentPages: documentText.pages,
+        mode: 'summarize',
+        question: '请按「问题 / 方法 / 结论」生成这篇论文的摘要卡。',
+      });
+      const result = await aiClient.ask(request);
+      if (!result.ok) {
+        setSummaryNotice(`生成失败：${result.failure.message}`);
+        return;
+      }
+      onSaveSummary({
+        text: result.answer.answer,
+        provider: result.answer.provider,
+        providerLabel: result.answer.providerLabel,
+        model: result.answer.model,
+        online: result.answer.online,
+        createdAt: Date.now(),
+      });
+    } catch (error) {
+      setSummaryNotice(`生成失败：${String(error)}`);
+    } finally {
+      setSummaryBusy(false);
+    }
+  };
+
   /** The tab and the rail open the current session when there is one, and create one if not. */
   const showKnowledgePanel = (): void => {
     if (knowledgeAnalysis.context === null || knowledgeAnalysis.context.paperId !== paper.id) {
@@ -1683,6 +1743,21 @@ export function ReaderView({
                   }}
                   onDeleteNote={setPendingDelete}
                   glossary={glossary}
+                  summary={paper.summary}
+                  summaryBusy={summaryBusy}
+                  summaryNotice={summaryNotice}
+                  summaryScope={
+                    documentText.pages.length === 0
+                      ? null
+                      : {
+                          pagesSent: Math.min(documentText.pages.length, MAX_DOCUMENT_PASSAGES),
+                          pagesTotal: documentText.pages.length,
+                          truncated: documentText.pages.length > MAX_DOCUMENT_PASSAGES,
+                        }
+                  }
+                  summaryOnline={health?.online === true}
+                  onGenerateSummary={onSaveSummary === undefined ? undefined : generateSummary}
+                  onClearSummary={onClearSummary}
                   onAddGlossaryTerm={onAddTerm}
                   onEditGlossaryTerm={onEditTerm}
                   onRemoveGlossaryTerm={onRemoveTerm}

@@ -639,6 +639,12 @@ export function App({
               onRemoveTerm={(id) => {
                 actions.removeGlossary(id);
               }}
+              onSaveSummary={(summary) => {
+                actions.updatePaper(readingPaper.id, { summary });
+              }}
+              onClearSummary={() => {
+                actions.updatePaper(readingPaper.id, { summary: null });
+              }}
               onAddBookmark={(page, label) => {
                 const created = createBookmark(
                   { paperId: readingPaper.id, page, label },
@@ -823,6 +829,7 @@ export function App({
             onResolveQuestion={(id, resolvedAt) => {
               actions.updateAnnotation(id, { resolvedAt });
             }}
+            ai={ai}
           />
         ) : view === 'review' ? (
           <ReviewView

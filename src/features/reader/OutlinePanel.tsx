@@ -5,6 +5,8 @@ import {
   ChevronRight,
   CircleCheck,
   BookMarked,
+  FileText,
+  Sparkles,
   Download,
   Pencil,
   StickyNote,
@@ -13,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { PaperSummary } from '../../domain/papers';
 import { defaultBookmarkLabel, sortBookmarks, type Bookmark } from '../../domain/bookmark';
 import { ANNOTATION_KIND_LABEL, type Annotation } from '../../domain/annotation';
 import {
@@ -62,6 +65,18 @@ interface OutlinePanelProps {
   onResolveNote?: (id: string, resolvedAt: number | null) => void;
   /** The paper's own vocabulary, listed in its own section of this panel. */
   glossary?: readonly GlossaryEntry[];
+  /** The AI summary card, when one has been generated for this paper. */
+  summary?: PaperSummary;
+  /** True while a summary request is in flight. */
+  summaryBusy?: boolean;
+  /** What a failed generation said, or a transient note; shown in the summary section. */
+  summaryNotice?: string | null;
+  /** How much of the paper a request would carry, for the confirmation line. */
+  summaryScope?: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
+  /** True when the service is an online provider, so the confirm line can name the cost. */
+  summaryOnline?: boolean;
+  onGenerateSummary?: () => void;
+  onClearSummary?: () => void;
   onAddGlossaryTerm?: (draft: { term: string; definition: string }) => void;
   onEditGlossaryTerm?: (id: string, edit: GlossaryEdit) => void;
   onRemoveGlossaryTerm?: (id: string) => void;
@@ -100,6 +115,13 @@ export function OutlinePanel({
   onDeleteNote,
   onResolveNote,
   glossary = [],
+  summary,
+  summaryBusy = false,
+  summaryNotice = null,
+  summaryScope = null,
+  summaryOnline = false,
+  onGenerateSummary,
+  onClearSummary,
   onAddGlossaryTerm,
   onEditGlossaryTerm,
   onRemoveGlossaryTerm,
@@ -186,6 +208,17 @@ export function OutlinePanel({
       </div>
 
       <div className="outline-scroll">
+        {(onGenerateSummary !== undefined || summary !== undefined) && (
+          <SummarySection
+            summary={summary}
+            busy={summaryBusy}
+            notice={summaryNotice}
+            scope={summaryScope}
+            online={summaryOnline}
+            onGenerate={onGenerateSummary}
+            onClear={onClearSummary}
+          />
+        )}
         {outline.status === 'loading' && <p className="outline-note">正在读取目录…</p>}
         {outline.status === 'error' && <p className="outline-note">目录读取失败。</p>}
         {outline.status === 'ready' && outline.items.length === 0 && (
@@ -270,6 +303,128 @@ interface GlossaryDraft {
   id: string | null;
   term: string;
   definition: string;
+}
+
+/**
+ * The paper's one-page summary card, and the (confirmed) action that generates it.
+ *
+ * Generation is two clicks, like every model call in this app: the first opens the disclosure —
+ * what will be sent, and whether it costs — and only 开始生成 talks to the service.
+ */
+function SummarySection({
+  summary,
+  busy,
+  notice,
+  scope,
+  online,
+  onGenerate,
+  onClear,
+}: {
+  summary: PaperSummary | undefined;
+  busy: boolean;
+  notice: string | null;
+  scope: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
+  online: boolean;
+  onGenerate?: () => void;
+  onClear?: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const scopeText =
+    scope === null
+      ? '整篇论文的文字'
+      : `整篇论文 ${String(scope.pagesSent)}/${String(scope.pagesTotal)} 页的文字` +
+        (scope.truncated ? '（超长部分不发送）' : '');
+  const costText = online ? '将调用在线模型，可能产生费用。' : '当前是本地模拟，不产生任何费用。';
+
+  return (
+    <section className="outline-summary" aria-label="摘要卡">
+      <p className="outline-loose-title">
+        <FileText size={12} aria-hidden="true" /> 摘要卡
+      </p>
+      {summary !== undefined && (
+        <>
+          <p className="outline-summary-text">{summary.text}</p>
+          <p className="outline-summary-meta">
+            {summary.providerLabel} · {summary.model} · {summary.online ? '在线' : '本地模拟'} ·
+            生成于 {new Date(summary.createdAt).toLocaleDateString('zh-Hans-CN')}
+          </p>
+        </>
+      )}
+      {confirming ? (
+        <div className="outline-summary-confirm">
+          <p className="outline-note">
+            将发送{scopeText}。{costText}
+          </p>
+          <div className="outline-mark-actions">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false);
+                onGenerate?.();
+              }}
+            >
+              {busy ? '生成中…' : '开始生成'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              onClick={() => {
+                setConfirming(false);
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : onGenerate !== undefined ? (
+        summary === undefined ? (
+          <div className="outline-summary-confirm">
+            <p className="outline-note">一句话看懂这篇论文：问题、方法、结论。</p>
+            <div className="outline-mark-actions">
+              <button
+                type="button"
+                className="btn btn-quiet"
+                disabled={busy}
+                onClick={() => {
+                  setConfirming(true);
+                }}
+              >
+                <Sparkles size={12} aria-hidden="true" />
+                生成摘要卡
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="outline-mark-actions outline-summary-actions">
+            <button
+              type="button"
+              className="btn btn-quiet"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(true);
+              }}
+            >
+              <Sparkles size={12} aria-hidden="true" />
+              重新生成
+            </button>
+            {onClear !== undefined && (
+              <button type="button" className="btn btn-quiet" onClick={onClear}>
+                移除
+              </button>
+            )}
+          </div>
+        )
+      ) : null}
+      {notice !== null && (
+        <p className="outline-note" role="status">
+          {notice}
+        </p>
+      )}
+      {busy && summary === undefined && <p className="outline-note">正在生成，稍候…</p>}
+    </section>
+  );
 }
 
 /**

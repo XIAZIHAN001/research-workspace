@@ -7,7 +7,7 @@ import type { ProjectsState } from './projectsState';
  * The persisted schema this build reads and writes. Version 1 is the Phase 0 payload,
  * which carried no version field at all; every payload without one is treated as v1.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export type MigrationFailure =
   /** Not JSON at all. */
@@ -205,6 +205,16 @@ function migrateV7ToV8(payload: Record<string, unknown>): Record<string, unknown
   return { ...payload, version: 8, glossary: [] };
 }
 
+/**
+ * v8 → v9 added an optional `summary` to papers (the AI summary card). An optional paper field
+ * needs no rewriting — absent means no card — so the step only states the version, the same way
+ * v6 → v7 treated annotation resolutions.
+ */
+function migrateV8ToV9(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (parseProjectsState(payload) === null) return null;
+  return { ...payload, version: 9 };
+}
+
 const MIGRATIONS: Record<number, MigrationStep> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
@@ -213,6 +223,7 @@ const MIGRATIONS: Record<number, MigrationStep> = {
   5: migrateV5ToV6,
   6: migrateV6ToV7,
   7: migrateV7ToV8,
+  8: migrateV8ToV9,
 };
 /** The persisted envelope for a state: the single writer of the on-disk shape. */
 export function serializeProjects(state: ProjectsState): string {

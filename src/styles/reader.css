@@ -2173,3 +2173,46 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+/* ---- Summary card section --------------------------------------------------- */
+
+.outline-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--tile);
+}
+
+.outline-loose-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.outline-summary-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.outline-summary-meta {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.outline-summary-actions {
+  align-self: flex-start;
+}
+
+.outline-summary-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
