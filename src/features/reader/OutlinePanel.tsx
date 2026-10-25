@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   CircleCheck,
+  BookMarked,
   Download,
   Pencil,
   StickyNote,
@@ -14,6 +15,13 @@ import {
 import { useMemo, useState } from 'react';
 import { defaultBookmarkLabel, sortBookmarks, type Bookmark } from '../../domain/bookmark';
 import { ANNOTATION_KIND_LABEL, type Annotation } from '../../domain/annotation';
+import {
+  MAX_DEFINITION_LENGTH,
+  MAX_TERM_LENGTH,
+  sortGlossary,
+  type GlossaryEdit,
+  type GlossaryEntry,
+} from '../../domain/glossary';
 import {
   activeOutlineId,
   countOutlineEntries,
@@ -52,6 +60,11 @@ interface OutlinePanelProps {
   onDeleteNote?: (annotation: Annotation) => void;
   /** Marks a question answered, or opens it again. Falls back to read-only when omitted. */
   onResolveNote?: (id: string, resolvedAt: number | null) => void;
+  /** The paper's own vocabulary, listed in its own section of this panel. */
+  glossary?: readonly GlossaryEntry[];
+  onAddGlossaryTerm?: (draft: { term: string; definition: string }) => void;
+  onEditGlossaryTerm?: (id: string, edit: GlossaryEdit) => void;
+  onRemoveGlossaryTerm?: (id: string) => void;
   onExportNotes?: () => void;
 }
 
@@ -86,6 +99,10 @@ export function OutlinePanel({
   onEditNote,
   onDeleteNote,
   onResolveNote,
+  glossary = [],
+  onAddGlossaryTerm,
+  onEditGlossaryTerm,
+  onRemoveGlossaryTerm,
   onExportNotes,
 }: OutlinePanelProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string> | null>(null);
@@ -236,8 +253,198 @@ export function OutlinePanel({
             </ul>
           </section>
         )}
+        <GlossarySection
+          entries={glossary}
+          editable={onAddGlossaryTerm !== undefined}
+          onAdd={onAddGlossaryTerm}
+          onEdit={onEditGlossaryTerm}
+          onRemove={onRemoveGlossaryTerm}
+        />
       </div>
     </aside>
+  );
+}
+
+interface GlossaryDraft {
+  /** The entry being edited, or null while the row is a brand-new term. */
+  id: string | null;
+  term: string;
+  definition: string;
+}
+
+/**
+ * The paper's own vocabulary: terms the reader defined once and looks up while reading.
+ *
+ * Lives at the end of the outline panel because a term belongs to the whole paper, not to a
+ * chapter — unlike bookmarks and notes, which are anchored to a place and belong in the tree.
+ */
+function GlossarySection({
+  entries,
+  editable,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  entries: readonly GlossaryEntry[];
+  editable: boolean;
+  onAdd?: (draft: { term: string; definition: string }) => void;
+  onEdit?: (id: string, edit: GlossaryEdit) => void;
+  onRemove?: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState<GlossaryDraft | null>(null);
+  const sorted = sortGlossary(entries);
+  if (!editable && sorted.length === 0) return null;
+
+  const commit = (): void => {
+    if (draft === null || draft.term.trim() === '') return;
+    if (draft.id === null) onAdd?.({ term: draft.term, definition: draft.definition });
+    else onEdit?.(draft.id, { term: draft.term, definition: draft.definition });
+    setDraft(null);
+  };
+
+  const cancel = (): void => {
+    setDraft(null);
+  };
+
+  const editingNew = draft !== null && draft.id === null;
+
+  return (
+    <section className="outline-glossary" aria-label="术语表">
+      <p className="outline-loose-title">术语表（{String(sorted.length)}）</p>
+      {sorted.length === 0 && !editingNew && (
+        <p className="outline-note">阅读时选中一个缩写或名词，点「术语」，就能在这里查到它。</p>
+      )}
+      <ul className="outline-glossary-list">
+        {sorted.map((entry) =>
+          draft?.id === entry.id && draft !== null ? (
+            <GlossaryEditRow
+              key={entry.id}
+              draft={draft}
+              setDraft={setDraft}
+              commit={commit}
+              cancel={cancel}
+            />
+          ) : (
+            <li key={entry.id} className="outline-glossary-item">
+              <span className="outline-glossary-copy">
+                <span className="outline-glossary-term">{entry.term}</span>
+                {entry.definition !== '' && (
+                  <span className="outline-glossary-definition">{entry.definition}</span>
+                )}
+              </span>
+              {onEdit !== undefined && (
+                <span className="outline-mark-actions">
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`编辑术语「${entry.term}」`}
+                    onClick={() => {
+                      setDraft({ id: entry.id, term: entry.term, definition: entry.definition });
+                    }}
+                  >
+                    <Pencil size={11} aria-hidden="true" />
+                  </button>
+                  {onRemove !== undefined && (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={`删除术语「${entry.term}」`}
+                      onClick={() => {
+                        onRemove(entry.id);
+                      }}
+                    >
+                      <Trash2 size={11} aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+              )}
+            </li>
+          ),
+        )}
+        {editingNew && draft !== null && (
+          <GlossaryEditRow
+            key="new-term"
+            draft={draft}
+            setDraft={setDraft}
+            commit={commit}
+            cancel={cancel}
+          />
+        )}
+      </ul>
+      {onAdd !== undefined && !editingNew && (
+        <button
+          type="button"
+          className="btn btn-quiet outline-glossary-add"
+          onClick={() => {
+            setDraft({ id: null, term: '', definition: '' });
+          }}
+        >
+          <BookMarked size={12} aria-hidden="true" />
+          添加术语
+        </button>
+      )}
+    </section>
+  );
+}
+
+function GlossaryEditRow({
+  draft,
+  setDraft,
+  commit,
+  cancel,
+}: {
+  draft: GlossaryDraft;
+  setDraft: (next: GlossaryDraft) => void;
+  commit: () => void;
+  cancel: () => void;
+}) {
+  return (
+    <li className="outline-glossary-edit">
+      <input
+        className="input"
+        type="text"
+        value={draft.term}
+        maxLength={MAX_TERM_LENGTH}
+        autoFocus
+        aria-label="术语"
+        placeholder="术语，如 KZG"
+        onChange={(event) => {
+          setDraft({ ...draft, term: event.target.value });
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === 'Escape') cancel();
+        }}
+      />
+      <textarea
+        className="input outline-glossary-definition-input"
+        value={draft.definition}
+        maxLength={MAX_DEFINITION_LENGTH}
+        rows={2}
+        aria-label="含义"
+        placeholder="它在这篇论文里是什么意思…"
+        onChange={(event) => {
+          setDraft({ ...draft, definition: event.target.value });
+        }}
+      />
+      <span className="outline-mark-actions">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="保存术语"
+          disabled={draft.term.trim() === ''}
+          onClick={commit}
+        >
+          <Check size={11} aria-hidden="true" />
+        </button>
+        <button type="button" className="icon-btn" aria-label="取消编辑术语" onClick={cancel}>
+          <X size={11} aria-hidden="true" />
+        </button>
+      </span>
+    </li>
   );
 }
 

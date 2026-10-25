@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { Annotation, AnnotationEdit } from '../../domain/annotation';
 import type { Bookmark } from '../../domain/bookmark';
+import type { GlossaryEdit, GlossaryEntry } from '../../domain/glossary';
 import {
   applyPaperEdit,
   createPaper,
@@ -109,6 +110,17 @@ export function useProjects(store: ProjectsStore) {
       addBookmark(bookmark: Bookmark): void {
         store.dispatch({ type: 'addBookmark', bookmark });
       },
+      /** Saves a term the reader defined for a paper. */
+      addGlossary(entry: GlossaryEntry): void {
+        store.dispatch({ type: 'addGlossary', entry });
+      },
+      /** Renames a term or changes what it means here. */
+      updateGlossary(id: string, edit: GlossaryEdit): void {
+        store.dispatch({ type: 'updateGlossary', id, edit, now: Date.now() });
+      },
+      removeGlossary(id: string): void {
+        store.dispatch({ type: 'removeGlossary', id });
+      },
       renameBookmark(id: string, label: string): void {
         store.dispatch({ type: 'renameBookmark', id, label });
       },
@@ -133,6 +145,7 @@ export function useProjects(store: ProjectsStore) {
     papers: state.papers,
     annotations: state.annotations,
     bookmarks: state.bookmarks,
+    glossary: state.glossary,
     selected,
     persisted,
     issue,

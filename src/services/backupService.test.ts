@@ -142,6 +142,7 @@ function sampleSource(): BackupSource {
       },
     ],
     bookmarks: [],
+    glossary: [],
     selectedId: 'project-1',
   };
   const knowledge: KnowledgeState = {

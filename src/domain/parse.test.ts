@@ -25,7 +25,7 @@ function rawState(
   selectedId: unknown = null,
   annotations: unknown = [],
 ): Raw {
-  return { projects, papers, annotations, bookmarks: [], selectedId };
+  return { projects, papers, annotations, bookmarks: [], glossary: [], selectedId };
 }
 
 /** A registry that matches the default project fixture. */
@@ -54,6 +54,7 @@ describe('parseProjectsState (current schema)', () => {
         papers: {},
         annotations: [],
         bookmarks: [],
+        glossary: [],
         selectedId: null,
       });
     });
@@ -209,6 +210,7 @@ describe('parseProjectsState (current schema)', () => {
         papers: {},
         annotations: [],
         bookmarks: [],
+        glossary: [],
         selectedId: null,
       });
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();

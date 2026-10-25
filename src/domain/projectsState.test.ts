@@ -41,7 +41,14 @@ function papersOf(projects: Project[]): Record<string, Paper> {
 
 function makeState(ids: string[], selectedId: string | null = ids[0] ?? null): ProjectsState {
   const projects = ids.map((id) => makeProject(id));
-  return { projects, papers: papersOf(projects), annotations: [], bookmarks: [], selectedId };
+  return {
+    projects,
+    papers: papersOf(projects),
+    annotations: [],
+    bookmarks: [],
+    glossary: [],
+    selectedId,
+  };
 }
 
 const idsOf = (state: ProjectsState): string[] => state.projects.map((p) => p.id);
@@ -64,6 +71,7 @@ describe('EMPTY_STATE', () => {
       papers: {},
       annotations: [],
       bookmarks: [],
+      glossary: [],
       selectedId: null,
     });
   });
@@ -84,6 +92,7 @@ describe('projectsReducer', () => {
         papers: {},
         annotations: [],
         bookmarks: [],
+        glossary: [],
         selectedId: null,
       });
     });
@@ -131,6 +140,7 @@ describe('projectsReducer', () => {
         papers: { 'paper-first': paper },
         annotations: [],
         bookmarks: [],
+        glossary: [],
         selectedId: 'first',
       });
       expect(EMPTY_STATE).toStrictEqual({
@@ -138,6 +148,7 @@ describe('projectsReducer', () => {
         papers: {},
         annotations: [],
         bookmarks: [],
+        glossary: [],
         selectedId: null,
       });
     });
@@ -398,6 +409,7 @@ describe('projectsReducer', () => {
         papers: state.papers,
         annotations: state.annotations,
         bookmarks: state.bookmarks,
+        glossary: state.glossary,
         selectedId: null,
       });
     });
@@ -910,5 +922,51 @@ describe('projectsReducer: bookmarks are saved places, not notes', () => {
       }),
     ).not.toThrow();
     expect(state).toStrictEqual(before);
+  });
+});
+
+describe('projectsReducer: glossary', () => {
+  const paper = { id: 'pa', title: 'P', authors: [], createdAt: 1, updatedAt: 1 };
+  const state: ProjectsState = {
+    projects: [],
+    papers: { pa: paper },
+    annotations: [],
+    bookmarks: [],
+    glossary: [],
+    selectedId: null,
+  };
+  const entry = {
+    id: 'g1',
+    paperId: 'pa',
+    term: 'KZG',
+    definition: '多项式承诺方案',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  it('adds an entry once and refuses a duplicate id', () => {
+    const added = projectsReducer(state, { type: 'addGlossary', entry });
+    expect(added.glossary).toStrictEqual([entry]);
+    expect(projectsReducer(added, { type: 'addGlossary', entry })).toBe(added);
+  });
+
+  it('edits the meaning and stamps the time, but refuses a blank term', () => {
+    const added = projectsReducer(state, { type: 'addGlossary', entry });
+    const edited = projectsReducer(added, {
+      type: 'updateGlossary',
+      id: 'g1',
+      edit: { term: 'KZG 承诺' },
+      now: 9,
+    });
+    expect(edited.glossary[0]).toMatchObject({ term: 'KZG 承诺', updatedAt: 9 });
+    expect(
+      projectsReducer(added, { type: 'updateGlossary', id: 'g1', edit: { term: '  ' }, now: 9 }),
+    ).toBe(added);
+  });
+
+  it('removes an entry, and a no-op remove changes nothing', () => {
+    const added = projectsReducer(state, { type: 'addGlossary', entry });
+    expect(projectsReducer(added, { type: 'removeGlossary', id: 'g1' }).glossary).toStrictEqual([]);
+    expect(projectsReducer(state, { type: 'removeGlossary', id: 'missing' })).toBe(state);
   });
 });

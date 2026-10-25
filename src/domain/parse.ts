@@ -6,6 +6,7 @@ import {
   type AnnotationOrigin,
 } from './annotation';
 import type { Bookmark } from './bookmark';
+import type { GlossaryEntry } from './glossary';
 import { isReadingStatus, normalizeTags, type Paper, type ReadingStatus } from './papers';
 import type { PaperPdf, PaperReading } from './pdfFile';
 import type { Project } from './project';
@@ -113,6 +114,18 @@ function parseAnnotation(value: unknown): Annotation | null {
     createdAt,
     updatedAt,
   };
+}
+
+/** A malformed glossary entry is rejected, like every other record here. */
+function parseGlossaryEntry(value: unknown): GlossaryEntry | null {
+  if (!isRecord(value)) return null;
+  const { id, paperId, term, definition, createdAt, updatedAt } = value;
+  if (typeof id !== 'string' || id === '') return null;
+  if (typeof paperId !== 'string' || paperId === '') return null;
+  if (typeof term !== 'string' || term.trim() === '') return null;
+  if (typeof definition !== 'string') return null;
+  if (typeof createdAt !== 'number' || typeof updatedAt !== 'number') return null;
+  return { id, paperId, term, definition, createdAt, updatedAt };
 }
 
 /** A malformed bookmark is rejected, like a malformed highlight. */
@@ -281,9 +294,24 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
     if (new Set(bookmarks.map((bookmark) => bookmark.id)).size !== bookmarks.length) return null;
   }
 
+  // A payload written before the glossary existed has no list; anything else that is not an
+  // array of entries is corruption, the same rule the bookmarks list follows.
+  const rawGlossary = value.glossary;
+  const glossary: GlossaryEntry[] = [];
+  if (rawGlossary !== undefined) {
+    if (!Array.isArray(rawGlossary)) return null;
+    for (const entry of rawGlossary) {
+      const glossaryEntry = parseGlossaryEntry(entry);
+      if (glossaryEntry === null) return null;
+      if (papers[glossaryEntry.paperId] === undefined) return null;
+      glossary.push(glossaryEntry);
+    }
+    if (new Set(glossary.map((entry) => entry.id)).size !== glossary.length) return null;
+  }
+
   const known = projects.some((p) => p.id === value.selectedId);
   const selectedId = known ? (value.selectedId as string) : (projects[0]?.id ?? null);
-  return { projects, papers, annotations, bookmarks, selectedId };
+  return { projects, papers, annotations, bookmarks, glossary, selectedId };
 }
 
 /* ------------------------------------------------------------------ *

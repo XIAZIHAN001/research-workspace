@@ -52,6 +52,8 @@ import { useMediaQuery } from '../../ui/useMediaQuery';
 import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
+import { GlossaryHover } from './GlossaryHover';
+import type { GlossaryEdit, GlossaryEntry } from '../../domain/glossary';
 import { FindBar } from './FindBar';
 import { KnowledgePanel } from './KnowledgePanel';
 import { useKnowledgeAnalysis } from './useKnowledgeAnalysis';
@@ -101,6 +103,12 @@ const RESIZE_SETTLE_MS = 120;
 interface ReaderViewProps {
   paper: Paper;
   blobs: PdfBlobStore;
+  /** The paper's glossary terms; hovering one in the text layer shows its definition. */
+  glossary?: readonly GlossaryEntry[];
+  /** Saves a term the reader defined from a selection or in the outline panel. */
+  onAddTerm?: (draft: { term: string; definition: string }) => void;
+  onEditTerm?: (id: string, edit: GlossaryEdit) => void;
+  onRemoveTerm?: (id: string) => void;
   onClose: () => void;
   /** Called with the page the reader is on; the caller decides how often to persist it. */
   onReadingPosition: (page: number) => void;
@@ -227,6 +235,10 @@ export function ReaderView({
   onOpenConceptInProject,
   onEditAnnotation,
   onDeleteAnnotation,
+  glossary = [],
+  onAddTerm,
+  onEditTerm,
+  onRemoveTerm,
   aiClient,
   theme,
   layoutPreset = 'balanced',
@@ -1670,6 +1682,10 @@ export function ReaderView({
                     onEditAnnotation(id, { resolvedAt });
                   }}
                   onDeleteNote={setPendingDelete}
+                  glossary={glossary}
+                  onAddGlossaryTerm={onAddTerm}
+                  onEditGlossaryTerm={onEditTerm}
+                  onRemoveGlossaryTerm={onRemoveTerm}
                   onExportNotes={() => {
                     downloadTextFile(
                       notesFileName(paper),
@@ -1728,6 +1744,8 @@ export function ReaderView({
         </div>
       )}
 
+      <GlossaryHover entries={glossary} />
+
       {pendingSelection !== null && (
         <AnnotationToolbar
           spot={pendingSelection.spot}
@@ -1739,6 +1757,8 @@ export function ReaderView({
           onKnowledge={() => {
             openKnowledge(pendingSelection.anchor);
           }}
+          onTerm={onAddTerm}
+          selectionText={pendingSelection.anchor.quote}
           onDismiss={clearSelection}
         />
       )}

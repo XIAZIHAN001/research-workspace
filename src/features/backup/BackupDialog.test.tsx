@@ -33,6 +33,7 @@ function stateWithProject(name: string): ProjectsState {
     papers: { 'paper-1': PAPER },
     annotations: [],
     bookmarks: [],
+    glossary: [],
     selectedId: 'project-1',
   };
 }

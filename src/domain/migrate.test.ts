@@ -49,7 +49,7 @@ describe('migrateStoredPayload: Phase 0 payloads', () => {
     const outcome = migrateStoredPayload(PHASE_0);
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.from).toBe(1);
-    expect(SCHEMA_VERSION).toBe(7);
+    expect(SCHEMA_VERSION).toBe(8);
   });
 
   it('keeps every project with its id, name, order and timestamps', () => {
@@ -203,6 +203,7 @@ describe('migrateStoredPayload: current payloads', () => {
     papers: { pa, pb },
     annotations: [],
     bookmarks: [],
+    glossary: [],
     selectedId: 'a',
   };
 
@@ -482,6 +483,7 @@ describe('migrateStoredPayload: v2 → current', () => {
       papers: { pa: PAPER_V2 },
       annotations: [],
       bookmarks: [],
+      glossary: [],
       selectedId: 'p1',
     });
   });
@@ -758,6 +760,7 @@ describe('v6 → v7: question resolutions', () => {
       },
     ],
     bookmarks: [],
+    glossary: [],
     selectedId: 'p1',
   };
 
@@ -786,5 +789,44 @@ describe('v6 → v7: question resolutions', () => {
     });
     const outcome = migrateStoredPayload(payload);
     expect(outcome.ok).toBe(false);
+  });
+});
+
+describe('v7 → v8: paper glossary', () => {
+  const base = {
+    version: 7,
+    projects: [
+      { id: 'p1', name: '读', corePaperId: 'pa', relatedPaperIds: [], createdAt: 1, updatedAt: 1 },
+    ],
+    papers: { pa: { id: 'pa', title: 'Paper', authors: [], createdAt: 1, updatedAt: 1 } },
+    annotations: [],
+    bookmarks: [],
+    selectedId: 'p1',
+  };
+
+  it('adds an empty glossary list and reports the version it came from', () => {
+    const outcome = migrateStoredPayload(JSON.stringify(base));
+    expect(outcome.ok && outcome.from).toBe(7);
+    if (!outcome.ok) throw new Error(outcome.detail);
+    expect(outcome.state.glossary).toStrictEqual([]);
+  });
+
+  it('round-trips a payload the current build writes', () => {
+    const state = {
+      ...JSON.parse(JSON.stringify(base)),
+      glossary: [
+        {
+          id: 'g1',
+          paperId: 'pa',
+          term: 'KZG',
+          definition: 'Kate–Zaverucha–Goldberg 多项式承诺',
+          createdAt: 5,
+          updatedAt: 6,
+        },
+      ],
+    };
+    const again = migrateStoredPayload(serializeProjects(state as never));
+    expect(again.ok).toBe(true);
+    expect(again.ok && again.state.glossary).toHaveLength(1);
   });
 });

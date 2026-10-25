@@ -35,6 +35,7 @@ import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
 import { createReviewStore, type ReviewStore } from '../services/reviewStore';
 import { createAnnotation } from '../domain/annotation';
+import { createGlossaryEntry, type GlossaryEdit } from '../domain/glossary';
 import { cleanBookmarkLabel, createBookmark } from '../domain/bookmark';
 import { bibtexKey, toBibtex } from '../domain/citation';
 import { buildPaperReport, reportFileName } from '../domain/paperReport';
@@ -123,8 +124,17 @@ export function App({
   reviewStore,
   restoreNotice,
 }: AppProps) {
-  const { projects, papers, annotations, bookmarks, selected, persisted, issue, actions } =
-    useProjects(store);
+  const {
+    projects,
+    papers,
+    annotations,
+    bookmarks,
+    glossary,
+    selected,
+    persisted,
+    issue,
+    actions,
+  } = useProjects(store);
   const theme = useTheme();
   const appearance = useAppearancePrefs();
   const layout = useLayoutPreset();
@@ -214,8 +224,15 @@ export function App({
   );
   /** The workspace in the shape the backup service reads — the same state the stores persist. */
   const projectsState = useMemo<ProjectsState>(
-    () => ({ projects, papers, annotations, bookmarks, selectedId: selected?.id ?? null }),
-    [projects, papers, annotations, bookmarks, selected?.id],
+    () => ({
+      projects,
+      papers,
+      annotations,
+      bookmarks,
+      glossary,
+      selectedId: selected?.id ?? null,
+    }),
+    [projects, papers, annotations, bookmarks, glossary, selected?.id],
   );
   const readingPaper = readingPaperId === null ? null : (papers[readingPaperId] ?? null);
   // Notes follow the paper, so every project that opens it sees the same ones.
@@ -225,6 +242,12 @@ export function App({
         ? []
         : annotations.filter((annotation) => annotation.paperId === readingPaper.id),
     [annotations, readingPaper],
+  );
+  // Glossary terms follow the paper the same way notes and bookmarks do.
+  const paperGlossary = useMemo(
+    () =>
+      readingPaper === null ? [] : glossary.filter((entry) => entry.paperId === readingPaper.id),
+    [glossary, readingPaper],
   );
   // Bookmarks follow the paper too, and are shown only in the reader for that paper.
   const paperBookmarks = useMemo(
@@ -596,6 +619,26 @@ export function App({
               }}
               annotations={paperAnnotations}
               bookmarks={paperBookmarks}
+              glossary={paperGlossary}
+              onAddTerm={(draft) => {
+                const created =
+                  readingPaper === null
+                    ? null
+                    : createGlossaryEntry(
+                        { paperId: readingPaper.id, ...draft },
+                        makeId,
+                        Date.now(),
+                      );
+                if (created === null) return;
+                actions.addGlossary(created);
+                setNotice(`已把「${created.term}」记入这篇论文的术语表。`);
+              }}
+              onEditTerm={(id, edit: GlossaryEdit) => {
+                actions.updateGlossary(id, edit);
+              }}
+              onRemoveTerm={(id) => {
+                actions.removeGlossary(id);
+              }}
               onAddBookmark={(page, label) => {
                 const created = createBookmark(
                   { paperId: readingPaper.id, page, label },
