@@ -12,6 +12,7 @@ import { useTheme } from '../features/theme/useTheme';
 import { useAppearancePrefs } from '../features/theme/useAppearancePrefs';
 import { EditPaperDialog } from '../features/papers/EditPaperDialog';
 import { ImportPaperDialog } from '../features/library/ImportPaperDialog';
+import { BibTeXImportDialog } from '../features/library/BibTeXImportDialog';
 import { LibraryView } from '../features/library/LibraryView';
 import { NotesView } from '../features/notes/NotesView';
 import {
@@ -34,6 +35,7 @@ import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledge
 import { createAnnotation } from '../domain/annotation';
 import { cleanBookmarkLabel, createBookmark } from '../domain/bookmark';
 import { bibtexKey, toBibtex } from '../domain/citation';
+import { downloadTextFile } from '../services/download';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
@@ -142,6 +144,7 @@ export function App({
   /** Where to land in the reader, set when opening a paper from a concept's evidence. */
   const [readingFocus, setReadingFocus] = useState<{ page: number; quote: string } | null>(null);
   const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
+  const [bibtexOpen, setBibtexOpen] = useState(false);
   const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [projectZone, setProjectZone] = useState<'papers' | 'knowledge'>('papers');
@@ -703,6 +706,23 @@ export function App({
                 },
               );
             }}
+            onImportBibtex={() => {
+              setBibtexOpen(true);
+            }}
+            onExportBibtex={() => {
+              // Keys are allocated in list order with the earlier ones marked taken, so two
+              // papers that would collide never produce the same key in one file.
+              const taken: string[] = [];
+              const body = paperList
+                .map((paper) => {
+                  const key = bibtexKey(paper, taken);
+                  taken.push(key);
+                  return toBibtex(paper, taken.slice(0, -1));
+                })
+                .join('');
+              downloadTextFile('论文库.bib', body, 'application/x-bibtex;charset=utf-8');
+              setNotice(`已导出 ${String(paperList.length)} 篇论文的 BibTeX。`);
+            }}
           />
         ) : view === 'notes' ? (
           <NotesView
@@ -823,6 +843,28 @@ export function App({
           setEditingPaperId(null);
         }}
         onSave={(edit) => (editingPaper === null ? null : savePaperEdit(editingPaper.id, edit))}
+      />
+
+      <BibTeXImportDialog
+        open={bibtexOpen}
+        papers={papers}
+        onClose={() => {
+          setBibtexOpen(false);
+        }}
+        onImport={(inputs) => {
+          // addPaper decides per entry: create, reuse the record its identifiers name, or
+          // refuse a conflict. The notice counts what ended up in place, without claiming
+          // every one of them was created by this import.
+          let conflicts = 0;
+          for (const input of inputs) {
+            const outcome = actions.addPaper(input);
+            if (outcome.status === 'conflict') conflicts += 1;
+          }
+          setNotice(
+            `BibTeX 导入完成：${String(inputs.length - conflicts)} 篇已就位` +
+              (conflicts > 0 ? `，${String(conflicts)} 篇因标识符冲突未导入。` : '。'),
+          );
+        }}
       />
 
       <ConfirmDialog

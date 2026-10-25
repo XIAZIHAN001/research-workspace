@@ -2279,3 +2279,61 @@ button.row-main:active {
   color: var(--text-3);
   font-size: 11px;
 }
+
+/* ---- BibTeX import preview ------------------------------------------------ */
+
+/*
+ * A file can hold dozens of entries, so the preview is a capped, internally scrolling list
+ * inside the dialog rather than a page that grows past the window.
+ */
+.bibtex-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.bibtex-item {
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-sm);
+  background: var(--card);
+}
+
+.bibtex-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.bibtex-choice:has(input:disabled) {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.bibtex-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bibtex-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.bibtex-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}

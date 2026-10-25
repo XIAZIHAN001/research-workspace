@@ -38,6 +38,10 @@ interface LibraryViewProps {
   onLinkToProject: (paperId: string, projectId: string) => void;
   /** Copies the paper's BibTeX entry. Omitted in tests and in hosts without a clipboard. */
   onCopyBibtex?: (paper: Paper) => void;
+  /** Opens the .bib import dialog. Omitted in hosts that only show the library. */
+  onImportBibtex?: () => void;
+  /** Downloads the whole library as one .bib file. */
+  onExportBibtex?: () => void;
   /** Preselected in every row's project picker, so a detour through the library is quick. */
   preferredProjectId?: string | null;
 }
@@ -64,6 +68,8 @@ export function LibraryView({
   onImportNew,
   onLinkToProject,
   onCopyBibtex,
+  onImportBibtex,
+  onExportBibtex,
   preferredProjectId = null,
 }: LibraryViewProps) {
   const [query, setQuery] = useState('');
@@ -121,6 +127,17 @@ export function LibraryView({
           <Plus size={14} aria-hidden="true" />
           导入论文
         </button>
+        {onImportBibtex !== undefined && (
+          <button type="button" className="btn btn-quiet" onClick={onImportBibtex}>
+            导入 BibTeX
+          </button>
+        )}
+        {onExportBibtex !== undefined && papers.length > 0 && (
+          <button type="button" className="btn btn-quiet" onClick={onExportBibtex}>
+            <Copy size={14} aria-hidden="true" />
+            导出 .bib
+          </button>
+        )}
       </header>
 
       <label className="library-search">
