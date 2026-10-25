@@ -35,6 +35,7 @@ import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledge
 import { createAnnotation } from '../domain/annotation';
 import { cleanBookmarkLabel, createBookmark } from '../domain/bookmark';
 import { bibtexKey, toBibtex } from '../domain/citation';
+import { buildPaperReport, reportFileName } from '../domain/paperReport';
 import { downloadTextFile } from '../services/download';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
@@ -708,6 +709,16 @@ export function App({
             }}
             onImportBibtex={() => {
               setBibtexOpen(true);
+            }}
+            onExportReport={(paper) => {
+              const report = buildPaperReport({
+                paper,
+                annotations,
+                knowledge: knowledgeApi.state,
+                projects,
+              });
+              downloadTextFile(reportFileName(paper), report, 'text/markdown;charset=utf-8');
+              setNotice(`已导出《${paper.title}》的阅读报告。`);
             }}
             onExportBibtex={() => {
               // Keys are allocated in list order with the earlier ones marked taken, so two

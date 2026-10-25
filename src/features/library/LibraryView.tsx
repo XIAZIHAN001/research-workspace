@@ -1,5 +1,6 @@
 import {
   Copy,
+  Download,
   FileUp,
   FolderPlus,
   Pencil,
@@ -42,6 +43,8 @@ interface LibraryViewProps {
   onImportBibtex?: () => void;
   /** Downloads the whole library as one .bib file. */
   onExportBibtex?: () => void;
+  /** Downloads one paper's reading report (annotations + concepts) as Markdown. */
+  onExportReport?: (paper: Paper) => void;
   /** Preselected in every row's project picker, so a detour through the library is quick. */
   preferredProjectId?: string | null;
 }
@@ -70,6 +73,7 @@ export function LibraryView({
   onCopyBibtex,
   onImportBibtex,
   onExportBibtex,
+  onExportReport,
   preferredProjectId = null,
 }: LibraryViewProps) {
   const [query, setQuery] = useState('');
@@ -294,6 +298,16 @@ export function LibraryView({
                             onSelect={() => {
                               close();
                               onCopyBibtex(paper);
+                            }}
+                          />
+                        )}
+                        {onExportReport !== undefined && (
+                          <RowOverflowItem
+                            icon={<Download size={14} aria-hidden="true" />}
+                            label="导出阅读报告"
+                            onSelect={() => {
+                              close();
+                              onExportReport(paper);
                             }}
                           />
                         )}
