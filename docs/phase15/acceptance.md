@@ -62,3 +62,18 @@ graph 17 / ui-phase12 64）。
   annotations 31/31、immersive 33/33、backup 39/39、graph 17/17、ui-phase12 64/64。
 - 证据：`docs/screenshots-phase15/`（复习卡、BibTeX 预览、术语 hover、草稿对话框）、
   `docs/screenshots-reader/` 本轮重出、`docs/screenshots-phase3/2026-10-25T10-22-55-annotations/`。
+
+## 9. 0.13.2 发布与桌面真机验收（2026-10-25）
+
+- PR #2 已合并进 `main`（合并提交 `1c8384e`），两轮审查修复进入主线。
+- 版本号 `0.13.1 → 0.13.2`（package.json / Cargo.toml / tauri.conf.json，Cargo.lock
+  同步），NSIS 安装包构建并归档为
+  `docs/installers/Research Workspace_0.13.2_x64-setup.exe`。
+- 静默安装到 `D:\Research Workspace`；注册表 DisplayVersion 与可执行文件 FileVersion
+  均为 0.13.2。
+- 桌面门禁（desktop.mjs）随当前界面修正三处陈旧假设：侧栏主题开关已迁入设置（改查
+  底部控件完整可见）、AI 状态角标已移除（改为 sidecar 健康轮询）、AI 回答改为流式
+  渲染（断言前点「跳过」取全文）。修复后 **43/43** 通过：真实 WebView2、sidecar
+  凭据与端口、PDF 渲染、AI/KaTeX、笔记与知识持久化、备份导出与恢复、强杀后无孤儿
+  进程、无控制台错误。
+- 证据：`docs/screenshots-phase10/2026-10-25T10-47-27-desktop/`。

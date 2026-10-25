@@ -226,20 +226,26 @@ async function main() {
     await screenshot(page, '01-home.png');
     check('桌面窗口加载 React 界面', (await page.locator('.app').count()) === 1);
     check('WebView2 数据目录已创建', existsSync(storageDir), storageDir);
-    const themeBox = await page.locator('.sidebar-foot .segmented').boundingBox();
     const footBox = await page.locator('.sidebar-foot').boundingBox();
-    const themeInside =
-      themeBox !== null &&
+    const userBox = await page.locator('.sidebar-user').boundingBox();
+    const footerButtons = await page.locator('.sidebar-foot .btn-quiet').count();
+    const viewport = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }));
+    const footerInside =
       footBox !== null &&
-      themeBox.x >= footBox.x - 0.5 &&
-      themeBox.x + themeBox.width <= footBox.x + footBox.width + 0.5 &&
-      themeBox.y + themeBox.height <= footBox.y + footBox.height + 0.5;
+      userBox !== null &&
+      footBox.x >= 0 &&
+      footBox.x + footBox.width <= viewport.width + 0.5 &&
+      footBox.y + footBox.height <= userBox.y + 0.5 &&
+      userBox.y + userBox.height <= viewport.height + 0.5;
     check(
-      '侧栏主题切换在非全屏窗口中完整可见',
-      themeInside,
-      themeBox === null || footBox === null
+      '侧栏底部控件在非全屏窗口中完整可见',
+      footerInside && footerButtons === 3,
+      footBox === null || userBox === null
         ? 'missing'
-        : `switch ${themeBox.x.toFixed(0)}+${themeBox.width.toFixed(0)} in footer ${footBox.x.toFixed(0)}+${footBox.width.toFixed(0)}`,
+        : `${String(footerButtons)} buttons, footer ${footBox.y.toFixed(0)}+${footBox.height.toFixed(0)}, user row ${userBox.y.toFixed(0)}+${userBox.height.toFixed(0)} in ${String(viewport.height)}`,
     );
     await screenshot(page, '00-sidebar-footer.png');
     await setAppTheme(page, '深色');
@@ -265,10 +271,6 @@ async function main() {
       listened,
     );
 
-    await page.locator('.ai-service-badge[data-state="ready"]').waitFor({ timeout: 30_000 });
-    const badge = await page.locator('.ai-service-badge').innerText();
-    check('AI 服务状态为就绪且离线 Mock', badge.includes('离线 Mock'), badge);
-
     const service = await page.evaluate(async () =>
       window.__TAURI_INTERNALS__.invoke('ai_service_info'),
     );
@@ -281,15 +283,22 @@ async function main() {
       'IPC 凭据为每次启动生成的长令牌',
       typeof service.token === 'string' && service.token.length >= 32,
     );
-    const health = await page.evaluate(
-      async ({ baseUrl, token }) => {
-        const response = await fetch(`${baseUrl}/api/ai/health`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        return { status: response.status, body: await response.json() };
-      },
-      { baseUrl: service.baseUrl, token: service.token },
-    );
+    // The sidecar is a separate process: poll until it answers, then keep that answer as the
+    // evidence. A missing badge in newer layouts should not mask whether the service is up.
+    let health = { status: 0, body: {} };
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      health = await page.evaluate(
+        async ({ baseUrl, token }) => {
+          const response = await fetch(`${baseUrl}/api/ai/health`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          return { status: response.status, body: await response.json() };
+        },
+        { baseUrl: service.baseUrl, token: service.token },
+      );
+      if (health.status === 200) break;
+      await sleep(500);
+    }
     check('带凭据的健康检查成功', health.status === 200 && health.body.ok === true);
     check(
       '健康检查返回同一实例且离线',
@@ -361,18 +370,20 @@ async function main() {
     await page.getByLabel('打开 AI 助手').click();
     const aiPanel = page.getByLabel('AI 精读助手');
     await aiPanel.locator('input[placeholder^="就这一页"]').fill('这一页的核心内容是什么？');
-    const askBox = await aiPanel.getByRole('button', { name: '提问' }).boundingBox();
-    const badgeBox = await page.locator('.ai-service-badge').boundingBox();
-    const badgesOverlap =
-      askBox !== null &&
-      badgeBox !== null &&
-      askBox.x < badgeBox.x + badgeBox.width &&
-      badgeBox.x < askBox.x + askBox.width &&
-      askBox.y < badgeBox.y + badgeBox.height &&
-      badgeBox.y < askBox.y + askBox.height;
-    check('AI 状态角标不遮挡提问按钮', !badgesOverlap, askBox === null ? 'missing button' : '');
-    await aiPanel.getByRole('button', { name: '提问' }).click();
+    const askButton = aiPanel.getByRole('button', { name: '提问' });
+    check('AI 提问按钮在面板内可见', await askButton.isVisible());
+    await askButton.click();
     await aiPanel.locator('.ai-answer-body').first().waitFor({ timeout: 30_000 });
+    // The answer streams character by character; the skip control ends the animation so the
+    // assertion reads the whole answer rather than the first few characters of it.
+    const skipTyping = aiPanel.getByRole('button', { name: '跳过' });
+    if ((await skipTyping.count()) > 0) {
+      await skipTyping.first().click();
+      await skipTyping
+        .first()
+        .waitFor({ state: 'detached', timeout: 10_000 })
+        .catch(() => {});
+    }
     const answer = await aiPanel.locator('.ai-answer-body').first().innerText();
     const provider = await aiPanel.locator('.ai-provider').innerText();
     check('AI Mock 返回回答', answer.includes('本地模拟回答'), answer.slice(0, 60));
