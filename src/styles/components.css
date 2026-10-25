@@ -2337,3 +2337,92 @@ button.row-main:active {
   color: var(--text-3);
   font-size: 11.5px;
 }
+
+/* ---- Review (spaced repetition) -------------------------------------------- */
+
+.review-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-md);
+  background: var(--card);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.review-card-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.review-card-front {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.review-card-label {
+  color: var(--text-3);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+
+.review-card-name {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.review-card-back {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.review-card-summary {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.review-card-quote {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--select-edge);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.review-card-quote footer {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}

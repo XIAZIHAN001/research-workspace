@@ -15,6 +15,7 @@ import { ImportPaperDialog } from '../features/library/ImportPaperDialog';
 import { BibTeXImportDialog } from '../features/library/BibTeXImportDialog';
 import { LibraryView } from '../features/library/LibraryView';
 import { NotesView } from '../features/notes/NotesView';
+import { ReviewView } from '../features/review/ReviewView';
 import {
   commitImport,
   describeEditFailure,
@@ -32,6 +33,7 @@ import { useProfileName } from '../features/settings/useProfileName';
 import { GlobalSearchDialog } from '../features/search/GlobalSearchDialog';
 import { useKnowledgeApi } from '../features/knowledge/useKnowledgeApi';
 import { createKnowledgeStore, type KnowledgeStore } from '../services/knowledgeStore';
+import { createReviewStore, type ReviewStore } from '../services/reviewStore';
 import { createAnnotation } from '../domain/annotation';
 import { cleanBookmarkLabel, createBookmark } from '../domain/bookmark';
 import { bibtexKey, toBibtex } from '../domain/citation';
@@ -40,6 +42,7 @@ import { downloadTextFile } from '../services/download';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
+import { isDue } from '../domain/review';
 import type { Project } from '../domain/project';
 import type { ProjectsState } from '../domain/projectsState';
 import { daysBetween } from '../domain/time';
@@ -71,11 +74,13 @@ interface AppProps {
   ai?: AiClient;
   /** The knowledge graph's storage; created on first use when not supplied. */
   knowledgeStore?: KnowledgeStore;
+  /** The review schedule's storage; created on first use when not supplied. */
+  reviewStore?: ReviewStore;
   /** Set when start-up had to finish or roll back a restore that was interrupted. */
   restoreNotice?: 'completed' | 'clean' | 'rolled-back' | 'blocked';
 }
 
-type View = 'home' | 'project' | 'library' | 'notes' | 'reader';
+type View = 'home' | 'project' | 'library' | 'notes' | 'review' | 'reader';
 
 /** Which file the import dialog is collecting, and where the paper should end up. */
 interface ImportRequest {
@@ -115,6 +120,7 @@ export function App({
   probe,
   ai,
   knowledgeStore,
+  reviewStore,
   restoreNotice,
 }: AppProps) {
   const { projects, papers, annotations, bookmarks, selected, persisted, issue, actions } =
@@ -131,9 +137,11 @@ export function App({
   // One blob store per app instance: the reader keys its loading effect on this identity.
   const blobStore = useMemo(() => blobs ?? createPdfBlobStore(), [blobs]);
   const knowledge = useMemo(() => knowledgeStore ?? createKnowledgeStore(), [knowledgeStore]);
+  const review = useMemo(() => reviewStore ?? createReviewStore(), [reviewStore]);
   // Subscribed at the top so a dispatch anywhere re-renders the project view, the reader and
   // the sidebar from the same snapshot.
   useSyncExternalStore(knowledge.subscribe, knowledge.getSnapshot);
+  const reviewSnapshot = useSyncExternalStore(review.subscribe, review.getSnapshot);
   const knowledgeApi = useKnowledgeApi(knowledge, makeId);
 
   const [view, setView] = useState<View>('home');
@@ -237,6 +245,29 @@ export function App({
     }),
     [paperList, annotations, knowledgeApi.state.concepts, knowledgeApi.state.evidence],
   );
+
+  /*
+   * The review badge counts what a reader opening the page right now would face: cards whose
+   * time has come, plus confirmed concepts that have never been reviewed. Suggested concepts
+   * wait for confirmation, not for review.
+   */
+  const confirmedIds = useMemo(
+    () =>
+      new Set(
+        knowledgeApi.state.concepts
+          .filter((concept) => concept.status === 'confirmed')
+          .map((concept) => concept.id),
+      ),
+    [knowledgeApi.state.concepts],
+  );
+  const reviewDue = useMemo(() => {
+    let count = 0;
+    for (const conceptId of confirmedIds) {
+      const card = reviewSnapshot.state.cards[conceptId];
+      if (card === undefined || isDue(card, now)) count += 1;
+    }
+    return count;
+  }, [confirmedIds, reviewSnapshot, now]);
 
   // `now` ticks once a minute. Only the values derived from it feed the memo, so the
   // welcome line is requested again when the hour or the idle-day count changes, not every tick.
@@ -428,6 +459,8 @@ export function App({
         libraryActive={view === 'library'}
         notesActive={view === 'notes'}
         notesCount={annotations.length}
+        reviewActive={view === 'review'}
+        reviewDue={reviewDue}
         now={now}
         managing={managing}
         renamingId={renamingId}
@@ -443,6 +476,10 @@ export function App({
         }}
         onNotes={() => {
           setView('notes');
+          closeOverlay();
+        }}
+        onReview={() => {
+          setView('review');
           closeOverlay();
         }}
         onSearch={() => {
@@ -742,6 +779,19 @@ export function App({
             onOpenPaper={openReader}
             onResolveQuestion={(id, resolvedAt) => {
               actions.updateAnnotation(id, { resolvedAt });
+            }}
+          />
+        ) : view === 'review' ? (
+          <ReviewView
+            concepts={knowledgeApi.state.concepts.filter(
+              (concept) => concept.status === 'confirmed',
+            )}
+            evidence={knowledgeApi.state.evidence}
+            papers={papers}
+            cards={reviewSnapshot.state.cards}
+            now={now}
+            onGrade={(conceptId, grade) => {
+              review.dispatch({ type: 'grade', conceptId, grade, at: Date.now() });
             }}
           />
         ) : showProject ? (

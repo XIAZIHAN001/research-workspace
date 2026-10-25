@@ -31,6 +31,8 @@ export const DENSITY_STORAGE_KEY = 'rw.density';
 export const UI_FONT_STORAGE_KEY = 'rw.uiFont';
 /** How strongly scrolling surfaces fade at their edges: off, soft (default) or standard. */
 export const SCROLL_EDGE_STORAGE_KEY = 'rw.scrollEdge';
+/** The spaced-repetition schedule for confirmed concepts. Own key, own version (reviewStore). */
+export const REVIEW_STORAGE_KEY = 'rw.review';
 /** How wide the reader's side panel is, in CSS pixels. */
 export const PANEL_WIDTH_STORAGE_KEY = 'rw.panelWidth';
 export const AVATAR_STORAGE_KEY = 'rw.avatar';
