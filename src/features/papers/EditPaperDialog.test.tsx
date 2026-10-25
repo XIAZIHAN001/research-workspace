@@ -1,0 +1,75 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import type { Paper } from '../../domain/papers';
+import type { MetadataFetchOutcome } from '../../services/metadataFetch';
+import { EditPaperDialog } from './EditPaperDialog';
+
+vi.mock('../../ui/Dialog', () => ({
+  Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+const paper: Paper = {
+  id: 'p1',
+  title: '从文件名来的标题',
+  authors: [],
+  doi: '10.1000/xyz',
+  createdAt: 0,
+  updatedAt: 0,
+};
+
+const answer = (outcome: MetadataFetchOutcome) => vi.fn(() => Promise.resolve(outcome));
+
+function renderDialog(fetchMetadata = answer({ status: 'no-identifier' })) {
+  render(
+    <EditPaperDialog
+      open
+      paper={paper}
+      onClose={vi.fn()}
+      onSave={() => null}
+      fetchMetadata={fetchMetadata}
+    />,
+  );
+  return { fetchMetadata };
+}
+
+describe('EditPaperDialog registry lookup', () => {
+  it('fills only the empty fields and says which ones', async () => {
+    const fetchMetadata = answer({
+      status: 'ok',
+      metadata: {
+        title: 'The Real Title',
+        authors: ['Ada Lovelace'],
+        year: 2031,
+      },
+    });
+    renderDialog(fetchMetadata);
+    fireEvent.click(screen.getByRole('button', { name: '按标识符补全' }));
+    await waitFor(() => {
+      // The title was already filled (from the file name), so only authors and year land.
+      expect(screen.getByRole('status').textContent).toContain('作者、年份');
+    });
+    expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('从文件名来的标题');
+    expect((screen.getByLabelText('作者（逗号分隔）') as HTMLInputElement).value).toBe(
+      'Ada Lovelace',
+    );
+  });
+
+  it('explains a miss without touching anything', async () => {
+    const fetchMetadata = answer({ status: 'not-found' });
+    renderDialog(fetchMetadata);
+    fireEvent.click(screen.getByRole('button', { name: '按标识符补全' }));
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('查不到');
+    });
+    expect(fetchMetadata).toHaveBeenCalledWith({ doi: '10.1000/xyz', arxivId: '' });
+  });
+
+  it('is disabled while a lookup is in flight', () => {
+    const fetchMetadata = vi.fn(() => new Promise<MetadataFetchOutcome>(() => undefined));
+    renderDialog(fetchMetadata);
+    const button = screen.getByRole('button', { name: '按标识符补全' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(screen.getByRole('button', { name: '查询中…' })).toBeTruthy();
+  });
+});

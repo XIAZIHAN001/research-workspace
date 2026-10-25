@@ -2426,3 +2426,14 @@ button.row-main:active {
   border-top: 1px solid var(--hairline);
   padding-top: 12px;
 }
+
+/* The registry lookup row in the paper edit dialog: action beside its status line. */
+.dialog-lookup {
+  align-items: center;
+  gap: 10px;
+}
+
+.dialog-lookup .hint {
+  margin: 0;
+  flex: 1;
+}
