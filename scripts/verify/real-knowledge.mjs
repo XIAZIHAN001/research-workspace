@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { selectSpans } from './text-selection.mjs';
@@ -344,6 +345,7 @@ async function main() {
   await mkdir(WORK_DIR, { recursive: true });
 
   const service = await startService();
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   await requireOfflineProxy(ORIGIN, {
     expectedInstance: service.health.instanceId,

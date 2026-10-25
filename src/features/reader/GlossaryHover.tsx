@@ -38,7 +38,13 @@ export function GlossaryHover({ entries }: GlossaryHoverProps) {
       setCard(null);
     };
 
-    const onOver = (event: MouseEvent): void => {
+    /*
+     * One evaluator for both mouseover and pointermove: mouseover only fires when the pointer
+     * crosses an element boundary, but a whole paragraph is one span, so drifting from a plain
+     * sentence into a term would otherwise never re-evaluate. pointermove covers that; the
+     * mouseover listener stays for the cheap first hit.
+     */
+    const evaluate = (event: MouseEvent): void => {
       const target = event.target;
       if (!(target instanceof HTMLElement) || !target.closest('.textLayer')) {
         return;
@@ -74,6 +80,8 @@ export function GlossaryHover({ entries }: GlossaryHoverProps) {
       }, GLOSSARY_HOVER_DELAY);
     };
 
+    const onOver = evaluate;
+
     const onOut = (event: MouseEvent): void => {
       // Only leave when the pointer has really left the text layer: hops between adjacent
       // spans fire mouseout too, and hiding on each would flicker the card away mid-hover.
@@ -83,10 +91,12 @@ export function GlossaryHover({ entries }: GlossaryHoverProps) {
     };
 
     window.addEventListener('mouseover', onOver);
+    window.addEventListener('pointermove', evaluate);
     window.addEventListener('mouseout', onOut);
     window.addEventListener('scroll', hide, true);
     return () => {
       window.removeEventListener('mouseover', onOver);
+      window.removeEventListener('pointermove', evaluate);
       window.removeEventListener('mouseout', onOut);
       window.removeEventListener('scroll', hide, true);
       if (timer !== null) window.clearTimeout(timer);

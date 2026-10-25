@@ -4,6 +4,7 @@ import { setAppTheme } from './appearance.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { auditContrast } from './contrast.mjs';
 import {
@@ -433,6 +434,7 @@ let browser;
 let server;
 try {
   await mkdir(SHOT_DIR, { recursive: true });
+  assertFreshBuild(import.meta.url);
   server = await startPreview();
   browser = await launchBrowser();
   await wideFlow(browser);

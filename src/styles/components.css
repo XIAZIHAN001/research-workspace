@@ -2496,7 +2496,7 @@ button.row-main:active {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: min(560px, 80vw);
+  width: min(560px, calc(100vw - 96px));
 }
 
 .notes-draft-text {

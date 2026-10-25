@@ -150,3 +150,86 @@ describe('NotesView AI draft flow', () => {
     expect(screen.queryByRole('button', { name: 'AI 整理成稿' })).toBeNull();
   });
 });
+
+describe('draft carry policy (review round 2)', () => {
+  it('prefers notes with bodies when the ceiling forces a cut, in page order', async () => {
+    // 64 highlights fill the ceiling on their own; the only written notes sit past it (p65/p66).
+    // A plain "first 64 by page" cut would both hide the button and lose them.
+    const items = [
+      ...Array.from({ length: 64 }, (_, index) =>
+        note(`q${String(index + 1)}`, 'p1', {
+          page: index + 1,
+          quote: `高亮 ${String(index + 1)}`,
+        }),
+      ),
+      note('w1', 'p1', { page: 65, quote: '后段正文一', note: '我在第 65 页写过话' }),
+      note('w2', 'p1', { page: 66, quote: '后段正文二', note: '我在第 66 页写过话' }),
+    ];
+    const ask = vi.fn((_request: unknown) =>
+      Promise.resolve({
+        ok: true as const,
+        echo: _request,
+        answer: {
+          provider: 'mock',
+          providerLabel: '本地模拟',
+          model: 'mock-1',
+          online: false,
+          mode: 'draft' as const,
+          status: 'valid' as const,
+          answer: '草稿',
+          groundedInText: true,
+          citations: [],
+          warnings: [],
+          diagnostics: null,
+          usage: null,
+        },
+      }),
+    );
+    render(
+      <NotesView
+        annotations={items}
+        papers={papers as Record<string, Paper>}
+        onOpenPaper={vi.fn()}
+        ai={{ ask }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'AI 整理成稿' }));
+    // The disclosure has to describe the policy that is actually applied.
+    expect(screen.getByText(/将发送 64 条/)).toBeTruthy();
+    expect(screen.getByText(/写过正文的优先携带/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '开始整理' }));
+    await waitFor(() => {
+      expect(screen.getByText(/《Attention》.*本地模拟 · mock-1/)).toBeTruthy();
+    });
+    const request = ask.mock.calls[0]?.[0] as {
+      passages: Array<{ id: string; page: number; text: string; selection: boolean }>;
+      draftNotes: Array<{ passageId: string; note: string }>;
+    };
+    expect(request.passages).toHaveLength(64);
+    // Written notes were carried first, then the set was re-sorted by page: they land last.
+    expect(request.passages.map((passage) => passage.page)).toStrictEqual([
+      ...Array.from({ length: 62 }, (_, index) => index + 1),
+      65,
+      66,
+    ]);
+    expect(request.draftNotes).toStrictEqual([
+      { passageId: 'n63', note: '我在第 65 页写过话' },
+      { passageId: 'n64', note: '我在第 66 页写过话' },
+    ]);
+  });
+
+  it('offers nothing when the carried set has no written notes at all', () => {
+    render(
+      <NotesView
+        annotations={[
+          note('q1', 'p1', { page: 1, quote: '高亮一' }),
+          note('q2', 'p1', { page: 2, quote: '高亮二' }),
+        ]}
+        papers={papers as Record<string, Paper>}
+        onOpenPaper={vi.fn()}
+        ai={{ ask: vi.fn() }}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'AI 整理成稿' })).toBeNull();
+  });
+});

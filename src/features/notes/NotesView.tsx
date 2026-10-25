@@ -37,6 +37,25 @@ const QUESTION_STATUS_LABEL: Record<'all' | QuestionStatusFilter, string> = {
 const DRAFT_NOTE_LIMIT = 64;
 
 /**
+ * Applies the ceiling with the written-note-first policy. Notes the reader actually wrote are
+ * carried before pure highlights, and the kept set is re-sorted by page so the draft still
+ * reads in the paper's own order. A reader with 70 highlights and 5 real notes loses nothing.
+ */
+function carryNotes(items: readonly Annotation[]): Annotation[] {
+  const withBody = items.filter((annotation) => annotation.note.trim() !== '');
+  const quoteOnly = items.filter((annotation) => annotation.note.trim() === '');
+  return [
+    ...withBody.slice(0, DRAFT_NOTE_LIMIT),
+    ...quoteOnly.slice(
+      0,
+      Math.max(0, DRAFT_NOTE_LIMIT - Math.min(withBody.length, DRAFT_NOTE_LIMIT)),
+    ),
+  ]
+    .slice(0, DRAFT_NOTE_LIMIT)
+    .sort((one, other) => one.page - other.page || one.createdAt - other.createdAt);
+}
+
+/**
  * Every note in the workspace, grouped by paper.
  *
  * The reader's notes are already beside each paper; this page answers the other question —
@@ -73,11 +92,8 @@ export function NotesView({
     setDraftBusy(true);
     setDraftError(null);
     try {
-      /*
-       * The service's draft ceiling. The group arrives in the paper's own page order, so the
-       * cut keeps the front of the paper — the same order a reader would re-read in.
-       */
-      const carried = group.items.slice(0, DRAFT_NOTE_LIMIT);
+      /* The service's draft ceiling, applied by the same policy the disclosure describes. */
+      const carried = carryNotes(group.items);
       const passages = carried.map((annotation, index) => ({
         id: `n${String(index + 1)}`,
         page: annotation.page,
@@ -239,30 +255,38 @@ export function NotesView({
         </p>
       ) : (
         <div className="notes-groups">
-          {groups.map((group) => (
-            <NotesGroup
-              key={group.paperId}
-              group={group}
-              query={query}
-              onOpenPaper={onOpenPaper}
-              onResolveQuestion={onResolveQuestion}
-              draftEnabled={ai !== undefined && group.items.length >= 2}
-              draftActive={draftFor === group.paperId}
-              draftBusy={draftBusy}
-              draftError={draftError}
-              onStartDraft={() => {
-                setDraftFor(group.paperId);
-                setDraftError(null);
-              }}
-              onRunDraft={() => {
-                void runDraft(group);
-              }}
-              onCancelDraft={() => {
-                setDraftFor(null);
-                setDraftError(null);
-              }}
-            />
-          ))}
+          {groups.map((group) => {
+            const carried = carryNotes(group.items);
+            return (
+              <NotesGroup
+                key={group.paperId}
+                group={group}
+                query={query}
+                onOpenPaper={onOpenPaper}
+                onResolveQuestion={onResolveQuestion}
+                carriedCount={carried.length}
+                draftEnabled={
+                  ai !== undefined &&
+                  group.items.length >= 2 &&
+                  carried.some((annotation) => annotation.note.trim() !== '')
+                }
+                draftActive={draftFor === group.paperId}
+                draftBusy={draftBusy}
+                draftError={draftError}
+                onStartDraft={() => {
+                  setDraftFor(group.paperId);
+                  setDraftError(null);
+                }}
+                onRunDraft={() => {
+                  void runDraft(group);
+                }}
+                onCancelDraft={() => {
+                  setDraftFor(null);
+                  setDraftError(null);
+                }}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -324,6 +348,7 @@ interface NotesGroupProps {
   onOpenPaper: (paperId: string, focus: { page: number; quote: string }) => void;
   onResolveQuestion?: (id: string, resolvedAt: number | null) => void;
   draftEnabled: boolean;
+  carriedCount: number;
   draftActive: boolean;
   draftBusy: boolean;
   draftError: string | null;
@@ -361,6 +386,7 @@ function NotesGroup({
   onOpenPaper,
   onResolveQuestion,
   draftEnabled,
+  carriedCount,
   draftActive,
   draftBusy,
   draftError,
@@ -382,13 +408,10 @@ function NotesGroup({
           {draftActive ? (
             <>
               <p className="hint" role="status">
-                将发送 {String(Math.min(group.items.length, DRAFT_NOTE_LIMIT))} 条笔记的原文引用
-                {group.items.some((annotation) => annotation.note.trim() !== '')
-                  ? '与对应的笔记内容'
-                  : ''}
-                （尚未写过正文的笔记只发引用）。
+                将发送 {String(carriedCount)}{' '}
+                条笔记的原文引用与对应的笔记内容；尚未写过正文的笔记只发引用。
                 {group.items.length > DRAFT_NOTE_LIMIT &&
-                  `论文笔记超过 ${String(DRAFT_NOTE_LIMIT)} 条，只发送按页序靠前的部分。`}
+                  ` 笔记超过 ${String(DRAFT_NOTE_LIMIT)} 条：写过正文的优先携带，其余按页序填充。`}
                 {draftBusy ? '正在整理…' : '若 AI 服务为在线模式，将产生费用；本地模拟则免费。'}
               </p>
               <div className="notes-draft-actions">

@@ -33,6 +33,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { launchBrowser } from './browser.mjs';
 
@@ -981,6 +982,7 @@ async function main() {
       }
       service = await startService(keyInfo.key, keyInfo.source);
     }
+    assertFreshBuild(import.meta.url);
     preview = await startPreview();
     const proxy = await verifyProxy(service.health, mockMode ? 'mock' : 'live');
     const browserHealth = await browserSmoke(service.health.instanceId, mockMode ? 'mock' : 'live');

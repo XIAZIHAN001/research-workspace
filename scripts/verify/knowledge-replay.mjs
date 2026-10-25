@@ -4,6 +4,7 @@ import { setAppTheme } from './appearance.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { createReplayProvider, loadReplayFixtures } from './replay-provider.mjs';
@@ -334,6 +335,7 @@ async function main() {
   await mkdir(SHOT_DIR, { recursive: true });
 
   const service = await startReplayService();
+  assertFreshBuild(import.meta.url);
   const preview = await startPreview();
   const server = { kill: () => preview.kill() };
   const probe = await requireOfflineProxy(ORIGIN, {

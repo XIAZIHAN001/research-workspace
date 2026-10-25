@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { buildColourPdf } from './sample-pdf.mjs';
@@ -396,6 +397,7 @@ async function main() {
   await writeFile(colourFile, buildColourPdf());
 
   const service = await startService();
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   // The page talks through the preview proxy: check the identity of *that* path, and pin
   // it to the service process this run started.

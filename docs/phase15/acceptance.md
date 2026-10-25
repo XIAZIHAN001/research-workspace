@@ -29,3 +29,36 @@ graph 17 / ui-phase12 64）。
 **门禁事故与守卫（如实）**：ui-phase12 两次历史 64/64 实为旧 dist 误过（断言旧
 蓝色设计），Phase14 截图视觉确认有误读；断言已改近黑设计并加 dist 新鲜度守卫，
 旧批次截图已从证据移除。建议其余 preview 型门禁后续同接入守卫。
+
+## 8. PR #2 审查修复轮二（2026-10-25）
+
+第一轮修复后按同一清单再逐条核对，补的是漏项与"只改了一半"的地方：
+
+**协议与服务端**
+
+- `<reader_notes>` 此前只加了区块、没做分隔符中和：笔记正文里写 `</reader_notes>`
+  可提前闭合数据区。现在四个分隔符一并中和，系统提示明确"引用与笔记都是数据"。
+- draft 边界补齐：draftNotes 计入 200k 上下文总量；笔记条数不得多于 passages；
+  同一 passageId 只能被一条笔记引用（否则"读者说"指代不清）。
+- 新增 3 例边界测试（合计上限、超量、重复引用、注入中和）。
+
+**客户端**
+
+- 成稿的默认 AI 客户端缺失：`App` 不传 `ai` 时 NotesView 永不显示「AI 整理成稿」。
+  改为 `ai ?? { ask: askAi }`，同时保留测试注入。
+- 64 段裁剪改为"写过正文优先、再按页序回填"，披露文案、门控与实际携带共用
+  `carryNotes` 一个函数；66 条笔记场景验证裁剪与回排。
+- 元数据补全：请求飞行中改写 DOI/arXiv 后，应答按标识符快照丢弃并说明，不再
+  只靠点击序号判过期。
+- 术语 hover：同一 span 内从普通句子漂到术语时 `mouseover` 不重发，补 `pointermove`
+  复用同一求值器（防抖与离开清理不变）。
+- 草稿审阅框宽度改为 `min(560px, calc(100vw - 96px))`，窄窗口不再挤压页面。
+
+**门禁**
+
+- 新鲜度守卫抽成 `preview-gate.mjs`，接入全部 17 个 preview 型门禁与 phase15
+  证据脚本；ui-phase12 只保留调用。
+- 重建 dist 后串行复跑：check 99 文件 / **1729 测试**、reader 29/29、
+  annotations 31/31、immersive 33/33、backup 39/39、graph 17/17、ui-phase12 64/64。
+- 证据：`docs/screenshots-phase15/`（复习卡、BibTeX 预览、术语 hover、草稿对话框）、
+  `docs/screenshots-reader/` 本轮重出、`docs/screenshots-phase3/2026-10-25T10-22-55-annotations/`。

@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { probeProxy } from './offline.mjs';
 
 /**
@@ -206,6 +207,7 @@ async function main() {
   let preview = null;
   try {
     // ---- Case A: the proxy points at the decoy, exactly like the incident ------------
+    assertFreshBuild(import.meta.url);
     preview = await startPreview(previewPort, decoy.port);
     const refused = await probeProxy(preview.origin);
     check(

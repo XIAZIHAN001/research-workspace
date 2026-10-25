@@ -43,6 +43,7 @@ import { downloadTextFile } from '../services/download';
 import type { AiClient } from '../features/reader/useAiReading';
 import type { PaperEdit } from '../domain/papers';
 import { makeId } from '../services/ids';
+import { askAi } from '../services/ai/client';
 import { isDue } from '../domain/review';
 import type { Project } from '../domain/project';
 import type { ProjectsState } from '../domain/projectsState';
@@ -830,7 +831,7 @@ export function App({
             onResolveQuestion={(id, resolvedAt) => {
               actions.updateAnnotation(id, { resolvedAt });
             }}
-            ai={ai}
+            ai={ai ?? { ask: askAi }}
           />
         ) : view === 'review' ? (
           <ReviewView

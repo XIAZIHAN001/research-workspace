@@ -73,6 +73,18 @@ function EditForm({
   });
   /** Answers that arrive after a newer click (or unmount) are dropped by number. */
   const lookupSeq = useRef(0);
+  /**
+   * The identifiers the request was built from. If the reader edits DOI or arXiv ID while the
+   * request is in flight, the answer describes a paper the form no longer asks about — it is
+   * dropped rather than filled, the same rule the seq token applies to superseded clicks.
+   */
+  const lookupIds = useRef({ doi: '', arxivId: '' });
+  // Mirrors the live fields: the async closure captured the click-time state, so a check
+  // against `doi` inside it would compare the old value with itself and never fire.
+  const currentIds = useRef({ doi: '', arxivId: '' });
+  useEffect(() => {
+    currentIds.current = { doi: doi.trim(), arxivId: arxivId.trim() };
+  });
 
   /*
    * Fills only what is still empty: a title the reader already corrected wins over the
@@ -81,11 +93,21 @@ function EditForm({
   const fillFromRegistries = async (): Promise<void> => {
     const token = lookupSeq.current + 1;
     lookupSeq.current = token;
+    lookupIds.current = { doi: doi.trim(), arxivId: arxivId.trim() };
     setLooking(true);
     setLookup(null);
     try {
       const outcome = await fetchMetadata({ doi: doi.trim(), arxivId: arxivId.trim() });
       if (token !== lookupSeq.current) return;
+      // The identifiers must still be what the request asked about. Saying so beats silence:
+      // the reader just changed the DOI and is probably waiting for exactly this answer.
+      if (
+        currentIds.current.doi !== lookupIds.current.doi ||
+        currentIds.current.arxivId !== lookupIds.current.arxivId
+      ) {
+        setLookup('标识符已修改，本次查询结果已放弃；需要的话请重新点击补全。');
+        return;
+      }
       if (outcome.status === 'no-identifier') {
         setLookup('先填 DOI 或 arXiv ID，才能按它查找。');
         return;

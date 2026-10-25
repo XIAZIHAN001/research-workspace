@@ -56,6 +56,28 @@ describe('GlossaryHover', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
+  it('pointermove inside one span re-evaluates: drift into the term opens the card', () => {
+    // jsdom has no caret API, so the span-level fallback applies — which is exactly the case
+    // pointermove exists for: a whole paragraph is one span, and mouseover never refires in it.
+    render(<GlossaryHover entries={entries} />);
+    const span = spanWith('plain words, then KZG appears');
+    fireEvent.mouseOver(span, { clientX: 10, clientY: 10 });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    // jsdom fallback matches the whole span, so the card is already up — the point is the
+    // reverse direction: entering a termless span never needs a new mouseover to clear it.
+    fireEvent.pointerMove(span, { clientX: 10, clientY: 10 });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+
+    const other = spanWith('nothing here');
+    fireEvent.pointerMove(other, { clientX: 20, clientY: 20 });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
   it('a span that mentions no term never opens a card', () => {
     render(<GlossaryHover entries={entries} />);
     const span = spanWith('nothing defined in here');

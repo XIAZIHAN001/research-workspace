@@ -4,6 +4,7 @@ import { setAppTheme } from './appearance.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { requireOfflineProxy } from './offline.mjs';
 import { selectSpans } from './text-selection.mjs';
@@ -539,6 +540,7 @@ async function main() {
   await mkdir(fileURLToPath(WORK_DIR), { recursive: true });
 
   const service = await startService();
+  assertFreshBuild(import.meta.url);
   const preview = await startPreview();
   await requireOfflineProxy(ORIGIN, {
     expectedInstance: service.health.instanceId,

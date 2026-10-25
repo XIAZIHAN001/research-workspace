@@ -4,6 +4,7 @@ import { setAppTheme } from './appearance.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { buildRichTextPdf, buildTwoColumnPdf } from './sample-pdf.mjs';
 import {
@@ -168,6 +169,7 @@ async function main() {
   await writeFile(twoColumn, buildTwoColumnPdf());
   await writeFile(richText, buildRichTextPdf());
 
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   const browser = await launchBrowser();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });

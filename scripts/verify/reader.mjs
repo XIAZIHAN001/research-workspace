@@ -4,6 +4,7 @@ import { setAppTheme } from './appearance.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { assertFreshBuild } from './preview-gate.mjs';
 import { launchBrowser } from './browser.mjs';
 import { buildBrokenPdf, buildSamplePdf } from './sample-pdf.mjs';
 
@@ -83,6 +84,7 @@ async function main() {
   await writeFile(SAMPLE_FILE, buildSamplePdf());
   await writeFile(BROKEN_FILE, buildBrokenPdf());
 
+  assertFreshBuild(import.meta.url);
   const server = await startPreview();
   const browser = await launchBrowser();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });

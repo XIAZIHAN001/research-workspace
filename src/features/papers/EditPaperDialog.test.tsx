@@ -138,3 +138,40 @@ describe('EditPaperDialog lookup races', () => {
     expect(answers).toHaveLength(1);
   });
 });
+
+describe('EditPaperDialog identifier snapshot (review round 2)', () => {
+  it('drops an answer whose identifiers the reader has since changed', async () => {
+    const answers: Array<(value: MetadataFetchOutcome) => void> = [];
+    const fetchMetadata = vi.fn(
+      () =>
+        new Promise<MetadataFetchOutcome>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    render(
+      <EditPaperDialog
+        open
+        paper={{ ...paper, doi: '10.1000/xyz' }}
+        onClose={vi.fn()}
+        onSave={() => null}
+        fetchMetadata={fetchMetadata}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '按标识符补全' }));
+    // While the registry thinks, the reader replaces the DOI with a different paper's.
+    fireEvent.change(screen.getByLabelText('DOI（留空表示清除）'), {
+      target: { value: '10.9999/other' },
+    });
+    answers[0]?.({
+      status: 'ok',
+      metadata: { title: 'Wrong Paper Title', authors: ['Wrong Author'], year: 1999 },
+    });
+    await waitFor(() => {
+      // The status line says the answer was dropped, and nothing was filled.
+      expect(screen.getByRole('status').textContent).toContain('已放弃');
+    });
+    expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('从文件名来的标题');
+    expect((screen.getByLabelText('作者（逗号分隔）') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('年份') as HTMLInputElement).value).toBe('');
+  });
+});
