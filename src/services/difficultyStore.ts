@@ -73,6 +73,7 @@ export function loadDifficulties(store: KeyValueStore | null = defaultStore()): 
   const pages: Record<string, DifficultyPageRecord> = {};
   if (isRecord(parsed.pages)) {
     for (const [key, value] of Object.entries(parsed.pages)) {
+      if (key === '__proto__') continue;
       if (isDifficultyPageRecord(value)) pages[key] = value;
     }
   }
@@ -80,6 +81,7 @@ export function loadDifficulties(store: KeyValueStore | null = defaultStore()): 
   const ignored: Record<string, string[]> = {};
   if (isRecord(parsed.ignored)) {
     for (const [key, value] of Object.entries(parsed.ignored)) {
+      if (key === '__proto__') continue;
       if (Array.isArray(value)) ignored[key] = value.filter((id) => typeof id === 'string');
     }
   }

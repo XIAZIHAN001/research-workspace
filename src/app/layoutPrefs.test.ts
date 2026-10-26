@@ -83,7 +83,8 @@ describe('resetLayoutDefaults', () => {
 
     expect(window.localStorage.getItem(LAYOUT_PRESET_STORAGE_KEY)).toBe('balanced');
     expect(Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY))).toBe(224);
-    expect(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('open');
+    // The legacy open/closed key is no longer written by this build; the preset owns that.
+    expect(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBeNull();
     expect(Number(window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY))).toBe(360);
     expect(window.localStorage.getItem(DENSITY_STORAGE_KEY)).toBe('standard');
     expect(window.localStorage.getItem(UI_FONT_STORAGE_KEY)).toBe('default');

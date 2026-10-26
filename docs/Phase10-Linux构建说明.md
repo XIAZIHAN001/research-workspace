@@ -86,4 +86,5 @@ npx tauri build --bundles deb,appimage
   未在 Linux 上做“关闭→重开→重装”验证。
 - **AppImage 资源路径**：`resource_dir()` 在 AppImage 挂载环境下返回的路径需要在真实 AppImage 中确认。
 - **桌面窗口**：Linux 的窗口装饰/缩放由桌面环境决定，未验证。
+- **凭据存储与在线 AI 不可用**：`src-tauri/src/credentials.rs` 的非 Windows 实现直接返回错误，当前 Linux 版本只能使用离线 Mock，无法保存 API Key 或切换到在线模式。若要支持 Linux 在线 AI，需要先接入 Secret Service / libsecret 等系统凭据后端。
 - 本轮**没有**在 Linux 上执行 `cargo build`、`tauri build` 或 GUI 启动；上表是静态代码审查结论。

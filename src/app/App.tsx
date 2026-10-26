@@ -287,7 +287,10 @@ export function App({
   const reviewDue = useMemo(() => {
     let count = 0;
     for (const conceptId of confirmedIds) {
-      const card = reviewSnapshot.state.cards[conceptId];
+      // Own property only: `cards.constructor` would be an inherited function, not a card.
+      const card = Object.hasOwn(reviewSnapshot.state.cards, conceptId)
+        ? reviewSnapshot.state.cards[conceptId]
+        : undefined;
       if (card === undefined || isDue(card, now)) count += 1;
     }
     return count;
@@ -581,6 +584,12 @@ export function App({
         {!persisted && (
           <p className="banner" role="status">
             浏览器没有保存最近的改动，关闭窗口后可能丢失。
+          </p>
+        )}
+
+        {!reviewSnapshot.persisted && (
+          <p className="banner" role="status">
+            复习进度没有保存到本机，关闭窗口后可能丢失。
           </p>
         )}
 
@@ -965,17 +974,17 @@ export function App({
           setBibtexOpen(false);
         }}
         onImport={(inputs) => {
-          // addPaper decides per entry: create, reuse the record its identifiers name, or
-          // refuse a conflict. The notice counts what ended up in place, without claiming
-          // every one of them was created by this import.
-          let conflicts = 0;
-          for (const input of inputs) {
-            const outcome = actions.addPaper(input);
-            if (outcome.status === 'conflict') conflicts += 1;
-          }
+          // One dispatch for the whole bibliography: each entry is created, matched to an
+          // existing paper, or refused without re-serializing the workspace per row.
+          const outcomes = actions.addPapers(inputs);
+          const added = outcomes.filter((outcome) => outcome.status === 'added').length;
+          const conflicts = outcomes.filter((outcome) => outcome.status === 'conflict').length;
+          const invalid = outcomes.filter((outcome) => outcome.status === 'invalid').length;
           setNotice(
-            `BibTeX 导入完成：${String(inputs.length - conflicts)} 篇已就位` +
-              (conflicts > 0 ? `，${String(conflicts)} 篇因标识符冲突未导入。` : '。'),
+            `BibTeX 导入完成：${String(added)} 篇已就位` +
+              (conflicts > 0 ? `，${String(conflicts)} 篇因标识符冲突未导入` : '') +
+              (invalid > 0 ? `，${String(invalid)} 篇缺少可用标题` : '') +
+              '。',
           );
         }}
       />
@@ -1046,7 +1055,9 @@ export function App({
         onChangeLayoutPreset={(preset) => {
           layout.setPreset(preset);
           // The preset names the startup layout; choosing one arranges the live one too.
-          sidebar.setOpen(preset !== 'focus');
+          // Below the narrow breakpoint the sidebar is a drawer, and opening it behind the
+          // Settings dialog would leave the reader greeting an overlay on close.
+          if (!sidebar.narrow) sidebar.setOpen(preset !== 'focus');
         }}
         sidebarWidth={sidebar.width}
         onSidebarWidth={sidebar.setWidth}

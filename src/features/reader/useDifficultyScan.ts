@@ -121,7 +121,9 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
 
   /** Pages that failed, so an automatic pass does not retry them in a loop. */
   const failedPages = useRef(new Set<number>());
-  const running = useRef(false);
+  /** Pages waiting for the one in-flight request to finish. */
+  const queue = useRef<number[]>([]);
+  const draining = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
     // StrictMode mounts, cleans up and mounts again in development; the flag has to come back
@@ -131,6 +133,12 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
       mounted.current = false;
     };
   }, []);
+
+  // A mode/key change replaces the service and revokes an earlier paid consent. Anything queued
+  // under the old permission must not be sent afterwards.
+  useEffect(() => {
+    queue.current = [];
+  }, [online, onlineConsent, serviceInstanceId]);
 
   const analysePage = useCallback(
     async (page: number): Promise<void> => {
@@ -151,19 +159,25 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
           window.setTimeout(resolve, RENDER_RETRY_MS);
         });
       }
-      if (text === null) return;
-      if (running.current) return;
+      if (text === null || !mounted.current) return;
 
-      running.current = true;
       setStatus('running');
       setError(null);
 
       const ask = analyze ?? analyzeDifficulties;
-      const outcome = await ask({
-        paper: { id: paperId, title: '', page, pdfSha256 },
-        pageText: text,
-      });
-      running.current = false;
+      let outcome: Awaited<ReturnType<typeof ask>>;
+      try {
+        outcome = await ask({
+          paper: { id: paperId, title: '', page, pdfSha256 },
+          pageText: text,
+        });
+      } catch (caught) {
+        if (!mounted.current) return;
+        failedPages.current.add(page);
+        setStatus('error');
+        setError(caught instanceof Error ? caught.message : '这一页的难点分析失败了。');
+        return;
+      }
       if (!mounted.current) return;
 
       if (!outcome.ok) {
@@ -202,13 +216,42 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
     [analyze, locate, model, paperId, pageTextFor, pdfSha256],
   );
 
+  /**
+   * Runs one page at a time and keeps later requests in a queue.
+   *
+   * The previous implementation dropped overlap silently, so a manual "analyse this page" during
+   * an automatic pass did nothing and the page might never be analysed. Queueing keeps both
+   * requests visible and bounded by the service's own concurrency gate.
+   */
+  const drainQueue = useCallback(async (): Promise<void> => {
+    if (draining.current) return;
+    draining.current = true;
+    try {
+      while (mounted.current && queue.current.length > 0) {
+        const page = queue.current.shift();
+        if (page === undefined) break;
+        await analysePage(page);
+      }
+    } finally {
+      draining.current = false;
+    }
+  }, [analysePage]);
+
+  const schedule = useCallback(
+    (page: number) => {
+      if (!queue.current.includes(page)) queue.current.push(page);
+      void drainQueue();
+    },
+    [drainQueue],
+  );
+
   /** Analyses on request, clearing any earlier failure for that page. */
   const analyse = useCallback(
     (page: number = currentPage) => {
       failedPages.current.delete(page);
-      void analysePage(page);
+      schedule(page);
     },
-    [analysePage, currentPage],
+    [currentPage, schedule],
   );
 
   const reanalyse = useCallback(() => {
@@ -218,8 +261,8 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
       saveDifficulties(next);
       return next;
     });
-    void analysePage(currentPage);
-  }, [analysePage, currentPage, pdfSha256]);
+    schedule(currentPage);
+  }, [currentPage, pdfSha256, schedule]);
 
   // The automatic pass: one page, after the reader has settled on it.
   useEffect(() => {
@@ -229,21 +272,12 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
     if (failedPages.current.has(currentPage)) return;
     if (state.pages[pageKey(pdfSha256, currentPage, model)] !== undefined) return;
     const timer = window.setTimeout(() => {
-      void analysePage(currentPage);
+      schedule(currentPage);
     }, SETTLE_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [
-    prefs.enabled,
-    model,
-    online,
-    onlineConsent,
-    currentPage,
-    pdfSha256,
-    state.pages,
-    analysePage,
-  ]);
+  }, [prefs.enabled, model, online, onlineConsent, currentPage, pdfSha256, state.pages, schedule]);
 
   const grantOnlineConsent = useCallback(() => {
     setConsentInstance(serviceInstanceId);

@@ -44,7 +44,7 @@ import {
   type LayoutChangeDetail,
   type LayoutPreset,
 } from '../../app/layoutPrefs';
-import { fetchAiHealth } from '../../services/ai/client';
+import { askAi, fetchAiHealth } from '../../services/ai/client';
 import type { AiCitation, AiHealth, AiMode } from '../../services/ai/types';
 import { AI_MODE_EVENT } from '../../services/desktop/aiService';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
@@ -53,7 +53,7 @@ import { useTimeout } from '../../ui/useTimeout';
 import { AiPanel } from './AiPanel';
 import { AnnotationToolbar } from './AnnotationToolbar';
 import { GlossaryHover } from './GlossaryHover';
-import { buildAskContext, MAX_DOCUMENT_PASSAGES } from '../../services/ai/context';
+import { buildAskContext, documentScope } from '../../services/ai/context';
 import type { PaperSummary } from '../../domain/papers';
 import type { GlossaryEdit, GlossaryEntry } from '../../domain/glossary';
 import { FindBar } from './FindBar';
@@ -96,7 +96,7 @@ import { useDocumentText } from './useDocumentText';
 import { usePdfOutline } from './usePdfOutline';
 import { usePdfSearch } from './usePdfSearch';
 import { useReadingHistory } from './useReadingHistory';
-import { useAiReading, type AiClient, type AiSource, type AiTurn } from './useAiReading';
+import { useAiReading, type AiAskClient, type AiSource, type AiTurn } from './useAiReading';
 import type { PaperModeController } from './usePaperMode';
 
 /** How long the reading column must hold still before a new fit-width scale is computed. */
@@ -148,7 +148,7 @@ interface ReaderViewProps {
   onEditAnnotation: (id: string, edit: AnnotationEdit) => void;
   onDeleteAnnotation: (annotation: Annotation) => void;
   /** Injectable so tests and the browser checks can supply a deterministic assistant. */
-  aiClient?: AiClient;
+  aiClient?: AiAskClient;
   /** The application's resolved theme, which the paper follows until the reader chooses. */
   theme: 'light' | 'dark';
   /**
@@ -179,6 +179,15 @@ const OVERLAY_QUERY = READER_OVERLAY_QUERY;
 
 /** How long to wait for a page the reader jumped to to finish rendering its text layer. */
 const RENDER_WAIT_MS = 2500;
+
+/**
+ * The summary card's transport when the host injected none.
+ *
+ * It is the same default `useAiReading` already uses: the assistant works without a caller
+ * supplying a client, and the summary card must too. Without this fallback the button was
+ * rendered but its handler returned immediately, which read as a dead control.
+ */
+const DEFAULT_SUMMARY_CLIENT: AiAskClient = { ask: askAi };
 
 /**
  * Waits until a page has a usable text layer, then returns its element.
@@ -455,13 +464,48 @@ export function ReaderView({
   const ai = useAiReading(aiClient);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryNotice, setSummaryNotice] = useState<string | null>(null);
+  /**
+   * One health probe at a time, shared by the summary disclosure.
+   *
+   * The disclosure is the first place a reader can send a whole paper to the assistant
+   * without ever opening the AI panel, so it must ask what the service is before saying
+   * anything about cost. It also must not ask twice while the same answer is in flight.
+   */
+  const healthInFlight = useRef(false);
+  const ensureHealth = useCallback(async (): Promise<void> => {
+    if (health !== null || healthInFlight.current) return;
+    healthInFlight.current = true;
+    try {
+      const found = await fetchAiHealth();
+      if (found !== null) setHealth(found);
+    } finally {
+      healthInFlight.current = false;
+    }
+  }, [health]);
 
   const pdfSha256 = paper.pdf?.sha256 ?? null;
+  // One transport for the summary card, injected or the app's own. The AI panel already has
+  // the same fallback through `useAiReading`; the summary must not be the one path that can
+  // silently have no client at all.
+  const summaryClient = aiClient ?? DEFAULT_SUMMARY_CLIENT;
   // Read in the background, once per file: the assistant answers from the whole paper, not the page.
   const documentText = useDocumentText(
     state.status === 'ready' ? state.doc : null,
     pdfSha256 === null ? null : `pdf:${pdfSha256}`,
   );
+  // The disclosure and the request share one calculation: pages actually eligible, not the
+  // total on the file. The current page is skipped there because its text travels as the
+  // primary passage; it is still counted as sent.
+  const summaryScope = useMemo(() => {
+    const planned = documentScope(documentText.pages, currentPage);
+    return planned === null
+      ? null
+      : {
+          pagesSent: planned.pagesSent,
+          pagesTotal: planned.pagesTotal,
+          truncated: planned.truncated,
+        };
+  }, [documentText.pages, currentPage]);
   const here = useMemo(
     () => annotations.filter((annotation) => annotation.pdfSha256 === pdfSha256),
     [annotations, pdfSha256],
@@ -1128,7 +1172,7 @@ export function ReaderView({
    * a card keeps saying which model wrote it, forever, even after that model is long gone.
    */
   const generateSummary = async (): Promise<void> => {
-    if (aiClient === undefined || summaryBusy || onSaveSummary === undefined) return;
+    if (summaryBusy || onSaveSummary === undefined) return;
     setSummaryNotice(null);
     if (documentText.pages.length === 0) {
       setSummaryNotice('论文文字还没有提取好，稍等一下再试。');
@@ -1152,9 +1196,15 @@ export function ReaderView({
         mode: 'summarize',
         question: '请按「问题 / 方法 / 结论」生成这篇论文的摘要卡。',
       });
-      const result = await aiClient.ask(request);
+      const result = await summaryClient.ask(request);
       if (!result.ok) {
         setSummaryNotice(`生成失败：${result.failure.message}`);
+        return;
+      }
+      // A card with no text would be stored only until the next reload, where the parser
+      // rightly drops it. Refuse it now and say why instead of showing a card that vanishes.
+      if (result.answer.answer.trim() === '') {
+        setSummaryNotice('生成失败：模型没有返回可保存的内容。');
         return;
       }
       onSaveSummary({
@@ -1748,16 +1798,11 @@ export function ReaderView({
                   summary={paper.summary}
                   summaryBusy={summaryBusy}
                   summaryNotice={summaryNotice}
-                  summaryScope={
-                    documentText.pages.length === 0
-                      ? null
-                      : {
-                          pagesSent: Math.min(documentText.pages.length, MAX_DOCUMENT_PASSAGES),
-                          pagesTotal: documentText.pages.length,
-                          truncated: documentText.pages.length > MAX_DOCUMENT_PASSAGES,
-                        }
-                  }
-                  summaryOnline={health?.online === true}
+                  summaryScope={summaryScope}
+                  summaryOnline={health === null ? null : health.online}
+                  onPrepareSummary={() => {
+                    void ensureHealth();
+                  }}
                   summaryStale={
                     paper.summary?.pdfSha256 !== undefined &&
                     paper.summary.pdfSha256 !== (paper.pdf?.sha256 ?? paper.summary.pdfSha256)
@@ -1838,7 +1883,17 @@ export function ReaderView({
           onKnowledge={() => {
             openKnowledge(pendingSelection.anchor);
           }}
-          onTerm={onAddTerm}
+          onTerm={
+            onAddTerm === undefined
+              ? undefined
+              : (draft) => {
+                  onAddTerm(draft);
+                  // The toolbar belongs to the selection it was opened for; once the term is
+                  // recorded there is nothing left to act on, and leaving it open made the
+                  // reader dismiss a form that had already saved.
+                  clearSelection();
+                }
+          }
           selectionText={pendingSelection.anchor.quote}
           onDismiss={clearSelection}
         />

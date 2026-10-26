@@ -2,10 +2,10 @@
  * The local AI service.
  *
  * Its whole job is to keep the API key off the browser and the paper text off the network
- * except for the one call the reader asked for. Consequently:
+ * except for the calls the reader explicitly asked for. Consequently:
  *
  * - it listens on 127.0.0.1 only (see `config.mjs`: not configurable);
- * - it serves exactly two paths and forwards nothing;
+ * - it serves only the four known paths and forwards nothing;
  * - the provider, the base URL and the model come from the environment, never the request;
  * - every request is bounded in size, rate and concurrency before it can cost anything;
  * - the response is JSON, and nothing in it is ever served as HTML.
@@ -44,20 +44,24 @@ import { createProvider } from './providers/index.mjs';
 import { createLogger } from './log.mjs';
 import { describePrice, estimateCostCny } from './pricing.mjs';
 
+/** CJK and full-width characters, which tokenizers treat at roughly one token each. */
+const WIDE_CHAR = /[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/gu;
+
 /**
  * A pessimistic input estimate, in tokens, used only for the *upper bound* a call may consume.
  *
- * Chinese text is roughly one token per character and English about a quarter, so half a
- * character per token plus a fixed allowance is above either. Overestimating means a budget is
- * exhausted a little early, which is the safe direction; underestimating would mean a call slips
- * past the limit.
+ * The two scripts are not interchangeable: CJK is roughly one token per character, while Latin
+ * text is about one per three and a half. A single `chars / 2` was above Latin and below CJK —
+ * it refused long Latin documents that would have fitted, and under-reserved Chinese ones. The
+ * fixed allowance covers the message framing.
  */
-function estimatePromptTokens(chars) {
-  return 400 + Math.ceil(chars / 2);
+export function estimatePromptTokens(text) {
+  const wide = text.match(WIDE_CHAR)?.length ?? 0;
+  return 400 + wide + Math.ceil((text.length - wide) / 3.5);
 }
 
-function charCount(system, messages) {
-  return system.length + messages.reduce((sum, message) => sum + (message.content?.length ?? 0), 0);
+function promptText(system, messages) {
+  return system + messages.map((message) => message.content ?? '').join('');
 }
 
 /** Headers a browser needs before it will let the page read our reply, for allowed origins only. */
@@ -133,8 +137,8 @@ export function createAiServer({
    * remaining budget individually must not all pass and then collectively overspend. It is
    * released when the call fails and settled with the reported usage when it succeeds.
    */
-  function reserveBudget({ contextChars, maxTokens }) {
-    const bound = estimatePromptTokens(contextChars) + maxTokens;
+  function reserveBudget({ prompt, maxTokens }) {
+    const bound = estimatePromptTokens(prompt) + maxTokens;
     if (online && usage.requests >= budget.requests) {
       return {
         ok: false,
@@ -291,7 +295,7 @@ export function createAiServer({
       // The budget check happens before the call, with a pessimistic input estimate and the
       // generation ceiling, so a refusal is decided without spending anything.
       const reservation = reserveBudget({
-        contextChars: charCount(system, messages),
+        prompt: promptText(system, messages),
         maxTokens,
       });
       if (!reservation.ok) {
@@ -447,7 +451,7 @@ export function createAiServer({
       const maxTokens = maxTokensForCall();
 
       const reservation = reserveBudget({
-        contextChars: charCount(system, messages),
+        prompt: promptText(system, messages),
         maxTokens,
       });
       if (!reservation.ok) {
@@ -590,7 +594,7 @@ export function createAiServer({
       const maxTokens = maxTokensForCall();
 
       const reservation = reserveBudget({
-        contextChars: charCount(system, messages),
+        prompt: promptText(system, messages),
         maxTokens,
       });
       if (!reservation.ok) {

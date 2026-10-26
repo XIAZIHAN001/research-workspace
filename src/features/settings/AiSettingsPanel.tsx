@@ -410,7 +410,7 @@ export function AiSettingsPanel() {
     setBusy('key');
     setNote(null);
     const provider = modelDraft.provider;
-    const result = await setAiApiKey(provider, candidate);
+    const result = await setAiApiKey(provider, candidate, modelDraft.baseUrl);
     // Drop the page's copy whether or not the write succeeded.
     setKeyInput('');
     setShowKey(false);
@@ -429,7 +429,7 @@ export function AiSettingsPanel() {
       text: 'API Key 已保存到系统凭据存储。应用不会把它写进浏览器存储、备份或日志。',
     });
     void refresh();
-  }, [keyInput, modelDraft.provider, refresh]);
+  }, [keyInput, modelDraft.baseUrl, modelDraft.provider, refresh]);
 
   const removeKey = useCallback(async () => {
     setBusy('delete');
@@ -580,13 +580,28 @@ export function AiSettingsPanel() {
       setModelNote({ kind: 'warning', text: '请先填写 API 地址，再获取模型列表。' });
       return;
     }
+    const saved = settingsRef.current;
+    const preset = providers.find((candidate) => candidate.id === modelDraft.provider);
+    const savedBase =
+      saved !== null && saved.provider === modelDraft.provider
+        ? saved.baseUrl.trim()
+        : (preset?.baseUrl ?? '').trim();
+    const candidateKey = keyInput.trim();
+    // A stored key is bound to the endpoint it was saved for. Asking a different endpoint with
+    // it would be exactly the credential-forwarding path this guard exists to close.
+    if (baseUrl !== savedBase && candidateKey === '') {
+      setModelNote({
+        kind: 'warning',
+        text: '更换 API 地址后，获取模型列表需要先在上面输入这个地址的 API Key；保存 Key 时会把地址一并绑定。',
+      });
+      return;
+    }
     setBusy('models');
     setModelNote(null);
-    // An empty key means "use the one already stored for this provider"; the shell reads it.
     const result = await listAiModels({
       provider: modelDraft.provider,
       baseUrl,
-      apiKey: '',
+      apiKey: candidateKey,
     });
     if (!alive.current) return;
     setBusy(null);
@@ -599,7 +614,7 @@ export function AiSettingsPanel() {
       kind: 'success',
       text: `查询到 ${String(result.models.length)} 个可用模型，点选即可填入。`,
     });
-  }, [modelDraft.baseUrl, modelDraft.provider]);
+  }, [keyInput, modelDraft.baseUrl, modelDraft.provider, providers]);
 
   /** Undoes unsaved edits in the model section, including a provider switch. */
   const resetModel = useCallback(() => {
@@ -852,8 +867,9 @@ export function AiSettingsPanel() {
             </h3>
             <p className="ai-settings__hint">
               供应商决定调用哪家服务；API 地址和模型名称都可以手动填写。也可以先保存密钥，
-              再用「获取可用模型」读取这个账号实际可用的模型列表。离线模拟不会调用模型，
-              但这里的设置会保留，切换到在线模式后生效。
+              再用「获取可用模型」读取这个账号实际可用的模型列表。Key 会绑定保存时的 API
+              地址（协议与主机）：更换地址后需要重新保存 Key，旧 Key
+              不会自动发往新地址。离线模拟不会调用 模型，但这里的设置会保留，切换到在线模式后生效。
             </p>
             <div className="ai-settings__budget">
               <Choice

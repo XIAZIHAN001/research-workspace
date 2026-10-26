@@ -149,6 +149,63 @@ describe('useProjects: referencePaper', () => {
   });
 });
 
+describe('useProjects: addPapers', () => {
+  it('registers a whole bibliography in one write and reuses identifiers inside the batch', () => {
+    const { store, result } = setup();
+    let dispatches = 0;
+    const unsubscribe = store.subscribe(() => {
+      dispatches += 1;
+    });
+
+    const outcomes = result.current.actions.addPapers([
+      { title: 'One', doi: '10.1000/one' },
+      { title: 'Two', doi: '10.1000/two' },
+      { title: 'One again', doi: '10.1000/ONE' },
+    ]);
+    unsubscribe();
+
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['added', 'added', 'added']);
+    const first = outcomes[0];
+    const third = outcomes[2];
+    if (first?.status !== 'added' || third?.status !== 'added') throw new Error('not added');
+    expect(third.paper.id).toBe(first.paper.id);
+    expect(Object.keys(registryOf(store))).toHaveLength(3);
+    expect(dispatches).toBe(1);
+  });
+
+  it('reports an identifier conflict inside the batch without adding a paper', () => {
+    const { store, result } = setup();
+    store.dispatch({
+      type: 'registerPapers',
+      papers: [
+        {
+          id: 'by-doi',
+          title: 'By DOI',
+          authors: [],
+          doi: '10.1000/shared',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'by-arxiv',
+          title: 'By arXiv',
+          authors: [],
+          arxivId: '2401.12345',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    const outcomes = result.current.actions.addPapers([
+      { title: 'Both', doi: '10.1000/shared', arxivId: '2401.12345' },
+    ]);
+
+    expect(outcomes[0]?.status).toBe('conflict');
+    expect(Object.keys(registryOf(store))).toHaveLength(3);
+  });
+});
+
 describe('useProjects: unlinkPaper', () => {
   it('drops the link and keeps the paper in the registry', () => {
     const { store, result } = setup();

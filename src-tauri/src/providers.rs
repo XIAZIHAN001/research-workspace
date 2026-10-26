@@ -136,6 +136,34 @@ fn is_loopback_authority(authority: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// The endpoint a credential is bound to: scheme plus `host` or `host:port`, lowercase.
+///
+/// This is what a saved API key remembers about the endpoint it was entered for. Binding to the
+/// full URL would break on a trailing slash or a path change; binding to scheme and authority
+/// keeps the key from travelling to a different host (or being downgraded from https to http)
+/// while allowing `/v1` and `/v1/` to be the same endpoint.
+pub fn endpoint_key(value: &str) -> Option<String> {
+    let value = normalize_base_url(value);
+    let (scheme, rest) = if let Some(rest) = value.strip_prefix("https://") {
+        ("https", rest)
+    } else if let Some(rest) = value.strip_prefix("http://") {
+        ("http", rest)
+    } else {
+        return None;
+    };
+    let authority = rest
+        .split(|character| character == '/' || character == '?' || character == '#')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if authority.is_empty() {
+        None
+    } else {
+        Some(format!("{scheme}://{authority}"))
+    }
+}
+
 /// Accepts https anywhere, and plain http only on loopback.
 ///
 /// The loopback exception is for models run on the same machine (Ollama, LM Studio, a local
@@ -145,7 +173,10 @@ pub fn validate_base_url(value: &str) -> Result<(), String> {
     if value.is_empty() {
         return Err("请填写 API 地址。".to_string());
     }
-    if value.chars().any(|character| character.is_whitespace() || character.is_control()) {
+    if value
+        .chars()
+        .any(|character| character.is_whitespace() || character.is_control())
+    {
         return Err("API 地址不能包含空格或控制字符。".to_string());
     }
 
@@ -154,7 +185,10 @@ pub fn validate_base_url(value: &str) -> Result<(), String> {
     } else if let Some(rest) = value.strip_prefix("http://") {
         let authority = rest.split('/').next().unwrap_or("");
         if !is_loopback_authority(authority) {
-            return Err("只有本机地址（127.0.0.1 / localhost）可以使用 http；其他地址必须是 https。".to_string());
+            return Err(
+                "只有本机地址（127.0.0.1 / localhost）可以使用 http；其他地址必须是 https。"
+                    .to_string(),
+            );
         }
         rest
     } else {
@@ -225,6 +259,27 @@ mod tests {
 
     #[test]
     fn trailing_slashes_are_removed() {
-        assert_eq!(normalize_base_url(" https://a.test/v1// "), "https://a.test/v1");
+        assert_eq!(
+            normalize_base_url(" https://a.test/v1// "),
+            "https://a.test/v1"
+        );
+    }
+
+    #[test]
+    fn credential_binding_uses_the_authority_not_the_path() {
+        assert_eq!(
+            endpoint_key("https://API.Example.com/v1/").as_deref(),
+            Some("https://api.example.com")
+        );
+        assert_eq!(
+            endpoint_key("http://127.0.0.1:11434/v1").as_deref(),
+            Some("http://127.0.0.1:11434")
+        );
+        assert_eq!(
+            endpoint_key("https://example.com:8443/v1?x=1#y").as_deref(),
+            Some("https://example.com:8443")
+        );
+        assert_eq!(endpoint_key("https://"), None);
+        assert_eq!(endpoint_key(""), None);
     }
 }

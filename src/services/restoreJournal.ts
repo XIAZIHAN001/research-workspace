@@ -29,6 +29,13 @@ export interface RestoreJournal {
   id: string;
   startedAt: number;
   keys: Record<string, RestoreJournalEntry>;
+  /**
+   * Set only after every written key has been read back and verified.
+   *
+   * A committed journal describes a finished restore whose cleanup was lost. It must never be
+   * treated as half-written: rolling it back would undo a restore the reader was told succeeded.
+   */
+  committed?: boolean;
 }
 
 export interface RestoreJournalStore {
@@ -70,14 +77,32 @@ function run<T>(
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE, mode);
     const request = work(transaction.objectStore(STORE));
+    let result!: T;
+    let settled = false;
+    const succeed = (): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
+    // The journal is what makes a restore recoverable. Resolving on request success would let
+    // the restore start writing data before the journal itself is durable.
     request.onsuccess = () => {
-      resolve(request.result);
+      result = request.result;
     };
     request.onerror = () => {
-      reject(request.error ?? new Error('恢复日志读写失败。'));
+      fail(request.error ?? new Error('恢复日志读写失败。'));
+    };
+    transaction.oncomplete = succeed;
+    transaction.onerror = () => {
+      fail(transaction.error ?? new Error('恢复日志事务失败。'));
     };
     transaction.onabort = () => {
-      reject(transaction.error ?? new Error('恢复日志事务被中止。'));
+      fail(transaction.error ?? new Error('恢复日志事务被中止。'));
     };
   });
 }

@@ -16,6 +16,7 @@
  */
 
 import { isRecord, sliceArray, sliceObject, tryParse, collapse } from './citations.mjs';
+import { neutraliseDelimiters } from './prompt.mjs';
 
 const OPEN = '<paper_text>';
 const CLOSE = '</paper_text>';
@@ -110,10 +111,12 @@ export function normalizeDifficultyRequest(raw, limits = { pageChars: MAX_PAGE_C
 export function buildDifficultyMessages(request) {
   const block = [
     OPEN,
-    `论文标题：${request.paper.title}`,
+    // Title and page text are both untrusted: a title typed by the reader or a PDF that
+    // literally contains the closing delimiter must not end the data block early.
+    `论文标题：${neutraliseDelimiters(request.paper.title)}`,
     `当前页：第 ${String(request.paper.page)} 页`,
     '',
-    request.pageText,
+    neutraliseDelimiters(request.pageText),
     CLOSE,
   ].join('\n');
   return {

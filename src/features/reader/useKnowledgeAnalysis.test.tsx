@@ -124,12 +124,15 @@ function memoryStorage() {
   };
 }
 
-function harness(analyze: (request: KnowledgeRequest) => Promise<KnowledgeOutcome>) {
+function harness(
+  analyze: (request: KnowledgeRequest) => Promise<KnowledgeOutcome>,
+  doc: PDFDocumentProxy = DOC,
+) {
   return renderHook(() => {
     const store = useMemo(() => createKnowledgeStore(memoryStorage()), []);
     const api: KnowledgeApi = useKnowledgeApi(store, makeId, () => 100);
     const analysis = useKnowledgeAnalysis({
-      doc: DOC,
+      doc,
       knowledge: api,
       makeId,
       locate: () => ({ location: 'missing', anchor: null }),
@@ -158,6 +161,59 @@ async function runAnalysis(hook: ReturnType<typeof harness>): Promise<void> {
 }
 
 describe('useKnowledgeAnalysis', () => {
+  it('does not install a plan from a stale prepare after the panel is reopened', async () => {
+    let releasePage: ((page: unknown) => void) | null = null;
+    const pageThree = new Promise((resolve) => {
+      releasePage = resolve;
+    });
+    const pageBody = (text: string) => ({
+      getTextContent: () => Promise.resolve({ items: [{ str: text, hasEOL: false }] }),
+    });
+    const doc = {
+      numPages: 3,
+      getPage: (page: number) =>
+        page === 3 ? pageThree : Promise.resolve(pageBody(`page ${String(page)} text`)),
+    } as unknown as PDFDocumentProxy;
+
+    const hook = harness(async () => ({ ok: true, analysis: ANALYSIS }), doc);
+    act(() => {
+      hook.result.current.analysis.open(CONTEXT);
+    });
+    act(() => {
+      hook.result.current.analysis.prepare();
+    });
+    // Let the first extraction reach the deferred page before the panel is reopened.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const secondContext = {
+      ...CONTEXT,
+      currentPage: 2,
+      selection: null,
+      pageText: 'Second page text that should win.',
+    };
+    act(() => {
+      hook.result.current.analysis.open(secondContext);
+    });
+    act(() => {
+      hook.result.current.analysis.prepare();
+    });
+
+    await act(async () => {
+      releasePage?.(pageBody('page 3 text'));
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(hook.result.current.analysis.phase).toBe('ready');
+    });
+
+    const plan = hook.result.current.analysis.plan;
+    expect(plan?.segments[0]?.page).toBe(2);
+    expect(plan?.segments[0]?.text).toContain('Second page text that should win.');
+  });
+
   it('does not call the model until the explicit run, and stores suggestions as suggestions', async () => {
     const requests: KnowledgeRequest[] = [];
     const analyze = vi.fn(async (request: KnowledgeRequest): Promise<KnowledgeOutcome> => {

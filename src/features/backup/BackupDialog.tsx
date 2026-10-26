@@ -49,6 +49,8 @@ const CONFLICT_LABEL: Record<RestoreConflict['kind'], string> = {
   project: '项目',
   paper: '论文',
   annotation: '笔记',
+  bookmark: '书签',
+  glossary: '术语',
   concept: '概念',
   evidence: '出处',
   relation: '关系',
@@ -101,9 +103,11 @@ export function BackupDialog({
   const journal = useMemo(() => createIndexedDbJournal(), []);
 
   const handleClose = useCallback(() => {
-    if (busy !== null) return;
+    // A successful restore leaves the running React stores behind the persisted values. Closing
+    // this dialog and continuing to edit would write the old state back over the restored data.
+    if (busy !== null || result?.status === 'restored') return;
     onClose();
-  }, [busy, onClose]);
+  }, [busy, onClose, result]);
 
   const runExport = async (): Promise<void> => {
     setExporting(true);
@@ -126,7 +130,7 @@ export function BackupDialog({
             }
           : {
               kind: 'success',
-              text: `备份已下载：${String(counts.projects ?? 0)} 个项目、${String(counts.papers ?? 0)} 篇论文、${String(counts.annotations ?? 0)} 条笔记、${String(counts.concepts ?? 0)} 个概念、${String(built.header.files.length)} 个 PDF。`,
+              text: `备份已下载：${String(counts.projects ?? 0)} 个项目、${String(counts.papers ?? 0)} 篇论文、${String(counts.annotations ?? 0)} 条笔记、${String(counts.concepts ?? 0)} 个概念、${String(counts.reviewCards ?? 0)} 张复习卡、${String(built.header.files.length)} 个 PDF。`,
             },
       );
     } catch (error) {

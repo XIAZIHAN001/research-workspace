@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { estimatePromptTokens } from './index.mjs';
 import { postJson, startTestService, validAsk } from './testing.mjs';
 
 /**
@@ -47,7 +48,57 @@ function stubProvider(overrides = {}) {
   };
 }
 
+describe('prompt token estimate', () => {
+  it('charges CJK per character and Latin per three and a half', () => {
+    expect(estimatePromptTokens('')).toBe(400);
+    // 3500 CJK characters are about 3500 tokens; 3500 Latin characters about 1000.
+    expect(estimatePromptTokens('中'.repeat(3500))).toBe(3900);
+    expect(estimatePromptTokens('a'.repeat(3500))).toBe(1400);
+  });
+});
+
 describe('session spending caps', () => {
+  it('allows a long document summary to be regenerated while the session has room', async () => {
+    const provider = stubProvider();
+    provider.complete = async (request) => {
+      provider.calls.push(request);
+      return {
+        text: '摘要\n<<<CITATIONS>>>\n[]',
+        usage: {
+          promptTokens: 90_000,
+          completionTokens: 1_000,
+          reasoningTokens: null,
+          cachedPromptTokens: 0,
+        },
+        truncated: false,
+        finishReason: 'stop',
+      };
+    };
+    const { base } = await service(provider, {
+      budget: { requests: 10, tokensPerRequest: 8192, tokensPerSession: 200_000 },
+    });
+    const document = validAsk({
+      mode: 'summarize',
+      scope: 'document',
+      paper: { ...validAsk().paper, page: 1 },
+      passages: Array.from({ length: 26 }, (_unused, index) => ({
+        id: `p${String(index)}`,
+        page: index + 1,
+        text: 'a'.repeat(12_000),
+        selection: index === 0,
+      })),
+    });
+
+    const first = await postJson(base, '/api/ai/ask', document);
+    expect(first.status).toBe(200);
+    // The first summary settles at 91k tokens. The second one's honest upper bound is about
+    // 97k, so 188k of the 200k session is enough; the old character-halving estimate reserved
+    // 165k and refused it even though the request itself would have fitted.
+    const second = await postJson(base, '/api/ai/ask', document);
+    expect(second.status).toBe(200);
+    expect(provider.calls).toHaveLength(2);
+  });
+
   it('stops before the call when the request limit is reached', async () => {
     const provider = stubProvider();
     const { base } = await service(provider, {

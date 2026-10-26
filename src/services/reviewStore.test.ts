@@ -41,6 +41,65 @@ describe('reviewStore', () => {
     expect(second.getSnapshot().state.cards.c1).toStrictEqual(first.getSnapshot().state.cards.c1);
   });
 
+  it('clamps a hand-edited card to values the scheduler can use', () => {
+    const saved = JSON.stringify({
+      version: 1,
+      cards: {
+        c1: {
+          conceptId: 'c1',
+          ease: 0.5,
+          intervalDays: -3,
+          reps: -1,
+          lapses: -2,
+          dueAt: 10,
+          lastAt: 9,
+        },
+      },
+    });
+    const review = createReviewStore(memoryStore({ [REVIEW_STORAGE_KEY]: saved }));
+    expect(review.getSnapshot().state.cards.c1).toMatchObject({
+      ease: 1.3,
+      intervalDays: 0,
+      reps: 0,
+      lapses: 0,
+    });
+  });
+
+  it('keeps schedules finite for ids that are Object.prototype property names', () => {
+    const ids = [
+      'constructor',
+      'toString',
+      'valueOf',
+      'prototype',
+      '3f8fad5b-d9cb-469f-a165-70867728950e',
+    ];
+    for (const id of ids) {
+      const review = createReviewStore(memoryStore());
+      review.dispatch({ type: 'grade', conceptId: id, grade: 'good', at: 1000 });
+      const cards = review.getSnapshot().state.cards;
+      const card = cards[id];
+      expect(Object.hasOwn(cards, id)).toBe(true);
+      expect(card).toBeDefined();
+      for (const value of [
+        card?.ease,
+        card?.intervalDays,
+        card?.reps,
+        card?.lapses,
+        card?.dueAt,
+        card?.lastAt,
+      ]) {
+        expect(Number.isFinite(value)).toBe(true);
+      }
+    }
+  });
+
+  it('never makes __proto__ a card key', () => {
+    const review = createReviewStore(memoryStore());
+    review.dispatch({ type: 'grade', conceptId: '__proto__', grade: 'good', at: 1000 });
+    expect(Object.hasOwn(review.getSnapshot().state.cards, '__proto__')).toBe(false);
+    expect(Object.getPrototypeOf(review.getSnapshot().state.cards)).toBe(Object.prototype);
+  });
+
   it('drops unreadable data instead of quarantining the session', () => {
     const review = createReviewStore(memoryStore({ [REVIEW_STORAGE_KEY]: '{not json at all' }));
     expect(Object.keys(review.getSnapshot().state.cards)).toHaveLength(0);

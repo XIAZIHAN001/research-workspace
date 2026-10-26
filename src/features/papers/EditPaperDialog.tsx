@@ -116,6 +116,10 @@ function EditForm({
         setLookup('现在连不上登记库（可能离线），没有修改任何字段。');
         return;
       }
+      if (outcome.status === 'busy') {
+        setLookup('登记库暂时不可用（可能限流或维护），没有修改任何字段。请稍后再试。');
+        return;
+      }
       if (outcome.status === 'not-found') {
         setLookup('登记库里查不到这个标识符，没有修改任何字段。');
         return;

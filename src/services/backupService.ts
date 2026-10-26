@@ -17,6 +17,7 @@
 import type { Paper } from '../domain/papers';
 import type { ProjectsState } from '../domain/projectsState';
 import type { KnowledgeState } from '../domain/knowledge';
+import { EMPTY_REVIEW_STATE, parseReviewState, type ReviewState } from '../domain/review';
 import {
   mergeRestore,
   parseBackupData,
@@ -44,6 +45,7 @@ import {
   AVATAR_STORAGE_KEY,
   PAPER_STORAGE_KEY,
   PROJECTS_STORAGE_KEY,
+  REVIEW_STORAGE_KEY,
   THEME_STORAGE_KEY,
 } from '../app/config';
 import {
@@ -52,6 +54,7 @@ import {
   inspectBackupContainer,
   readBackupFile,
   sha256Hex,
+  type BackupFileInput,
   type BackupHeader,
 } from './backupFormat';
 import type { PdfBlobStore } from './pdfStore';
@@ -78,6 +81,7 @@ const KEY_LABEL: Record<string, string> = {
   [PAPER_STORAGE_KEY]: '纸张模式',
   [AVATAR_STORAGE_KEY]: '头像',
   [DIFFICULTY_PREFS_KEY]: '难点面板设置',
+  [REVIEW_STORAGE_KEY]: '复习进度',
 };
 
 /* ------------------------------------------------------------------ *
@@ -130,6 +134,28 @@ export function readRecoveryCopies(
   return kept;
 }
 
+/** A newer build's schedule is left untouched, exactly as the live store leaves it. */
+function reviewIsBlocked(store: KeyValueStore | null): boolean {
+  const raw = readItem(REVIEW_STORAGE_KEY, store);
+  if (raw === null) return false;
+  try {
+    return parseReviewState(JSON.parse(raw) as unknown)?.blocked === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Reads the schedule the same way the live store does, so a broken key starts empty. */
+function readReview(store: KeyValueStore | null): ReviewState {
+  const raw = readItem(REVIEW_STORAGE_KEY, store);
+  if (raw === null) return EMPTY_REVIEW_STATE;
+  try {
+    return parseReviewState(JSON.parse(raw) as unknown)?.state ?? EMPTY_REVIEW_STATE;
+  } catch {
+    return EMPTY_REVIEW_STATE;
+  }
+}
+
 export function readBackupSource(
   input: { projects: ProjectsState; knowledge: KnowledgeState },
   store: KeyValueStore | null = defaultStore(),
@@ -138,6 +164,7 @@ export function readBackupSource(
     projects: input.projects,
     knowledge: input.knowledge,
     difficulties: loadDifficulties(store),
+    review: readReview(store),
   };
 }
 
@@ -176,7 +203,7 @@ export async function buildBackup(input: {
     if (!byHash.has(pdf.sha256)) byHash.set(pdf.sha256, pdf.name);
   }
 
-  const files = [];
+  const files: BackupFileInput[] = [];
   const missingFiles: string[] = [];
   for (const [sha256, name] of byHash) {
     const bytes = await input.blobs.get(sha256);
@@ -195,13 +222,17 @@ export async function buildBackup(input: {
       }
       continue;
     }
-    files.push({ sha256, name, bytes });
+    // Hand the bytes to a Blob now and drop the Uint8Array reference. `createBackupBlob` only
+    // needs a Blob-like source, and the browser can keep it out of the JavaScript heap instead
+    // of holding every PDF in this array until the container is assembled.
+    files.push({ sha256, name, bytes: new Blob([bytes], { type: 'application/pdf' }) });
   }
 
   const data = {
     projects: JSON.parse(serializeProjects(input.source.projects)) as unknown,
     knowledge: input.source.knowledge,
     difficulties: JSON.parse(serializeDifficulties(input.source.difficulties)) as unknown,
+    review: input.source.review,
     preferences: input.preferences,
     recovery: input.recovery,
     missingFiles,
@@ -352,6 +383,9 @@ export interface RestoreVerification {
   projects: number;
   papers: number;
   annotations: number;
+  bookmarks: number;
+  glossary: number;
+  reviewCards: number;
   concepts: number;
   evidence: number;
   relations: number;
@@ -502,6 +536,10 @@ export async function executeRestore(input: {
   }
 
   const merged = mergeRestore(input.current, contents, choice, input.currentPreferences, input.now);
+  const reviewBlocked = reviewIsBlocked(storage);
+  const reviewWarning = reviewBlocked
+    ? '本机的复习进度由更新版本的应用写入，恢复没有覆盖它。'
+    : null;
 
   /* Build the exact set of LocalStorage writes. Identical values are left alone. */
   const writes: { key: string; value: string; label: string }[] = [];
@@ -517,6 +555,7 @@ export async function executeRestore(input: {
   ) {
     addDataWrite(DIFFICULTY_STORAGE_KEY, serializeDifficulties(merged.difficulties));
   }
+  if (!reviewBlocked) addDataWrite(REVIEW_STORAGE_KEY, JSON.stringify(merged.review));
   for (const entry of preferenceWrites(merged.preferences)) addDataWrite(entry.key, entry.value);
 
   /* Recovery copies never overwrite one already on this machine. */
@@ -551,6 +590,7 @@ export async function executeRestore(input: {
         { previous: previous.get(write.key) ?? null, nextSha256: write.sha256 },
       ]),
     ),
+    committed: false,
   };
   try {
     await input.journal.write(journal);
@@ -636,6 +676,28 @@ export async function executeRestore(input: {
     if (migrated.state.annotations.length !== merged.projects.annotations.length) {
       problems.push('恢复后的笔记数量与计划不一致。');
     }
+    if (migrated.state.glossary.length !== merged.projects.glossary.length) {
+      problems.push('恢复后的术语数量与计划不一致。');
+    }
+    if (migrated.state.bookmarks.length !== merged.projects.bookmarks.length) {
+      problems.push('恢复后的书签数量与计划不一致。');
+    }
+  }
+  const reviewRaw = readItem(REVIEW_STORAGE_KEY, storage);
+  let reviewNow: ReviewState | null = null;
+  if (reviewRaw !== null) {
+    try {
+      reviewNow = parseReviewState(JSON.parse(reviewRaw) as unknown)?.state ?? null;
+    } catch {
+      reviewNow = null;
+    }
+  }
+  if (
+    !reviewBlocked &&
+    (reviewNow === null ||
+      Object.keys(reviewNow.cards).length !== Object.keys(merged.review.cards).length)
+  ) {
+    problems.push('恢复后的复习进度无法读回，或数量与计划不一致。');
   }
   const knowledgeRaw = readItem(KNOWLEDGE_STORAGE_KEY, storage);
   let knowledgeNow: KnowledgeState | null = null;
@@ -678,7 +740,33 @@ export async function executeRestore(input: {
     };
   }
 
-  await input.journal.clear().catch(() => undefined);
+  // The data has been read back and verified. Mark the journal committed before removing it:
+  // if the clear is lost, the next start must see a finished restore rather than a mixture and
+  // must not roll it back.
+  try {
+    await input.journal.write({ ...journal, committed: true });
+  } catch (error) {
+    const rolledBack = rollback(storage, previous, written);
+    if (rolledBack) await input.journal.clear().catch(() => undefined);
+    return {
+      status: 'failed',
+      stage: 'verify',
+      message: rolledBack
+        ? '恢复后的数据已通过回读，但恢复日志无法标记为已提交，已撤销本次恢复。'
+        : '恢复后的数据已通过回读，但恢复日志无法标记为已提交，且撤销没有完全成功。',
+      rolledBack,
+      problems: [describe(error)],
+      pdfsCopied,
+    };
+  }
+
+  let journalWarning: string | null = null;
+  try {
+    await input.journal.clear();
+  } catch {
+    journalWarning =
+      '恢复已完成，但恢复日志未能清理；再次启动时会把它识别为已完成并自动清理，不会回滚本次恢复。';
+  }
 
   const pdfCount = new Set(
     Object.values(merged.projects.papers)
@@ -689,7 +777,12 @@ export async function executeRestore(input: {
   return {
     status: 'restored',
     stats: merged.stats,
-    warnings: [...merged.warnings, ...recoveryWarnings],
+    warnings: [
+      ...merged.warnings,
+      ...recoveryWarnings,
+      ...(reviewWarning === null ? [] : [reviewWarning]),
+      ...(journalWarning === null ? [] : [journalWarning]),
+    ],
     pdfsCopied,
     verification: {
       keys: normalized.length,
@@ -697,6 +790,9 @@ export async function executeRestore(input: {
       projects: merged.projects.projects.length,
       papers: Object.keys(merged.projects.papers).length,
       annotations: merged.projects.annotations.length,
+      bookmarks: merged.projects.bookmarks.length,
+      glossary: merged.projects.glossary.length,
+      reviewCards: Object.keys(merged.review.cards).length,
       concepts: merged.knowledge.concepts.length,
       evidence: merged.knowledge.evidence.length,
       relations: merged.knowledge.relations.length,
@@ -744,6 +840,12 @@ export async function recoverInterruptedRestore(input?: {
     return 'none';
   }
   if (journal === null) return 'none';
+
+  if (journal.committed === true) {
+    // The restore finished and was verified; only its cleanup was lost. Nothing is rolled back.
+    await journalStore.clear().catch(() => undefined);
+    return 'completed';
+  }
 
   const keys = Object.keys(journal.keys);
   let allNext = true;

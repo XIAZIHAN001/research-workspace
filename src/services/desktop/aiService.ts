@@ -141,10 +141,17 @@ export async function getAiCredentialStatus(provider: string): Promise<AiCredent
 export async function setAiApiKey(
   provider: string,
   key: string,
+  baseUrl?: string,
 ): Promise<AiCredentialStatus | null> {
   if (!isDesktopApp()) return null;
   try {
-    await invoke('set_ai_api_key', { provider, key });
+    await invoke('set_ai_api_key', {
+      provider,
+      key,
+      // The key is bound to the endpoint shown when it is saved, so changing the endpoint later
+      // cannot move it to a host the reader never entered it for.
+      baseUrl: baseUrl === undefined || baseUrl.trim() === '' ? null : baseUrl.trim(),
+    });
     return await invoke<AiCredentialStatus>('ai_credentials_status', { provider });
   } catch (error) {
     return {

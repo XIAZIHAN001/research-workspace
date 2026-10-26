@@ -34,6 +34,29 @@ const LEGACY_DEEPSEEK_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey.dev";
 #[cfg(not(debug_assertions))]
 const LEGACY_DEEPSEEK_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey";
 
+/// The endpoint a key was entered for, stored beside it in the credential store.
+///
+/// Keeping the binding in the credential store rather than in `ai-preferences.json` matters:
+/// the preferences file is ordinary mutable JSON, while a command that changes the endpoint
+/// must not also be able to claim a new binding for a key it cannot read.
+#[cfg(debug_assertions)]
+fn endpoint_target_name(provider: &str) -> String {
+    format!("ResearchWorkspace/Provider/{provider}.dev.endpoint")
+}
+
+#[cfg(not(debug_assertions))]
+fn endpoint_target_name(provider: &str) -> String {
+    format!("ResearchWorkspace/Provider/{provider}.endpoint")
+}
+
+/// What the credential store holds: the secret and (for keys saved by this build) the authority
+/// it was entered for. A key written by an older build has no binding.
+#[derive(Clone)]
+pub struct StoredKey {
+    pub key: String,
+    pub endpoint: Option<String>,
+}
+
 /// The minimum and maximum lengths accepted before anything is written. Vendor keys are longer
 /// than this in practice; the bounds exist to reject an empty or absurd value, not to encode a
 /// vendor's current format.
@@ -57,6 +80,13 @@ fn target_for(provider: &str) -> Result<String, String> {
     Ok(target_name(provider))
 }
 
+fn endpoint_target_for(provider: &str) -> Result<String, String> {
+    if crate::providers::find(provider).is_none() {
+        return Err(format!("未知的模型提供方：{provider}。"));
+    }
+    Ok(endpoint_target_name(provider))
+}
+
 pub fn status_for(provider: &str) -> CredentialStatus {
     match get_for(provider) {
         Ok(value) => CredentialStatus {
@@ -70,31 +100,44 @@ pub fn status_for(provider: &str) -> CredentialStatus {
     }
 }
 
-/// Reads the key. The caller owns the returned string and must not log it.
-pub fn get_for(provider: &str) -> Result<Option<String>, String> {
+/// Reads the key and the endpoint it is bound to. The caller owns the returned secret and must
+/// not log it.
+pub fn get_for(provider: &str) -> Result<Option<StoredKey>, String> {
     let target = target_for(provider)?;
-    if let Some(key) = platform::get(&target)? {
-        return Ok(Some(key));
-    }
-    if provider != "deepseek" {
-        return Ok(None);
-    }
-    // Upgrade path: a key written by a version that only knew one provider. Copy it to the new
-    // target and clear the old one; a failed copy still returns the key, so the reader is not
-    // locked out by a storage hiccup.
-    let Some(key) = platform::get(LEGACY_DEEPSEEK_TARGET)? else {
+    let endpoint_target = endpoint_target_for(provider)?;
+    let key = if let Some(key) = platform::get(&target)? {
+        key
+    } else if provider == "deepseek" {
+        // Upgrade path: a key written by a version that only knew one provider. Copy it to the
+        // new target and clear the old one; a failed copy still returns the key, so the reader
+        // is not locked out by a storage hiccup.
+        let Some(key) = platform::get(LEGACY_DEEPSEEK_TARGET)? else {
+            return Ok(None);
+        };
+        if platform::set(&target, &key).is_ok() {
+            let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
+        }
+        key
+    } else {
         return Ok(None);
     };
-    if platform::set(&target, &key).is_ok() {
-        let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
-    }
-    Ok(Some(key))
+    let endpoint = platform::get(&endpoint_target)?;
+    Ok(Some(StoredKey { key, endpoint }))
 }
 
-/// Stores or replaces the key for one provider.
-pub fn set_for(provider: &str, key: &str) -> Result<(), String> {
+/// Stores or replaces the key for one provider, bound to `endpoint`.
+pub fn set_for(provider: &str, key: &str, endpoint: Option<&str>) -> Result<(), String> {
     let target = target_for(provider)?;
+    let endpoint_target = endpoint_target_for(provider)?;
     platform::set(&target, key)?;
+    match endpoint.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => platform::set(&endpoint_target, value)?,
+        // An empty endpoint means the setting has not been chosen yet; the next online start
+        // will refuse until the reader saves the key again against a real endpoint.
+        None => {
+            let _ = platform::delete(&endpoint_target);
+        }
+    }
     if provider == "deepseek" {
         // Two targets for one key would make "delete" ambiguous; now the legacy one is gone.
         let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
@@ -105,7 +148,9 @@ pub fn set_for(provider: &str, key: &str) -> Result<(), String> {
 /// Removes the key. Deleting an absent credential succeeds: the desired end state holds.
 pub fn delete_for(provider: &str) -> Result<(), String> {
     let target = target_for(provider)?;
+    let endpoint_target = endpoint_target_for(provider)?;
     platform::delete(&target)?;
+    platform::delete(&endpoint_target)?;
     if provider == "deepseek" {
         platform::delete(LEGACY_DEEPSEEK_TARGET)?;
     }
@@ -117,8 +162,8 @@ mod platform {
     use std::ptr;
     use windows_sys::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
     use windows_sys::Win32::Security::Credentials::{
-        CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CREDENTIALW, CredDeleteW, CredFree, CredReadW,
-        CredWriteW,
+        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
+        CRED_TYPE_GENERIC,
     };
 
     fn wide(text: &str) -> Vec<u16> {
@@ -273,7 +318,7 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::target_for;
+    use super::{endpoint_target_for, target_for};
 
     #[test]
     fn only_registered_providers_get_a_target() {
@@ -290,5 +335,14 @@ mod tests {
             target_for("deepseek").expect("target"),
             target_for("openai").expect("target")
         );
+    }
+
+    #[test]
+    fn endpoint_bindings_are_stored_apart_from_the_secret() {
+        let key_target = target_for("deepseek").expect("target");
+        let endpoint_target = endpoint_target_for("deepseek").expect("endpoint target");
+        assert_ne!(key_target, endpoint_target);
+        assert!(endpoint_target.ends_with(".endpoint"));
+        assert!(endpoint_target_for("mock").is_err());
     }
 }

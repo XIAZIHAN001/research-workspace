@@ -1,5 +1,6 @@
 import {
   inspectPdfBytes,
+  PDF_MAX_BYTES,
   PDF_REJECTION_MESSAGE,
   type PaperPdf,
   type PdfBytes,
@@ -61,6 +62,23 @@ export async function preparePdfImport(
 ): Promise<PrepareResult> {
   const readBytes = deps.readBytes ?? defaultReadBytes;
   const hash = deps.hash ?? sha256Hex;
+
+  // Check the File's advertised size before arrayBuffer(): a 2 GB file would otherwise be
+  // allocated in full just to be rejected afterwards.
+  if (file.size === 0) {
+    return {
+      status: 'failed',
+      reason: 'empty',
+      message: PDF_REJECTION_MESSAGE.empty,
+    };
+  }
+  if (file.size > PDF_MAX_BYTES) {
+    return {
+      status: 'failed',
+      reason: 'too-large',
+      message: PDF_REJECTION_MESSAGE['too-large'],
+    };
+  }
 
   let bytes: PdfBytes;
   try {

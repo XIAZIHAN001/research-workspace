@@ -123,7 +123,8 @@ AI_PROVIDER=deepseek AI_API_KEY=sk-… npm run ai:serve
 也可以先保存密钥再点“获取可用模型”，由 Rust 通过 `GET {API 地址}/models` 读取该账号
 实际可用的模型列表。保存后会重启 sidecar。
 
-Key 按供应商分别写入系统凭据存储（Windows Credential Manager），前端之后只能读到
+Key 按供应商分别写入系统凭据存储（Windows Credential Manager），并与保存时的 API 地址
+（协议与主机，含端口）绑定；更换 API 地址后需要在设置里重新保存 Key，旧 Key 不会被发往新地址。前端之后只能读到
 “这个供应商是否已配置”，没有任何接口可以取回明文。
 
 思考强度只对 DeepSeek 显示（`none` / `low` / `high` / `max`）；其他供应商按标准
@@ -134,7 +135,8 @@ OpenAI 兼容协议发送请求，不携带 DeepSeek 专有字段。设置页还
 
 - **仓库不包含任何真实 API Key。** 源码与测试里出现的 `sk-…` 均为占位符或测试用假值。
 - Key 不进入 LocalStorage、IndexedDB、普通 JSON 配置、备份文件、URL、命令行参数或日志。
-- sidecar 只监听 `127.0.0.1`，端口不可配置为对外地址；校验 `Host` 与 `Origin`，限制请求体大小、频率与并发。
+- sidecar 只监听 `127.0.0.1`，端口不可配置为对外地址；校验 `Host` 与 `Origin`（浏览器开发默认只允许 Vite 的 1440 来源），限制请求体大小、频率与并发。
+- 桌面版保存的 API Key 绑定到保存时的 API 地址；切换端点或供应商后必须重新保存 Key，旧 Key 不会发往新地址。
 - 系统提示词由服务端组装，论文原文只作为数据块出现在 `user` 消息中。
 - 引用逐字校验：段落 id 必须属于本次请求，引文必须是该段落逐字子串；不合格的引用会被丢弃并计数。
 

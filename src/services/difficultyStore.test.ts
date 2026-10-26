@@ -77,6 +77,18 @@ describe('loadDifficulties', () => {
     expect(Object.keys(loaded.pages)).toEqual(['good']);
     expect(loaded.ignored['a'.repeat(64)]).toEqual(['d1', 'd2']);
   });
+
+  it('ignores keys that would mutate the map prototype', () => {
+    const payload = JSON.stringify({
+      version: 1,
+      pages: { ['__proto__']: record() },
+      ignored: { ['__proto__']: ['d1'] },
+    });
+    const loaded = loadDifficulties(store({ [DIFFICULTY_STORAGE_KEY]: payload }));
+    expect(loaded.pages).toStrictEqual({});
+    expect(loaded.ignored).toStrictEqual({});
+    expect(Object.getPrototypeOf(loaded.pages)).toBe(Object.prototype);
+  });
 });
 
 describe('saveDifficulties', () => {

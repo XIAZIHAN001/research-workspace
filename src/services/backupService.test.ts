@@ -14,6 +14,7 @@ import {
   inspectBackupFile,
   presentPdfHashes,
   readBackupPreferences,
+  readBackupSource,
   readRecoveryCopies,
   recoverInterruptedRestore,
   type BackupSource,
@@ -27,7 +28,8 @@ import {
 } from '../domain/backupPlan';
 import { KNOWLEDGE_STORAGE_KEY } from './knowledgeStore';
 import { DIFFICULTY_PREFS_KEY, DIFFICULTY_STORAGE_KEY } from './difficultyStore';
-import { PROJECTS_STORAGE_KEY, THEME_STORAGE_KEY } from '../app/config';
+import { PROJECTS_STORAGE_KEY, REVIEW_STORAGE_KEY, THEME_STORAGE_KEY } from '../app/config';
+import { EMPTY_REVIEW_STATE } from '../domain/review';
 
 const bytes = (text: string): PdfBytes =>
   new TextEncoder().encode(`%PDF-1.4\n${text}\n%%EOF`) as PdfBytes;
@@ -195,13 +197,32 @@ function sampleSource(): BackupSource {
     },
     ignored: { [SHA_A]: ['s1'] },
   };
-  return { projects, knowledge, difficulties };
+  return {
+    projects,
+    knowledge,
+    difficulties,
+    review: {
+      version: 1,
+      cards: {
+        'concept-1': {
+          conceptId: 'concept-1',
+          ease: 2.5,
+          intervalDays: 6,
+          reps: 2,
+          lapses: 0,
+          dueAt: 10,
+          lastAt: 5,
+        },
+      },
+    },
+  };
 }
 
 const EMPTY_SOURCE: RestoreSource = {
   projects: EMPTY_STATE,
   knowledge: { version: 2, concepts: [], evidence: [], relations: [], rejections: [] },
   difficulties: { pages: {}, ignored: {} },
+  review: EMPTY_REVIEW_STATE,
 };
 
 async function backupFile(source: BackupSource, files = blobStore({ [SHA_A]: PDF_BYTES })) {
@@ -332,8 +353,13 @@ describe('restoring a backup', () => {
       projects: 1,
       papers: 1,
       annotations: 1,
+      reviewCards: 1,
       concepts: 1,
       evidence: 1,
+    });
+    expect(JSON.parse(storage.getItem(REVIEW_STORAGE_KEY) ?? 'null')).toMatchObject({
+      version: 1,
+      cards: { 'concept-1': { intervalDays: 6 } },
     });
     expect(result.pdfsCopied).toBe(1);
     expect(journal.peek()).toBeNull();
@@ -349,6 +375,121 @@ describe('restoring a backup', () => {
       concepts: [{ name: 'KZG commitment' }],
     });
     expect(storage.getItem(DIFFICULTY_STORAGE_KEY)).toContain(SHA_A);
+  });
+
+  it('restores a workspace whose ids are Object.prototype property names', async () => {
+    const projects: ProjectsState = {
+      projects: [
+        {
+          id: 'project-special',
+          name: '特殊 ID',
+          corePaperId: 'constructor',
+          relatedPaperIds: ['toString'],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      papers: {
+        constructor: paper('constructor', '构造器论文', {
+          pdf: { sha256: SHA_A, name: 'paper.pdf', bytes: 20, pageCount: 1, addedAt: 1 },
+        }),
+        toString: paper('toString', '字符串论文'),
+      },
+      annotations: [
+        {
+          id: 'note-special',
+          paperId: 'constructor',
+          pdfSha256: SHA_A,
+          page: 1,
+          quote: 'the reader wrote this down',
+          prefix: '',
+          suffix: '',
+          rects: [{ x: 0.1, y: 0.2, width: 0.3, height: 0.02 }],
+          kind: 'note',
+          note: '一条笔记',
+          origin: 'user',
+          sourceLabel: '',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      bookmarks: [],
+      glossary: [],
+      selectedId: 'project-special',
+    };
+    const source: BackupSource = {
+      projects,
+      knowledge: EMPTY_SOURCE.knowledge,
+      difficulties: EMPTY_SOURCE.difficulties,
+      review: EMPTY_SOURCE.review,
+    };
+    const { file } = await backupFile(source);
+    const inspection = await inspectBackupFile(file, {
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      presentPdfHashes: new Set(),
+      availableBytes: null,
+      now: NOW.getTime(),
+    });
+    expect(inspection.problems).toEqual([]);
+
+    const storage = new MemoryStore();
+    const result = await executeRestore({
+      file,
+      inspection,
+      choice: DEFAULT_RESTORE_CHOICE,
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      storage,
+      blobs: blobStore(),
+      journal: memoryJournal(),
+      now: NOW.getTime(),
+    });
+    expect(result.status).toBe('restored');
+    if (result.status !== 'restored') return;
+    expect(result.verification.papers).toBe(2);
+    expect(result.verification.annotations).toBe(1);
+
+    const stored = JSON.parse(storage.getItem(PROJECTS_STORAGE_KEY) ?? 'null') as {
+      projects: { corePaperId: string; relatedPaperIds: string[] }[];
+      papers: Record<string, { id: string }>;
+      annotations: { paperId: string }[];
+    };
+    expect(stored.projects[0]?.corePaperId).toBe('constructor');
+    expect(stored.projects[0]?.relatedPaperIds).toEqual(['toString']);
+    expect(Object.hasOwn(stored.papers, 'constructor')).toBe(true);
+    expect(stored.papers['constructor']?.id).toBe('constructor');
+    expect(stored.papers['toString']?.id).toBe('toString');
+    expect(stored.annotations[0]?.paperId).toBe('constructor');
+  });
+
+  it('leaves a newer local review schedule untouched', async () => {
+    const { file } = await backupFile(sampleSource());
+    const inspection = await inspectBackupFile(file, {
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      presentPdfHashes: new Set(),
+      availableBytes: null,
+      now: NOW.getTime(),
+    });
+    const newer = JSON.stringify({ version: 99, cards: { x: {} } });
+    const storage = new MemoryStore({ [REVIEW_STORAGE_KEY]: newer });
+    const result = await executeRestore({
+      file,
+      inspection,
+      choice: DEFAULT_RESTORE_CHOICE,
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      storage,
+      blobs: blobStore(),
+      journal: memoryJournal(),
+      now: NOW.getTime(),
+    });
+
+    expect(result.status).toBe('restored');
+    if (result.status !== 'restored') return;
+    expect(result.warnings.join(' ')).toContain('更新版本');
+    expect(storage.getItem(REVIEW_STORAGE_KEY)).toBe(newer);
   });
 
   it('is idempotent when the same backup is restored twice', async () => {
@@ -482,6 +623,7 @@ describe('restoring a backup', () => {
       projects: existingProjects,
       knowledge: existingKnowledge,
       difficulties: EMPTY_SOURCE.difficulties,
+      review: EMPTY_SOURCE.review,
     };
     const inspection = await inspectBackupFile(file, {
       current,
@@ -596,6 +738,19 @@ describe('recovering an interrupted restore', () => {
     expect(storage.getItem(THEME_STORAGE_KEY)).toBe('dark');
   });
 
+  it('never rolls back a journal that was marked committed', async () => {
+    const journal = memoryJournal();
+    await journal.write({
+      ...(await journalFor({ [THEME_STORAGE_KEY]: { previous: 'light', next: 'dark' } })),
+      committed: true,
+    });
+    // A later edit changed a key after the verified restore; the committed marker must win.
+    const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'edited-after-restore' });
+    await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('completed');
+    expect(storage.getItem(THEME_STORAGE_KEY)).toBe('edited-after-restore');
+    expect(journal.peek()).toBeNull();
+  });
+
   it('recognises a restore that never wrote', async () => {
     const journal = memoryJournal();
     await journal.write(
@@ -654,6 +809,34 @@ describe('reading current preferences and recovery copies', () => {
       'rw.unrelated': 'x',
     });
     expect(readRecoveryCopies(storage)).toEqual({ 'rw.projects.corrupt': '{broken' });
+  });
+
+  it('reads the review schedule from its own key, and starts empty when it is unreadable', () => {
+    const knowledge = EMPTY_SOURCE.knowledge;
+    const stored = new MemoryStore({
+      [REVIEW_STORAGE_KEY]: JSON.stringify({
+        version: 1,
+        cards: {
+          c1: {
+            conceptId: 'c1',
+            ease: 2.5,
+            intervalDays: 1,
+            reps: 1,
+            lapses: 0,
+            dueAt: 1,
+            lastAt: 1,
+          },
+        },
+      }),
+    });
+    expect(
+      readBackupSource({ projects: EMPTY_STATE, knowledge }, stored).review.cards.c1,
+    ).toBeDefined();
+
+    const broken = new MemoryStore({ [REVIEW_STORAGE_KEY]: '{not json' });
+    expect(readBackupSource({ projects: EMPTY_STATE, knowledge }, broken).review.cards).toEqual(
+      EMPTY_REVIEW_STATE.cards,
+    );
   });
 
   it('knows which referenced PDFs are actually present', async () => {

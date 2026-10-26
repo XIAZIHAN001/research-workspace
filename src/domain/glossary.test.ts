@@ -72,6 +72,14 @@ describe('matchGlossary', () => {
     expect(matchGlossary(entries, 'x marks the spot')?.id).toBeUndefined();
     expect(matchGlossary(entries, 'nothing here')).toBeNull();
   });
+
+  it('does not match an ASCII term inside a longer word', () => {
+    const ai = [{ id: 'ai', paperId: 'p', term: 'AI', definition: '', createdAt: 1, updatedAt: 1 }];
+    expect(matchGlossary(ai, 'PAIR')).toBeNull();
+    expect(matchGlossary(ai, 'the AI model')?.id).toBe('ai');
+    expect(matchGlossaryAt(ai, 'PAIR', 1)).toBeNull();
+    expect(matchGlossaryAt(ai, 'AI-powered', 0)?.id).toBe('ai');
+  });
 });
 
 describe('matchGlossaryAt', () => {
