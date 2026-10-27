@@ -109,6 +109,8 @@ export function createAiServer({
     costKnown: true,
     unknownCostRequests: 0,
     exactTokens: true,
+    /** Calls whose token figures include a conservative estimate rather than a reported usage. */
+    estimatedRequests: 0,
   };
   let reservedTokens = 0;
 
@@ -127,6 +129,7 @@ export function createAiServer({
       costKnown: usage.costKnown,
       unknownCostRequests: usage.unknownCostRequests,
       exactTokens: usage.exactTokens,
+      estimatedRequests: usage.estimatedRequests,
     };
   }
 
@@ -135,10 +138,11 @@ export function createAiServer({
    *
    * The reservation is what makes concurrent requests safe: four requests that each fit the
    * remaining budget individually must not all pass and then collectively overspend. It is
-   * released when the call fails and settled with the reported usage when it succeeds.
+   * released when the call provably never reached the provider and settled otherwise.
    */
   function reserveBudget({ prompt, maxTokens }) {
-    const bound = estimatePromptTokens(prompt) + maxTokens;
+    const promptBound = estimatePromptTokens(prompt);
+    const bound = promptBound + maxTokens;
     if (online && usage.requests >= budget.requests) {
       return {
         ok: false,
@@ -153,11 +157,15 @@ export function createAiServer({
     }
     usage.requests += 1;
     reservedTokens += bound;
-    return { ok: true, bound };
+    return { ok: true, bound, promptBound, maxTokens };
   }
 
   function settleBudget(reservation, reported) {
     reservedTokens = Math.max(0, reservedTokens - reservation.bound);
+    // The offline provider has no bill. Its requests are counted above, but it must not appear
+    // in a paid-token or cost total.
+    if (!online) return;
+
     const prompt = typeof reported?.promptTokens === 'number' ? reported.promptTokens : null;
     const completion =
       typeof reported?.completionTokens === 'number' ? reported.completionTokens : null;
@@ -166,21 +174,24 @@ export function createAiServer({
     const cached =
       typeof reported?.cachedPromptTokens === 'number' ? reported.cachedPromptTokens : null;
 
-    if (prompt === null && completion === null) {
-      // The provider did not report usage. Record the upper bound instead of zero, so the
-      // session budget cannot be bypassed by a provider that omits its accounting.
-      usage.promptTokens += reservation.bound;
+    const promptKnown = prompt !== null;
+    const completionKnown = completion !== null;
+    if (!promptKnown || !completionKnown) {
       usage.exactTokens = false;
-    } else {
-      usage.promptTokens += prompt ?? 0;
-      usage.completionTokens += completion ?? 0;
-      if (reasoning !== null) usage.reasoningTokens += reasoning;
-      if (prompt === null || completion === null) usage.exactTokens = false;
+      usage.estimatedRequests += 1;
     }
 
+    // Charge what was reported. Anything missing is charged at the reservation's own upper
+    // bound, never at zero: the call was sent, so the local budget cannot assume it was free.
+    const promptCharge = promptKnown ? prompt : reservation.promptBound;
+    const completionCharge = completionKnown ? completion : reservation.maxTokens;
+    usage.promptTokens += promptCharge;
+    usage.completionTokens += completionCharge;
+    if (reasoning !== null) usage.reasoningTokens += reasoning;
+
     const cost = estimateCostCny(chosen.model, {
-      promptTokens: prompt ?? reservation.bound,
-      completionTokens: completion ?? 0,
+      promptTokens: promptCharge,
+      completionTokens: completionCharge,
       cachedPromptTokens: cached,
     });
     if (cost === null) {
@@ -193,6 +204,23 @@ export function createAiServer({
 
   function releaseBudget(reservation) {
     reservedTokens = Math.max(0, reservedTokens - reservation.bound);
+  }
+
+  /**
+   * Ends a reservation that produced no result.
+   *
+   * - Nothing was sent (`requestSent === false`): the call was free, so the reservation is
+   *   released and nothing is recorded.
+   * - Anything else is unknown: the provider may have generated tokens even though this service
+   *   has no usage. The reserved upper bound is charged and marked as an estimate. That is
+   *   conservative bookkeeping, not a claim about the provider's invoice.
+   */
+  function abandonBudget(reservation, error) {
+    if (error?.requestSent === false) {
+      releaseBudget(reservation);
+      return;
+    }
+    settleBudget(reservation, null);
   }
 
   function maxTokensForCall() {
@@ -327,9 +355,10 @@ export function createAiServer({
       try {
         // The caller can disappear while the body is parsed or the budget is reserved. Do not
         // start a model call for a caller that is already gone; this also covers providers
-        // that do not inspect the signal themselves. The reservation is released by the catch.
+        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
+        // `requestSent: false` is what tells it this call never reached the provider.
         if (controller.signal.aborted) {
-          throw new ProviderError('network', '请求已取消。');
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
         }
         outcome = await chosen.complete({
           system,
@@ -339,7 +368,7 @@ export function createAiServer({
           meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
         });
       } catch (error) {
-        releaseBudget(reservation);
+        abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);
@@ -502,9 +531,10 @@ export function createAiServer({
       try {
         // The caller can disappear while the body is parsed or the budget is reserved. Do not
         // start a model call for a caller that is already gone; this also covers providers
-        // that do not inspect the signal themselves. The reservation is released by the catch.
+        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
+        // `requestSent: false` is what tells it this call never reached the provider.
         if (controller.signal.aborted) {
-          throw new ProviderError('network', '请求已取消。');
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
         }
         outcome = await chosen.complete({
           system,
@@ -519,7 +549,7 @@ export function createAiServer({
           },
         });
       } catch (error) {
-        releaseBudget(reservation);
+        abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);
@@ -664,9 +694,10 @@ export function createAiServer({
       try {
         // The caller can disappear while the body is parsed or the budget is reserved. Do not
         // start a model call for a caller that is already gone; this also covers providers
-        // that do not inspect the signal themselves. The reservation is released by the catch.
+        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
+        // `requestSent: false` is what tells it this call never reached the provider.
         if (controller.signal.aborted) {
-          throw new ProviderError('network', '请求已取消。');
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
         }
         outcome = await chosen.complete({
           system,
@@ -685,7 +716,7 @@ export function createAiServer({
           },
         });
       } catch (error) {
-        releaseBudget(reservation);
+        abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);

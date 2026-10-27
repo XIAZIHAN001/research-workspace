@@ -49,12 +49,43 @@ fn endpoint_target_name(provider: &str) -> String {
     format!("ResearchWorkspace/Provider/{provider}.endpoint")
 }
 
-/// What the credential store holds: the secret and (for keys saved by this build) the authority
-/// it was entered for. A key written by an older build has no binding.
+/// How much the recorded endpoint can be trusted.
+///
+/// The current build writes key and endpoint as one record, so the pair is what the reader saved.
+/// The two earlier layouts could not: they wrote separate credential records, and a failed second
+/// write left a key beside an endpoint it may never have been entered for. Reading such a pair is
+/// still possible, but calling it a binding would be a claim the store cannot support.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingTrust {
+    /// Key and endpoint were written together by this build.
+    Atomic,
+    /// Key and endpoint came from two separate legacy targets; they may not belong together.
+    LegacyPaired,
+    /// Key came from the single-provider record and has no endpoint binding.
+    LegacyUnbound,
+}
+
+/// What the credential store holds: the secret, the authority it was entered for, and how much
+/// that pairing can be trusted.
 #[derive(Clone)]
 pub struct StoredKey {
     pub key: String,
     pub endpoint: Option<String>,
+    pub binding: BindingTrust,
+}
+
+/// What a delete actually accomplished.
+///
+/// `Err` from `delete_for` means the key itself could not be removed (or was deliberately kept
+/// to stop a legacy fallback from taking its place). A successful delete can still leave
+/// historical auxiliary records behind; those are reported here rather than turned into a
+/// failure that hides the key's removal.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DeleteReport {
+    /// The per-provider key record is gone (or was already absent).
+    pub key_removed: bool,
+    /// Records that could not be cleaned up. They cannot authenticate anything without a key.
+    pub residues: Vec<String>,
 }
 
 /// The minimum and maximum lengths accepted before anything is written. Vendor keys are longer
@@ -202,8 +233,10 @@ fn get_for_with(backend: &dyn Backend, provider: &str) -> Result<Option<StoredKe
         let Some(legacy) = backend.get(LEGACY_DEEPSEEK_TARGET)? else {
             return Ok(None);
         };
-        let endpoint = normalize_endpoint(backend.get(&endpoint_target)?);
-        if let Ok(record) = encode_record(&legacy, endpoint.as_deref()) {
+        // The single-key layout recorded no endpoint. A `.endpoint` left in the other legacy
+        // target cannot prove it was saved with this key, so it is not copied into the new
+        // atomic record: doing that would invent a binding the reader may never have authorised.
+        if let Ok(record) = encode_record(&legacy, None) {
             if backend.set(&target, &record).is_ok() {
                 let _ = backend.delete(&endpoint_target);
                 let _ = backend.delete(LEGACY_DEEPSEEK_TARGET);
@@ -211,17 +244,31 @@ fn get_for_with(backend: &dyn Backend, provider: &str) -> Result<Option<StoredKe
         }
         return Ok(Some(StoredKey {
             key: legacy,
-            endpoint,
+            endpoint: None,
+            binding: BindingTrust::LegacyUnbound,
         }));
     };
 
     match decode_record(&raw)? {
-        Some((key, endpoint)) => Ok(Some(StoredKey { key, endpoint })),
+        Some((key, endpoint)) => Ok(Some(StoredKey {
+            key,
+            endpoint,
+            binding: BindingTrust::Atomic,
+        })),
         // A record written by the earlier build that kept the binding in a second target.
         // Read the pair as it is; the next save replaces both with one atomic record.
         None => {
             let endpoint = normalize_endpoint(backend.get(&endpoint_target)?);
-            Ok(Some(StoredKey { key: raw, endpoint }))
+            let binding = if endpoint.is_some() {
+                BindingTrust::LegacyPaired
+            } else {
+                BindingTrust::LegacyUnbound
+            };
+            Ok(Some(StoredKey {
+                key: raw,
+                endpoint,
+                binding,
+            }))
         }
     }
 }
@@ -258,21 +305,40 @@ fn set_for_with(
 }
 
 /// Removes the key. Deleting an absent credential succeeds: the desired end state holds.
-pub fn delete_for(provider: &str) -> Result<(), String> {
+///
+/// The legacy DeepSeek fallback is removed first. If that fails the per-provider key is kept,
+/// so a requested deletion cannot make the old fallback the active credential again.
+pub fn delete_for(provider: &str) -> Result<DeleteReport, String> {
     delete_for_with(&OsBackend, provider)
 }
 
-fn delete_for_with(backend: &dyn Backend, provider: &str) -> Result<(), String> {
+fn delete_for_with(backend: &dyn Backend, provider: &str) -> Result<DeleteReport, String> {
     let target = target_for(provider)?;
     let endpoint_target = endpoint_target_for(provider)?;
     if provider == "deepseek" {
-        // Remove the fallback first. If it cannot be removed, keep the per-provider key so the
-        // old fallback cannot become the active credential after a requested deletion.
-        backend.delete(LEGACY_DEEPSEEK_TARGET)?;
+        backend.delete(LEGACY_DEEPSEEK_TARGET).map_err(|error| {
+            format!(
+                "旧版 DeepSeek 回退凭据没有删除，为避免旧 Key 重新生效，当前 Key 已保留：{error}"
+            )
+        })?;
     }
-    backend.delete(&target)?;
-    backend.delete(&endpoint_target)?;
-    Ok(())
+    backend
+        .delete(&target)
+        .map_err(|error| format!("API Key 没有删除：{error}"))?;
+
+    // The key is gone; this auxiliary record cannot authenticate anything on its own. A failure
+    // is reported as residue instead of a failed deletion, because the caller must still be told
+    // to revoke online use — which is exactly what the old `?` here prevented.
+    let mut report = DeleteReport {
+        key_removed: true,
+        residues: Vec::new(),
+    };
+    if let Err(error) = backend.delete(&endpoint_target) {
+        report
+            .residues
+            .push(format!("旧版 API 地址记录未能清理：{error}"));
+    }
+    Ok(report)
 }
 
 #[cfg(windows)]
@@ -784,6 +850,119 @@ mod tests {
         // The per-provider key was not deleted, so the old fallback cannot take over.
         let stored = read_key(&backend, "deepseek").expect("key");
         assert_eq!(stored.key, "sk-current-value-000000");
+    }
+
+    /// The reported failure mode: the main record is gone, a historical `.endpoint` record
+    /// cannot be removed, and the old `?` chain turned that into a total failure. The caller
+    /// then skipped its "switch to mock / stop the child" step while no key was left.
+    #[test]
+    fn a_stale_endpoint_record_cannot_hide_that_the_key_is_gone() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-delete-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        // A leftover from the two-target era, as a failed cleanup would leave it.
+        backend.seed(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            "https://stale.example",
+        );
+        backend.fail_delete(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            1,
+        );
+
+        let report = delete_for_with(&backend, "deepseek").expect("partial delete is a success");
+        // The key is gone: the deletion did have an effect and must be reportable as such.
+        assert!(report.key_removed);
+        assert_eq!(report.residues.len(), 1);
+        assert!(read_key(&backend, "deepseek").is_none());
+    }
+
+    /// A failure of the main record is a failure, and says so. The caller must not report a
+    /// complete deletion while the key is still readable.
+    #[test]
+    fn a_failed_main_delete_is_reported_as_a_failure() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-delete-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        backend.fail_delete(&target_for("deepseek").expect("target"), 1);
+
+        let error = delete_for_with(&backend, "deepseek").expect_err("delete must fail");
+        assert!(error.contains("没有删除"));
+        assert!(read_key(&backend, "deepseek").is_some());
+    }
+
+    /// A legacy key migrated beside an unrelated legacy `.endpoint` record must not be bound to
+    /// that endpoint. The old migration copied it into the new atomic record, which then claimed
+    /// a binding the reader may never have authorised.
+    #[test]
+    fn a_legacy_migration_does_not_invent_an_endpoint_binding() {
+        let backend = FakeBackend::default();
+        backend.seed(LEGACY_DEEPSEEK_TARGET, "sk-legacy-value-000000");
+        backend.seed(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            "https://unrelated.example",
+        );
+
+        let stored = read_key(&backend, "deepseek").expect("legacy key");
+        assert_eq!(stored.key, "sk-legacy-value-000000");
+        assert_eq!(stored.endpoint, None);
+        assert_eq!(stored.binding, BindingTrust::LegacyUnbound);
+        // The migrated record says "unbound" as well; a later read cannot revive the endpoint.
+        let reread = read_key(&backend, "deepseek").expect("migrated key");
+        assert_eq!(reread.endpoint, None);
+        assert_eq!(reread.binding, BindingTrust::Atomic);
+    }
+
+    /// The three storage layouts must remain distinguishable, because only the first can be
+    /// called a binding the reader authorised as a pair.
+    #[test]
+    fn only_the_combined_record_is_reported_as_atomic() {
+        let atomic = FakeBackend::default();
+        set_for_with(
+            &atomic,
+            "deepseek",
+            "sk-atomic-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        assert_eq!(
+            read_key(&atomic, "deepseek").expect("key").binding,
+            BindingTrust::Atomic
+        );
+
+        let paired = FakeBackend::default();
+        paired.seed(
+            &target_for("deepseek").expect("target"),
+            "sk-legacy-value-000000",
+        );
+        paired.seed(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            "https://legacy.example",
+        );
+        assert_eq!(
+            read_key(&paired, "deepseek").expect("key").binding,
+            BindingTrust::LegacyPaired
+        );
+
+        let unbound = FakeBackend::default();
+        unbound.seed(
+            &target_for("deepseek").expect("target"),
+            "sk-legacy-value-000000",
+        );
+        assert_eq!(
+            read_key(&unbound, "deepseek").expect("key").binding,
+            BindingTrust::LegacyUnbound
+        );
     }
 
     #[test]

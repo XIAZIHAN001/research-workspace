@@ -190,6 +190,17 @@ const RENDER_WAIT_MS = 2500;
 const DEFAULT_SUMMARY_CLIENT: AiAskClient = { ask: askAi };
 
 /**
+ * Identity of the paper's summary card, as a value.
+ *
+ * A reference check would misread a card reloaded from storage as an edit, and would miss an
+ * edit that kept the object. Creation time plus text is what actually changed when the reader
+ * cleared, edited or regenerated the card.
+ */
+function summaryStamp(summary: PaperSummary | undefined): string | null {
+  return summary === undefined ? null : `${String(summary.createdAt)}\u0000${summary.text}`;
+}
+
+/**
  * Waits until a page has a usable text layer, then returns its element.
  *
  * A jump sets the current page immediately, but the page only builds its canvas and text layer
@@ -465,6 +476,38 @@ export function ReaderView({
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryNotice, setSummaryNotice] = useState<string | null>(null);
   /**
+   * Identifies the one summary generation allowed to write its result.
+   *
+   * A request that was replaced, cancelled or left behind by a closed reader still settles. Only
+   * the generation that still owns the card may call `onSaveSummary`.
+   */
+  const summarySeq = useRef(0);
+  const summaryInFlight = useRef<AbortController | null>(null);
+  /**
+   * What a summary result must still match when it arrives.
+   *
+   * A ref rather than a closure: an in-flight request's own closure holds the values from when
+   * it started, which is exactly what cannot tell whether the reader has since changed them.
+   */
+  const summaryTarget = useRef<{
+    paperId: string;
+    pdfSha256: string | null;
+    summary: string | null;
+  }>({
+    paperId: paper.id,
+    pdfSha256: paper.pdf?.sha256 ?? null,
+    summary: summaryStamp(paper.summary),
+  });
+  useLayoutEffect(() => {
+    // A layout effect, not a render-time write: the value must be current before an in-flight
+    // request's continuation can read it, and refs may not be written during render.
+    summaryTarget.current = {
+      paperId: paper.id,
+      pdfSha256: paper.pdf?.sha256 ?? null,
+      summary: summaryStamp(paper.summary),
+    };
+  }, [paper.id, paper.pdf?.sha256, paper.summary]);
+  /**
    * One health probe at a time, shared by the summary disclosure.
    *
    * The disclosure is the first place a reader can send a whole paper to the assistant
@@ -484,6 +527,20 @@ export function ReaderView({
   }, [health]);
 
   const pdfSha256 = paper.pdf?.sha256 ?? null;
+  useEffect(() => {
+    // Opening another paper, replacing the file or leaving the reader invalidates a pending
+    // summary: aborting stops its cost, and the sequence stops a late success from being saved.
+    // The reset runs off the effect body (a synchronous setState there cascades renders); by
+    // then the abort above has cleared the controller, so a newer request cannot be clobbered.
+    queueMicrotask(() => {
+      if (summaryInFlight.current === null) setSummaryBusy(false);
+    });
+    return () => {
+      summarySeq.current += 1;
+      summaryInFlight.current?.abort();
+      summaryInFlight.current = null;
+    };
+  }, [paper.id, pdfSha256]);
   // One transport for the summary card, injected or the app's own. The AI panel already has
   // the same fallback through `useAiReading`; the summary must not be the one path that can
   // silently have no client at all.
@@ -1183,6 +1240,17 @@ export function ReaderView({
       setSummaryNotice('当前页还没有渲染好，暂时无法组织请求。');
       return;
     }
+    const sequence = ++summarySeq.current;
+    // A newer generation owns the card from here on. The older request is aborted so it does
+    // not keep spending; its late result is discarded by the sequence check below.
+    summaryInFlight.current?.abort();
+    const controller = new AbortController();
+    summaryInFlight.current = controller;
+    const target = {
+      paperId: paper.id,
+      pdfSha256,
+      summary: summaryTarget.current.summary,
+    };
     setSummaryBusy(true);
     try {
       const request = buildAskContext({
@@ -1196,8 +1264,20 @@ export function ReaderView({
         mode: 'summarize',
         question: '请按「问题 / 方法 / 结论」生成这篇论文的摘要卡。',
       });
-      const result = await summaryClient.ask(request);
+      const result = await summaryClient.ask(request, { signal: controller.signal });
+      // Only the current generation, for the current paper and file, may write. A closed reader,
+      // a replaced PDF or a newer generation all bump the sequence.
+      if (summarySeq.current !== sequence) return;
+      const now = summaryTarget.current;
+      if (now.paperId !== target.paperId || now.pdfSha256 !== target.pdfSha256) return;
+      if (now.summary !== target.summary) {
+        // The reader cleared or edited the card while this request was running. Writing the
+        // result now would silently undo that edit.
+        setSummaryNotice('摘要在等待期间已经变更，这次生成的结果没有覆盖它。');
+        return;
+      }
       if (!result.ok) {
+        if (result.failure.kind === 'cancelled') return;
         setSummaryNotice(`生成失败：${result.failure.message}`);
         return;
       }
@@ -1218,9 +1298,14 @@ export function ReaderView({
         createdAt: Date.now(),
       });
     } catch (error) {
+      if (summarySeq.current !== sequence) return;
       setSummaryNotice(`生成失败：${String(error)}`);
     } finally {
-      setSummaryBusy(false);
+      // A superseded request must not clear the newer one's busy state.
+      if (summarySeq.current === sequence) {
+        summaryInFlight.current = null;
+        setSummaryBusy(false);
+      }
     }
   };
 

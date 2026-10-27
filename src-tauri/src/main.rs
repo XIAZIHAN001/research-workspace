@@ -452,29 +452,74 @@ fn set_ai_api_key(
     Ok(current_status(manager.inner()))
 }
 
+/// What a key deletion actually did, so the interface can tell "deleted" from "deleted, with
+/// historical residue" without reading prose.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiKeyDeletion {
+    status: AiServiceStatus,
+    /// True when the provider's own credential record is gone.
+    key_removed: bool,
+    /// Historical auxiliary records that could not be cleaned up. They cannot authenticate
+    /// anything without the key, but the reader is told rather than left with a half-true
+    /// "deleted" message.
+    residues: Vec<String>,
+}
+
 #[tauri::command]
 fn delete_ai_api_key(
     app: AppHandle,
     manager: State<'_, AiManager>,
     provider: String,
-) -> Result<AiServiceStatus, String> {
-    credentials::delete_for(&provider)?;
-    // Removing the key of the provider in use must also remove the ability to use it: stop the
-    // online child and return to mock in the same action. A key belonging to some other provider
-    // does not affect the running service.
-    let affected = {
+) -> Result<ApiKeyDeletion, String> {
+    // Revoke first. The old order deleted the store record first and only then stopped the
+    // service; a partial storage failure (most often the legacy `.endpoint` record) returned
+    // early and left a child running with a key the reader had just asked to remove.
+    let revoke = {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-        if runtime.mode == AiMode::Online && runtime.settings.provider == provider {
-            runtime.mode = AiMode::Mock;
-            true
-        } else {
-            false
-        }
+        revoke_online_for_key_delete(&mut runtime, &provider)
     };
-    if affected {
+    if revoke {
         start_service(&app, manager.inner());
     }
-    Ok(current_status(manager.inner()))
+
+    let report = credentials::delete_for(&provider)?;
+
+    // `set_ai_mode` could have started an online child between the revoke and the delete. With
+    // the key gone, that child must not keep running.
+    let reconcile = {
+        let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        reconcile_after_key_delete(&mut runtime, &provider, report.key_removed)
+    };
+    if reconcile {
+        start_service(&app, manager.inner());
+    }
+
+    Ok(ApiKeyDeletion {
+        status: current_status(manager.inner()),
+        key_removed: report.key_removed,
+        residues: report.residues,
+    })
+}
+
+/// Returns the runtime to mock when the key being deleted is the one serving online mode.
+fn revoke_online_for_key_delete(runtime: &mut AiRuntime, provider: &str) -> bool {
+    if runtime.mode == AiMode::Online && runtime.settings.provider == provider {
+        runtime.mode = AiMode::Mock;
+        true
+    } else {
+        false
+    }
+}
+
+/// Returns the runtime to mock when an online start raced the delete and the key is now gone.
+fn reconcile_after_key_delete(runtime: &mut AiRuntime, provider: &str, key_removed: bool) -> bool {
+    if key_removed && runtime.mode == AiMode::Online && runtime.settings.provider == provider {
+        runtime.mode = AiMode::Mock;
+        true
+    } else {
+        false
+    }
 }
 
 #[tauri::command]
@@ -860,11 +905,12 @@ fn with_details(message: String, runtime: &AiRuntime) -> String {
 
 /// Why a stored key must not be used for the endpoint currently selected, if it must not.
 ///
-/// A key saved by this build carries the scheme and authority it was entered for. A key from an
-/// older build has no binding; it is accepted only against the provider's own preset endpoint,
-/// which is the address the reader saw when they saved it. Any other endpoint requires saving
-/// the key again — that is what keeps a changed setting from forwarding the old secret
-/// elsewhere.
+/// A key saved by this build carries the scheme and authority it was entered for, written in the
+/// same record. A key from an older build may have no binding, or may have a binding written as a
+/// separate record that a failed save could have paired with the wrong endpoint. Only the first
+/// kind is accepted as a binding; the others are accepted only against the provider's own preset
+/// endpoint. Anything else requires saving the key again — that is what keeps a changed setting
+/// from forwarding an old secret elsewhere.
 fn credential_endpoint_problem(
     provider: &str,
     stored: &credentials::StoredKey,
@@ -876,25 +922,47 @@ fn credential_endpoint_problem(
     let label = providers::find(provider)
         .map(|preset| preset.label)
         .unwrap_or("当前供应商");
-    match stored.endpoint.as_deref() {
-        Some(bound) if bound.eq_ignore_ascii_case(&expected) => None,
-        Some(bound) => Some(format!(
-            "保存的 {label} API Key 绑定的是 {bound}，当前 API 地址是 {expected}。更换地址后请重新保存 Key。"
-        )),
-        None => {
-            let preset = providers::find(provider)
-                .and_then(|preset| providers::endpoint_key(preset.base_url));
-            if preset
-                .as_deref()
-                .is_some_and(|value| value.eq_ignore_ascii_case(&expected))
-            {
+    let preset =
+        providers::find(provider).and_then(|preset| providers::endpoint_key(preset.base_url));
+    let is_preset = preset
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case(&expected));
+    let unbound = || {
+        if is_preset {
+            None
+        } else {
+            Some(format!(
+                "保存的 {label} API Key 还没有绑定当前 API 地址；请重新输入并保存 Key，再使用这个地址。"
+            ))
+        }
+    };
+
+    match stored.binding {
+        credentials::BindingTrust::Atomic => match stored.endpoint.as_deref() {
+            Some(bound) if bound.eq_ignore_ascii_case(&expected) => None,
+            Some(bound) => Some(format!(
+                "保存的 {label} API Key 绑定的是 {bound}，当前 API 地址是 {expected}。更换地址后请重新保存 Key。"
+            )),
+            None => unbound(),
+        },
+        // Two separate legacy records cannot prove the key and the endpoint were saved together.
+        // They are trusted only when both name the provider's own preset endpoint; a custom
+        // endpoint must be saved again, deliberately, with the key.
+        credentials::BindingTrust::LegacyPaired => {
+            let same_pair = is_preset
+                && stored
+                    .endpoint
+                    .as_deref()
+                    .is_some_and(|value| value.eq_ignore_ascii_case(&expected));
+            if same_pair {
                 None
             } else {
                 Some(format!(
-                    "保存的 {label} API Key 还没有绑定当前 API 地址；请先重新保存 Key，再使用这个地址。"
+                    "旧版本的 {label} API Key 和 API 地址是分开保存的，无法确认它们来自同一次保存。请重新输入并保存 Key，再使用当前地址。"
                 ))
             }
         }
+        credentials::BindingTrust::LegacyUnbound => unbound(),
     }
 }
 
@@ -1547,18 +1615,40 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{credential_endpoint_problem, credentials::StoredKey};
+    use super::{
+        credential_endpoint_problem,
+        credentials::{BindingTrust, StoredKey},
+        reconcile_after_key_delete, revoke_online_for_key_delete, AiMode, AiRuntime,
+        AiServiceStatus,
+    };
+    use std::sync::{Arc, Mutex};
 
-    fn stored(endpoint: Option<&str>) -> StoredKey {
+    fn stored(binding: BindingTrust, endpoint: Option<&str>) -> StoredKey {
         StoredKey {
             key: "sk-test-value".to_string(),
             endpoint: endpoint.map(str::to_string),
+            binding,
+        }
+    }
+
+    fn test_runtime(provider: &str, mode: AiMode) -> AiRuntime {
+        AiRuntime {
+            child: None,
+            stdin: None,
+            status: AiServiceStatus::empty("stopped", mode),
+            stderr: Arc::new(Mutex::new(std::collections::VecDeque::new())),
+            generation: 0,
+            mode,
+            settings: super::AiSettings {
+                provider: provider.to_string(),
+                ..super::AiSettings::default()
+            },
         }
     }
 
     #[test]
     fn a_bound_key_only_matches_its_authority() {
-        let bound = stored(Some("https://api.deepseek.com"));
+        let bound = stored(BindingTrust::Atomic, Some("https://api.deepseek.com"));
         assert!(
             credential_endpoint_problem("deepseek", &bound, "https://api.deepseek.com/v1")
                 .is_none()
@@ -1574,7 +1664,7 @@ mod tests {
 
     #[test]
     fn a_legacy_key_is_accepted_only_for_the_provider_preset() {
-        let legacy = stored(None);
+        let legacy = stored(BindingTrust::LegacyUnbound, None);
         assert!(
             credential_endpoint_problem("deepseek", &legacy, "https://api.deepseek.com").is_none()
         );
@@ -1587,5 +1677,63 @@ mod tests {
         assert!(
             credential_endpoint_problem("custom", &legacy, "https://evil.example/v1").is_some()
         );
+    }
+
+    /// Two legacy records are not evidence of one save. Only the preset pair is accepted; a
+    /// custom endpoint requires the reader to save the key again, which is what makes the new
+    /// binding deliberate.
+    #[test]
+    fn a_legacy_paired_record_is_trusted_only_for_the_preset_endpoint() {
+        let paired = stored(BindingTrust::LegacyPaired, Some("https://api.deepseek.com"));
+        assert!(
+            credential_endpoint_problem("deepseek", &paired, "https://api.deepseek.com/v1")
+                .is_none()
+        );
+
+        let custom_pair = stored(BindingTrust::LegacyPaired, Some("https://gateway.example"));
+        let problem =
+            credential_endpoint_problem("custom", &custom_pair, "https://gateway.example/v1")
+                .expect("a legacy pair cannot authorize a custom endpoint");
+        assert!(problem.contains("重新输入"));
+
+        // A preset endpoint reached through a different recorded authority is not the pair the
+        // reader saved either.
+        assert!(
+            credential_endpoint_problem("deepseek", &custom_pair, "https://api.deepseek.com")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn deleting_the_online_provider_revokes_it_before_the_store_is_touched() {
+        let mut runtime = test_runtime("deepseek", AiMode::Online);
+        assert!(revoke_online_for_key_delete(&mut runtime, "deepseek"));
+        assert_eq!(runtime.mode, AiMode::Mock);
+    }
+
+    #[test]
+    fn deleting_another_provider_leaves_the_online_runtime_alone() {
+        let mut runtime = test_runtime("deepseek", AiMode::Online);
+        assert!(!revoke_online_for_key_delete(&mut runtime, "openai"));
+        assert_eq!(runtime.mode, AiMode::Online);
+        // Offline deletes never start or stop anything.
+        let mut offline = test_runtime("deepseek", AiMode::Mock);
+        assert!(!revoke_online_for_key_delete(&mut offline, "deepseek"));
+        assert_eq!(offline.mode, AiMode::Mock);
+    }
+
+    /// The delete and an online start can interleave. If the key is gone afterwards, the child
+    /// that started in between must be taken down again; if the delete failed, the key is still
+    /// there and the reader's explicit online start is left alone.
+    #[test]
+    fn a_start_that_races_a_successful_delete_is_reconciled_back_to_mock() {
+        let mut runtime = test_runtime("deepseek", AiMode::Mock);
+        runtime.mode = AiMode::Online;
+        assert!(reconcile_after_key_delete(&mut runtime, "deepseek", true));
+        assert_eq!(runtime.mode, AiMode::Mock);
+
+        runtime.mode = AiMode::Online;
+        assert!(!reconcile_after_key_delete(&mut runtime, "deepseek", false));
+        assert_eq!(runtime.mode, AiMode::Online);
     }
 }

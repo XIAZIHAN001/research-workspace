@@ -23,6 +23,33 @@ import { ProviderError } from '../errors.mjs';
 /** A reply larger than this is not a chat-completions JSON object we should buffer. */
 export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
+/** How long cleanup may wait for a stream to acknowledge a cancellation. */
+const CANCEL_SETTLE_MS = 250;
+
+/**
+ * Cancels a stream reader or body without letting a stalled cancel block the call.
+ *
+ * `cancel()` waits for the underlying source. On a dead connection that wait can be unbounded,
+ * and awaiting it in cleanup turned a bounded deadline into a permanently pending request. The
+ * rejection is swallowed here, so abandoning the cancel later cannot become an unhandled
+ * rejection either.
+ */
+async function cancelQuietly(target, timeoutMs = CANCEL_SETTLE_MS) {
+  if (target === null || target === undefined) return;
+  let timer;
+  const bounded = new Promise((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  const cancelled = Promise.resolve()
+    .then(() => target.cancel())
+    .catch(() => undefined);
+  try {
+    await Promise.race([cancelled, bounded]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function abortError() {
   return new DOMException('The request was aborted.', 'AbortError');
 }
@@ -41,11 +68,15 @@ function abortError() {
 async function readJsonResponse(response, maxBytes, signal) {
   const declared = response.headers.get('content-length');
   if (declared !== null && Number(declared) > maxBytes) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new ProviderError('upstream', '模型服务返回的内容过大，已拒绝读取。');
+    await cancelQuietly(response.body);
+    throw new ProviderError('upstream', '模型服务返回的内容过大，已拒绝读取。', {
+      requestSent: true,
+    });
   }
   if (response.body === null) {
-    throw new ProviderError('upstream', '模型服务返回的内容里没有可用的回答。');
+    throw new ProviderError('upstream', '模型服务返回的内容里没有可用的回答。', {
+      requestSent: true,
+    });
   }
 
   const reader = response.body.getReader();
@@ -66,15 +97,17 @@ async function readJsonResponse(response, maxBytes, signal) {
       if (wasAborted()) throw abortError();
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        throw new ProviderError('upstream', '模型服务返回的内容过大，已拒绝读取。');
+        await cancelQuietly(reader);
+        throw new ProviderError('upstream', '模型服务返回的内容过大，已拒绝读取。', {
+          requestSent: true,
+        });
       }
       chunks.push(value);
     }
     if (wasAborted()) throw abortError();
   } finally {
     signal?.removeEventListener('abort', onAbort);
-    await reader.cancel().catch(() => undefined);
+    await cancelQuietly(reader);
     try {
       reader.releaseLock();
     } catch {
@@ -187,7 +220,7 @@ export function createChatCompletionsProvider({
         // listener above. Check the state synchronously, before any network work: an aborted
         // request must not send the paper, and must not spend the reader's credit.
         if (signal?.aborted === true) {
-          throw new ProviderError('network', '请求已取消。');
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
         }
 
         let response;
@@ -220,18 +253,26 @@ export function createChatCompletionsProvider({
           });
         } catch (error) {
           // The message of a fetch failure can contain the URL. Only the category is kept.
+          // `requestSent` stays true even for a connection error: fetch had been called, so the
+          // local budget cannot claim the provider did no work.
           void error;
           if (timedOut) {
-            throw new ProviderError('timeout', `模型在 ${String(timeoutMs)} 毫秒内没有返回。`);
+            throw new ProviderError('timeout', `模型在 ${String(timeoutMs)} 毫秒内没有返回。`, {
+              requestSent: true,
+            });
           }
-          if (signal?.aborted === true) throw new ProviderError('network', '请求已取消。');
-          throw new ProviderError('network', '连接不上模型服务，请检查网络或代理设置。');
+          if (signal?.aborted === true) {
+            throw new ProviderError('network', '请求已取消。', { requestSent: true });
+          }
+          throw new ProviderError('network', '连接不上模型服务，请检查网络或代理设置。', {
+            requestSent: true,
+          });
         }
 
         if (!response.ok) {
           // The body may quote the prompt back, and it is not needed. Cancel the stream instead
           // of buffering an unbounded error page.
-          await response.body?.cancel().catch(() => undefined);
+          await cancelQuietly(response.body);
           const category = categoryForStatus(response.status);
           const wording = {
             auth: '模型服务拒绝了这次请求（凭据无效或没有权限）。',
@@ -243,7 +284,7 @@ export function createChatCompletionsProvider({
             timeout: '模型服务超时。',
             config: '模型服务配置有误。',
           }[category];
-          throw new ProviderError(category, wording);
+          throw new ProviderError(category, wording, { requestSent: true });
         }
 
         let payload;
@@ -252,10 +293,14 @@ export function createChatCompletionsProvider({
         } catch (error) {
           if (error instanceof ProviderError) throw error;
           if (timedOut) {
-            throw new ProviderError('timeout', `模型在 ${String(timeoutMs)} 毫秒内没有返回。`);
+            throw new ProviderError('timeout', `模型在 ${String(timeoutMs)} 毫秒内没有返回。`, {
+              requestSent: true,
+            });
           }
-          if (signal?.aborted === true) throw new ProviderError('network', '请求已取消。');
-          throw new ProviderError('upstream', '模型服务返回的不是 JSON。');
+          if (signal?.aborted === true) {
+            throw new ProviderError('network', '请求已取消。', { requestSent: true });
+          }
+          throw new ProviderError('upstream', '模型服务返回的不是 JSON。', { requestSent: true });
         }
 
         const choice = Array.isArray(payload?.choices) ? payload.choices[0] : undefined;
@@ -266,15 +311,20 @@ export function createChatCompletionsProvider({
         const content = choice?.message?.content;
         if (typeof content !== 'string' || content.trim() === '') {
           if (finishReason !== null && INCOMPLETE_REASONS.has(finishReason)) {
-            throw new ProviderError('incomplete', incompleteMessage('length', finishReason));
+            throw new ProviderError('incomplete', incompleteMessage('length', finishReason), {
+              requestSent: true,
+            });
           }
           if (finishReason === 'content_filter') {
             throw new ProviderError(
               'upstream',
               '模型服务的输出被内容策略拦截了，这次没有得到回答。',
+              { requestSent: true },
             );
           }
-          throw new ProviderError('upstream', '模型服务返回的内容里没有可用的回答。');
+          throw new ProviderError('upstream', '模型服务返回的内容里没有可用的回答。', {
+            requestSent: true,
+          });
         }
 
         const usage = payload?.usage;

@@ -440,12 +440,16 @@ export function AiSettingsPanel() {
     setConfirmDelete(false);
     if (!result.ok) {
       setNote({ kind: 'error', text: result.message });
+      // The shell revokes online use before it touches the store, so even a failed delete
+      // leaves the service in mock mode; the page must show that rather than the old status.
+      void refresh();
       return;
     }
     setService(result.status);
     setNote({
-      kind: 'success',
-      text: '已删除这个供应商的系统凭据；如果它正是在用的供应商，在线服务也已停止。',
+      kind: result.warning === undefined ? 'success' : 'warning',
+      text:
+        result.warning ?? '已删除这个供应商的系统凭据；如果它正是在用的供应商，在线服务也已停止。',
     });
     void refresh();
   }, [modelDraft.provider, refresh]);
@@ -1049,9 +1053,12 @@ export function AiSettingsPanel() {
               </div>
             </dl>
             <p className="ai-settings__hint">
-              token 用量来自模型服务的返回值；如果模型服务没有返回用量，统计会改用保守上界
-              {usage?.exactTokens === false ? '（本次已发生）' : ''}。费用是根据价格表做的估算，
-              不是账单，实际金额以服务方结算为准。
+              token 用量来自模型服务的返回值；如果模型服务没有返回可用用量（例如请求在中途失败），
+              统计会改用保守上界
+              {usage?.exactTokens === false
+                ? `（其中 ${String(usage.estimatedRequests)} 次为保守估算）`
+                : ''}
+              。费用是根据价格表做的估算，不是账单，实际金额以服务方结算为准。
             </p>
             {pricing !== undefined && (
               <p className="ai-settings__pricing" data-known={pricing.known}>

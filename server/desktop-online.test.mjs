@@ -295,7 +295,11 @@ describe('desktop online mode', () => {
         await fetch(`${base}/api/ai/health`, { headers: authHeaders() })
       ).json();
       expect(health.usage.requests).toBe(4);
-      expect(health.usage.promptTokens).toBe(0);
+      // Each failure reached the upstream, so it is charged the reserved upper bound and marked
+      // as an estimate rather than recorded as zero.
+      expect(health.usage.promptTokens).toBeGreaterThan(0);
+      expect(health.usage.exactTokens).toBe(false);
+      expect(health.usage.estimatedRequests).toBe(4);
     },
   );
 

@@ -178,6 +178,77 @@ describe('createChatCompletionsProvider', () => {
     expect(cancelled).toBe(true);
   });
 
+  /**
+   * A stream whose underlying `cancel()` never settles is not impossible on a dead connection.
+   * Awaiting it in cleanup would leave `complete()` pending forever, which is exactly what the
+   * deadline is supposed to prevent.
+   */
+  it('settles the deadline even when the stream never finishes cancelling', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"choices":'));
+          },
+          cancel() {
+            return new Promise(() => undefined);
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 80 });
+
+    const raced = await Promise.race([
+      provider.complete({ system: 'S', messages: [], maxTokens: 64 }).catch((caught) => caught),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('hung');
+        }, 1_000);
+      }),
+    ]);
+
+    expect(raced).not.toBe('hung');
+    expect(raced).toBeInstanceOf(ProviderError);
+    expect(raced.code).toBe('timeout');
+  });
+
+  it('does not wait for a cancel that never settles when the body is over the ceiling', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('x'.repeat(64)));
+          },
+          cancel() {
+            return new Promise(() => undefined);
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Length': '4096' },
+        },
+      );
+    const provider = createChatCompletionsProvider({
+      ...CONFIG,
+      fetchImpl,
+      timeoutMs: 5_000,
+      maxResponseBytes: 64,
+    });
+
+    const raced = await Promise.race([
+      provider.complete({ system: 'S', messages: [], maxTokens: 64 }).catch((caught) => caught),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('hung');
+        }, 1_000);
+      }),
+    ]);
+
+    expect(raced).not.toBe('hung');
+    expect(raced).toBeInstanceOf(ProviderError);
+    expect(raced.message).toContain('过大');
+  });
+
   it('rejects a response that exceeds the byte ceiling instead of buffering it', async () => {
     const { fetchImpl } = stubFetch(
       () =>

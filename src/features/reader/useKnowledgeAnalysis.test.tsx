@@ -388,4 +388,69 @@ describe('useKnowledgeAnalysis', () => {
     expect(hook.result.current.analysis.local?.matches[0]?.concept.name).toBe('KZG commitment');
     expect(hook.result.current.analysis.local?.matches[0]?.matchedBy).toBe('selection');
   });
+
+  /**
+   * Replacing the file while a request is running makes that request meaningless: its answer is
+   * about the previous document. It must be cancelled rather than allowed to finish (and spend)
+   * in the background, and a late answer must not enter the knowledge store.
+   */
+  it('aborts a running request when the document is replaced', async () => {
+    let signal: AbortSignal | undefined;
+    let settle!: (outcome: KnowledgeOutcome) => void;
+    const analyze = (
+      _request: KnowledgeRequest,
+      options?: { signal?: AbortSignal },
+    ): Promise<KnowledgeOutcome> => {
+      signal = options?.signal;
+      return new Promise<KnowledgeOutcome>((resolve) => {
+        settle = resolve;
+      });
+    };
+    const secondDoc = { ...DOC, numPages: 4 } as unknown as PDFDocumentProxy;
+    const hook = renderHook(
+      ({ doc }: { doc: PDFDocumentProxy }) => {
+        const store = useMemo(() => createKnowledgeStore(memoryStorage()), []);
+        const api: KnowledgeApi = useKnowledgeApi(store, makeId, () => 100);
+        const analysis = useKnowledgeAnalysis({
+          doc,
+          knowledge: api,
+          makeId,
+          locate: () => ({ location: 'missing', anchor: null }),
+          analyze,
+        });
+        return { analysis, store };
+      },
+      { initialProps: { doc: DOC } },
+    );
+
+    act(() => {
+      hook.result.current.analysis.open(CONTEXT);
+    });
+    act(() => {
+      hook.result.current.analysis.prepare();
+    });
+    await waitFor(() => {
+      expect(hook.result.current.analysis.phase).toBe('ready');
+    });
+    act(() => {
+      hook.result.current.analysis.run();
+    });
+    expect(signal).toBeDefined();
+    expect(hook.result.current.analysis.phase).toBe('running');
+
+    hook.rerender({ doc: secondDoc });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(hook.result.current.analysis.phase).toBe('idle');
+
+    await act(async () => {
+      settle({ ok: true, analysis: ANALYSIS });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(hook.result.current.store.getSnapshot().state.concepts).toHaveLength(0);
+    expect(hook.result.current.analysis.report).toBeNull();
+  });
 });

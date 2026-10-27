@@ -131,10 +131,21 @@ export function useKnowledgeAnalysis(
   }, []);
 
   // Page text belongs to one document; opening another must not reuse the previous text.
+  // The in-flight request is aborted too: its answer would be about a file the reader is no
+  // longer looking at, and waiting for it would keep spending on that analysis.
   useEffect(() => {
     cache.current.clear();
     prepareSeq.current += 1;
     runSeq.current += 1;
+    controller.current?.abort();
+    controller.current = null;
+    // The cancelled run returns without touching the phase, so the "running" state of a request
+    // that no longer exists must be cleared here. This runs after the abort; a new run installs
+    // its own controller first, so it cannot be reset by this.
+    queueMicrotask(() => {
+      if (!mounted.current || controller.current !== null) return;
+      setPhase((current) => (current === 'running' ? 'idle' : current));
+    });
   }, [doc]);
 
   const local = useMemo(() => {

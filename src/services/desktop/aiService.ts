@@ -161,12 +161,33 @@ export async function setAiApiKey(
   }
 }
 
+/**
+ * What the shell's delete command reports.
+ *
+ * `keyRemoved` is the provider's own record. `residues` are historical auxiliary records the
+ * shell could not clean up; they hold no key, so they cannot authenticate anything, but the page
+ * says so instead of claiming a spotless deletion.
+ */
+export interface ApiKeyDeletion {
+  status: DesktopAiStatus;
+  keyRemoved: boolean;
+  residues: string[];
+}
+
 export async function deleteAiApiKey(provider: string): Promise<CredentialMutation> {
   if (!isDesktopApp()) return { ok: false, message: '只有桌面版可以管理系统凭据。' };
   try {
-    const status = await invoke<DesktopAiStatus>('delete_ai_api_key', { provider });
+    const result = await invoke<ApiKeyDeletion>('delete_ai_api_key', { provider });
     notifyAiModeChanged();
-    return { ok: true, status };
+    return {
+      ok: true,
+      status: result.status,
+      ...(result.residues.length === 0
+        ? {}
+        : {
+            warning: `API Key 已删除，但这些旧版本辅助记录没有清理干净：${result.residues.join('；')}。它们本身不包含 Key，不能用于任何在线请求。`,
+          }),
+    };
   } catch (error) {
     return { ok: false, message: typeof error === 'string' ? error : '删除 API Key 失败。' };
   }
@@ -204,7 +225,7 @@ export async function listAiModels({
 }
 
 export type CredentialMutation =
-  { ok: true; status: DesktopAiStatus } | { ok: false; message: string };
+  { ok: true; status: DesktopAiStatus; warning?: string } | { ok: false; message: string };
 
 export async function setDesktopAiMode(mode: DesktopAiMode): Promise<CredentialMutation> {
   if (!isDesktopApp()) return { ok: false, message: '只有桌面版可以切换 AI 模式。' };
