@@ -249,6 +249,39 @@ describe('createChatCompletionsProvider', () => {
     expect(raced.message).toContain('过大');
   });
 
+  it('does not wait for a cancel that never settles on an error response', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"error":'));
+          },
+          cancel() {
+            return new Promise(() => undefined);
+          },
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+
+    const raced = await Promise.race([
+      provider.complete({ system: 'S', messages: [], maxTokens: 64 }).catch((caught) => caught),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('hung');
+        }, 1_000);
+      }),
+    ]);
+
+    expect(raced).not.toBe('hung');
+    expect(raced).toBeInstanceOf(ProviderError);
+    expect(raced.code).toBe('upstream');
+    expect(raced.message).toContain('500');
+  });
+
   it('rejects a response that exceeds the byte ceiling instead of buffering it', async () => {
     const { fetchImpl } = stubFetch(
       () =>
