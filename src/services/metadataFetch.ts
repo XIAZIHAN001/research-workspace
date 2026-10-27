@@ -21,6 +21,8 @@ export type MetadataFetchOutcome =
   | { status: 'no-identifier' }
   /** The request could not be made or did not arrive: offline, blocked or timed out. */
   | { status: 'unreachable' }
+  /** The registry is rate-limiting or temporarily unavailable; trying again is reasonable. */
+  | { status: 'busy' }
   /** The registry answered that it does not know this identifier. */
   | { status: 'not-found' };
 
@@ -42,7 +44,7 @@ export async function fetchPaperMetadata(
 async function request(
   url: string,
   fetchImpl: FetchLike,
-): Promise<'offline' | 'not-found' | string> {
+): Promise<'offline' | 'not-found' | 'busy' | string> {
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
@@ -50,6 +52,9 @@ async function request(
   try {
     const response = await fetchImpl(url, { signal: controller.signal });
     if (response.status === 404) return 'not-found';
+    // A rate limit or a maintenance window is not the same as being offline: waiting and
+    // retrying is exactly what helps, while "check your connection" would be wrong advice.
+    if (response.status === 429 || response.status >= 500) return 'busy';
     if (!response.ok) return 'offline';
     return await response.text();
   } catch {
@@ -65,6 +70,7 @@ async function fromCrossref(doi: string, fetchImpl: FetchLike): Promise<Metadata
   const encoded = encodeURIComponent(doi).replace(/%2F/g, '/');
   const body = await request(`https://api.crossref.org/works/${encoded}`, fetchImpl);
   if (body === 'offline') return { status: 'unreachable' };
+  if (body === 'busy') return { status: 'busy' };
   if (body === 'not-found') return { status: 'not-found' };
   try {
     const message = (JSON.parse(body) as { message?: Record<string, unknown> }).message;
@@ -107,6 +113,7 @@ async function fromArxiv(arxivId: string, fetchImpl: FetchLike): Promise<Metadat
     fetchImpl,
   );
   if (body === 'offline') return { status: 'unreachable' };
+  if (body === 'busy') return { status: 'busy' };
   if (body === 'not-found') return { status: 'not-found' };
   try {
     const xml = new DOMParser().parseFromString(body, 'application/xml');

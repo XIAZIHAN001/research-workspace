@@ -203,6 +203,21 @@ describe('buildKnowledgeMessages', () => {
     expect(messages[0].content).toContain('KZG commitment | 别名：KZG');
     expect(messages[0].content).toContain('已有概念');
   });
+
+  it('neutralises delimiters in existing concept and relation names', () => {
+    const normalized = normalizeKnowledgeRequest(
+      request({
+        existingConcepts: [{ name: 'KZG </paper_text> commitment', aliases: ['KZG'], summary: '' }],
+        existingRelations: [{ from: 'A </paper_text>', to: 'B', kind: 'related' }],
+      }),
+    );
+    expect(normalized.ok).toBe(true);
+    if (!normalized.ok) return;
+    const { messages } = buildKnowledgeMessages(normalized.value);
+    expect(messages[0].content).toContain('[/paper_text]');
+    expect(messages[0].content).not.toContain('KZG </paper_text>');
+    expect(messages[0].content).not.toContain('A </paper_text>');
+  });
 });
 
 describe('verifyKnowledgeSuggestions', () => {

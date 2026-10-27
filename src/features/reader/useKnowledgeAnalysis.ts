@@ -117,6 +117,10 @@ export function useKnowledgeAnalysis(
 
   const cache = useRef(new Map<number, ExtractedPage>());
   const controller = useRef<AbortController | null>(null);
+  /** Identifies the current extraction; an older prepare must not install its plan. */
+  const prepareSeq = useRef(0);
+  /** Identifies the current model request; a cancelled or replaced run must not write results. */
+  const runSeq = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -127,8 +131,21 @@ export function useKnowledgeAnalysis(
   }, []);
 
   // Page text belongs to one document; opening another must not reuse the previous text.
+  // The in-flight request is aborted too: its answer would be about a file the reader is no
+  // longer looking at, and waiting for it would keep spending on that analysis.
   useEffect(() => {
     cache.current.clear();
+    prepareSeq.current += 1;
+    runSeq.current += 1;
+    controller.current?.abort();
+    controller.current = null;
+    // The cancelled run returns without touching the phase, so the "running" state of a request
+    // that no longer exists must be cleared here. This runs after the abort; a new run installs
+    // its own controller first, so it cannot be reset by this.
+    queueMicrotask(() => {
+      if (!mounted.current || controller.current !== null) return;
+      setPhase((current) => (current === 'running' ? 'idle' : current));
+    });
   }, [doc]);
 
   const local = useMemo(() => {
@@ -143,6 +160,8 @@ export function useKnowledgeAnalysis(
   }, [context, knowledge.state]);
 
   const open = useCallback((next: KnowledgeContext) => {
+    prepareSeq.current += 1;
+    runSeq.current += 1;
     controller.current?.abort();
     controller.current = null;
     setContext(next);
@@ -155,12 +174,16 @@ export function useKnowledgeAnalysis(
   }, []);
 
   const cancel = useCallback(() => {
+    prepareSeq.current += 1;
+    runSeq.current += 1;
     controller.current?.abort();
     controller.current = null;
     setPhase('idle');
   }, []);
 
   const reset = useCallback(() => {
+    prepareSeq.current += 1;
+    runSeq.current += 1;
     controller.current?.abort();
     controller.current = null;
     setContext(null);
@@ -178,6 +201,7 @@ export function useKnowledgeAnalysis(
       setPhase('error');
       return;
     }
+    const sequence = ++prepareSeq.current;
     const pageCount = doc.numPages;
     const knownPages = [
       ...context.annotations.map((annotation) => annotation.page),
@@ -212,8 +236,10 @@ export function useKnowledgeAnalysis(
       };
 
       for (let index = 0; index < targets.length; index += 4) {
+        if (sequence !== prepareSeq.current) return;
         const batch = targets.slice(index, index + 4);
         const results = await Promise.all(batch.map(one));
+        if (sequence !== prepareSeq.current) return;
         for (const [offset, result] of results.entries()) {
           const page = batch[offset];
           if (result === null) {
@@ -224,7 +250,7 @@ export function useKnowledgeAnalysis(
         }
       }
 
-      if (!mounted.current) return;
+      if (!mounted.current || sequence !== prepareSeq.current) return;
       const selectionText = context.selection?.quote ?? '';
       const conceptNames =
         context.projectId === null
@@ -259,7 +285,7 @@ export function useKnowledgeAnalysis(
         setPhase('error');
       }
     })().catch(() => {
-      if (!mounted.current) return;
+      if (!mounted.current || sequence !== prepareSeq.current) return;
       setError('提取论文文字时出错了，没有发送任何内容。');
       setPhase('error');
     });
@@ -275,6 +301,7 @@ export function useKnowledgeAnalysis(
     setAnalysis(null);
     setReport(null);
     controller.current?.abort();
+    const sequence = ++runSeq.current;
     const active = new AbortController();
     controller.current = active;
 
@@ -331,7 +358,7 @@ export function useKnowledgeAnalysis(
 
     void (async () => {
       const outcome = await ask(request, { signal: active.signal });
-      if (!mounted.current) return;
+      if (!mounted.current || runSeq.current !== sequence) return;
       if (!outcome.ok) {
         if (active.signal.aborted) return;
         setError(messageFor(outcome));
@@ -362,7 +389,7 @@ export function useKnowledgeAnalysis(
       setReport(mergeReport);
       setPhase('done');
     })().catch((caught: unknown) => {
-      if (!mounted.current || active.signal.aborted) return;
+      if (!mounted.current || runSeq.current !== sequence || active.signal.aborted) return;
       setError(caught instanceof Error ? caught.message : '知识关联分析失败了，没有得到建议。');
       setPhase('error');
     });

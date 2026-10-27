@@ -66,14 +66,35 @@ function unlatex(value: string): string {
   );
 }
 
-/** The body of one entry, from after `@type{` to its matching close, with nesting counted. */
+/**
+ * The body of one entry, from after `@type{` to its matching close, with nesting counted.
+ *
+ * Quoted values are skipped as a unit: a parenthesis inside `title = "Attention (Is) All You
+ * Need"` is text, not the close of a paren-delimited entry. Without that, every such entry
+ * ended at the first parenthesis in its title and was reported as having no title at all.
+ */
 function entryBody(text: string, openIndex: number): { body: string; end: number } | null {
   const open = text[openIndex];
   const close = open === '{' ? '}' : ')';
   let depth = 1;
+  let quoted = false;
   let index = openIndex + 1;
   while (index < text.length) {
     const character = text[index];
+    if (quoted) {
+      if (character === '\\') {
+        index += 2;
+        continue;
+      }
+      if (character === '"') quoted = false;
+      index += 1;
+      continue;
+    }
+    if (character === '"') {
+      quoted = true;
+      index += 1;
+      continue;
+    }
     if (character === '{') depth += 1;
     else if (character === '}') {
       depth -= 1;

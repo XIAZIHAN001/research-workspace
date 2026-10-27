@@ -4,6 +4,7 @@ import {
   buildHistory,
   CONTEXT_WINDOW,
   describeContext,
+  documentScope,
   MAX_DOCUMENT_PASSAGES,
   MAX_DOCUMENT_PASSAGE_CHARS,
   MAX_HISTORY_CHARS,
@@ -260,6 +261,11 @@ describe('buildAskContext: the whole paper', () => {
       charsSent: 21,
       truncated: false,
     });
+  });
+
+  it('reports exactly the scope the request actually carries', () => {
+    // The summary disclosure and the request must not disagree about what is sent.
+    expect(documentScope(document, 3)).toEqual(pageAsk().document);
   });
 
   it('keeps the current page inside the document when the question is about a selection', () => {

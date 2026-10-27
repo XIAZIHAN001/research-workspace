@@ -171,6 +171,32 @@ describe('AiSettingsPanel model controls', () => {
     expect(model).toHaveValue('gpt-4o');
   });
 
+  it('requires a key before listing models from a changed endpoint', async () => {
+    const user = userEvent.setup();
+    render(<AiSettingsPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('模型名称')).toHaveValue('deepseek-flash');
+    });
+    const base = screen.getByLabelText('API 地址');
+    await user.clear(base);
+    await user.type(base, 'https://evil.example/v1');
+    await user.click(screen.getByRole('button', { name: '获取可用模型' }));
+
+    expect(listAiModels).not.toHaveBeenCalled();
+    expect(screen.getByText(/更换 API 地址后/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('输入 API Key'), 'sk-new-key-123');
+    await user.click(screen.getByRole('button', { name: '获取可用模型' }));
+    await waitFor(() => {
+      expect(listAiModels).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        baseUrl: 'https://evil.example/v1',
+        apiKey: 'sk-new-key-123',
+      });
+    });
+  });
+
   it('keeps an unsaved choice when the next poll returns the same saved settings', async () => {
     const user = userEvent.setup();
     render(<AiSettingsPanel />);

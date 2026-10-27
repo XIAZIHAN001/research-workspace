@@ -75,6 +75,16 @@ const evidence: ConceptEvidence = {
 };
 
 describe('buildPaperReport', () => {
+  it('marks notes made on an older PDF file, whose page numbers no longer match', () => {
+    const report = buildPaperReport({
+      paper,
+      annotations: [note('old', { pdfSha256: 'b'.repeat(64) })],
+      knowledge: { concepts: [], evidence: [], relations: [] },
+      projects: [],
+    });
+    expect(report).toContain('旧 PDF 文件');
+  });
+
   it('carries the metadata: authors, year, DOI, status, position and projects', () => {
     const report = buildPaperReport({
       paper,

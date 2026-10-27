@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   suggestionId,
   type DifficultyLocation,
@@ -30,6 +30,24 @@ const RENDER_RETRY_MS = 700;
 export interface LocatedQuote {
   location: DifficultyLocation;
   anchor: DifficultySuggestion['anchor'];
+}
+
+/**
+ * One page waiting to be analysed, and who asked for it.
+ *
+ * A task carries the file it belongs to instead of borrowing the hook's current one: a queue
+ * entry must not be able to analyse a page of a PDF that has since been replaced.
+ */
+interface ScanTask {
+  page: number;
+  pdfSha256: string;
+  /** Automatic tasks stop with the feature; a manual request survives switching it off. */
+  automatic: boolean;
+}
+
+/** A page that already failed, scoped to the file it failed on. */
+function failureKey(pdfSha256: string, page: number): string {
+  return `${pdfSha256}\u0000${String(page)}`;
 }
 
 export interface DifficultyScanOptions {
@@ -119,55 +137,129 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
   const [consentInstance, setConsentInstance] = useState<string | null>(null);
   const onlineConsent = online && serviceInstanceId !== '' && consentInstance === serviceInstanceId;
 
-  /** Pages that failed, so an automatic pass does not retry them in a loop. */
-  const failedPages = useRef(new Set<number>());
-  const running = useRef(false);
+  /** Pages that failed, keyed by file and page so a replaced PDF starts clean. */
+  const failedPages = useRef(new Set<string>());
+  /** Pages waiting for the one in-flight request to finish. */
+  const queue = useRef<ScanTask[]>([]);
+  const draining = useRef(false);
+  /** The task that owns the model request right now, if any. */
+  const inFlight = useRef<ScanTask | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  /**
+   * Identifies the tasks that may still write.
+   *
+   * Bumped when the file, the paper, the service instance or the paid consent changes, and when
+   * the reader clears the cache. An old request that settles afterwards is stale even if its
+   * fetch ignored the abort.
+   */
+  const epoch = useRef(0);
+  /** The file the hook is looking at right now, for async callbacks between renders. */
+  const pdfShaRef = useRef(pdfSha256);
+  useLayoutEffect(() => {
+    // Before the passive effects that clear stale work, and before any awaiting callback runs.
+    pdfShaRef.current = pdfSha256;
+  }, [pdfSha256]);
   const mounted = useRef(true);
+  /** The cache as of the latest render, for timers that outlive the render that set them. */
+  const stateRef = useRef(state);
+  useLayoutEffect(() => {
+    stateRef.current = state;
+  }, [state]);
   useEffect(() => {
     // StrictMode mounts, cleans up and mounts again in development; the flag has to come back
     // up with the effect, or the second mount reports results into a dead component.
     mounted.current = true;
     return () => {
       mounted.current = false;
+      epoch.current += 1;
+      queue.current = [];
+      controller.current?.abort();
+      controller.current = null;
+      inFlight.current = null;
     };
   }, []);
 
+  // A mode/key change replaces the service and revokes an earlier paid consent. Anything queued
+  // under the old permission must not be sent afterwards, and a running request is aborted so
+  // it stops spending under a permission that no longer holds.
+  useEffect(() => {
+    epoch.current += 1;
+    queue.current = [];
+    controller.current?.abort();
+    controller.current = null;
+    inFlight.current = null;
+    // The aborted request returns without touching state, so the "running" of a task that no
+    // longer exists has to be cleared here. It runs after the abort, and a newer request starts
+    // only from a later event, so this cannot clear a request that owns the status now.
+    queueMicrotask(() => {
+      if (mounted.current && inFlight.current === null) {
+        setStatus((current) => (current === 'running' ? 'idle' : current));
+      }
+    });
+  }, [paperId, pdfSha256, online, onlineConsent, serviceInstanceId]);
+
   const analysePage = useCallback(
-    async (page: number): Promise<void> => {
+    async (task: ScanTask, sequence: number): Promise<void> => {
       if (model === '') {
         setError('还没有连上本地 AI 服务，无法分析难点。');
         setStatus('error');
         return;
       }
 
+      const active = new AbortController();
+      controller.current = active;
+      const stale = (): boolean =>
+        !mounted.current || sequence !== epoch.current || active.signal.aborted;
+
       // The page may still be rendering. Waiting for it is cheaper than asking the reader to
       // move away and come back, and a page that never arrives simply ends the attempt.
       let text: string | null = null;
       for (let attempt = 0; attempt <= RENDER_RETRIES; attempt += 1) {
-        text = pageTextFor(page);
+        if (stale()) {
+          if (controller.current === active) controller.current = null;
+          return;
+        }
+        text = pageTextFor(task.page);
         if (text !== null && text.trim() !== '') break;
         text = null;
         await new Promise<void>((resolve) => {
           window.setTimeout(resolve, RENDER_RETRY_MS);
         });
       }
-      if (text === null) return;
-      if (running.current) return;
+      if (text === null || stale()) {
+        if (controller.current === active) controller.current = null;
+        return;
+      }
 
-      running.current = true;
       setStatus('running');
       setError(null);
 
       const ask = analyze ?? analyzeDifficulties;
-      const outcome = await ask({
-        paper: { id: paperId, title: '', page, pdfSha256 },
-        pageText: text,
-      });
-      running.current = false;
-      if (!mounted.current) return;
+      let outcome: Awaited<ReturnType<typeof ask>>;
+      try {
+        outcome = await ask(
+          {
+            paper: { id: paperId, title: '', page: task.page, pdfSha256: task.pdfSha256 },
+            pageText: text,
+          },
+          { signal: active.signal },
+        );
+      } catch (caught) {
+        if (controller.current === active) controller.current = null;
+        // A cancelled or superseded request is not a failure: marking it would keep the page
+        // out of the next automatic pass for a reason the reader never saw.
+        if (stale()) return;
+        failedPages.current.add(failureKey(task.pdfSha256, task.page));
+        setStatus('error');
+        setError(caught instanceof Error ? caught.message : '这一页的难点分析失败了。');
+        return;
+      }
+      if (controller.current === active) controller.current = null;
+      if (stale()) return;
 
       if (!outcome.ok) {
-        failedPages.current.add(page);
+        if (outcome.failure.kind === 'cancelled') return;
+        failedPages.current.add(failureKey(task.pdfSha256, task.page));
         setStatus('error');
         setError(outcome.failure.message);
         return;
@@ -175,12 +267,12 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
 
       const analysis = outcome.value;
       const suggestions = analysis.suggestions.map((proposal) =>
-        place(proposal, analysis, { paperId, pdfSha256, page }, locate),
+        place(proposal, analysis, { paperId, pdfSha256: task.pdfSha256, page: task.page }, locate),
       );
       const record: DifficultyPageRecord = {
         paperId,
-        pdfSha256,
-        page,
+        pdfSha256: task.pdfSha256,
+        page: task.page,
         model: analysis.model,
         rulesVersion: analysis.rulesVersion || DIFFICULTY_RULES_VERSION,
         analysedAt: Date.now(),
@@ -190,7 +282,7 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
       setState((current) => {
         const next = withPageRecord(
           current,
-          pageKey(pdfSha256, page, record.model, record.rulesVersion),
+          pageKey(task.pdfSha256, task.page, record.model, record.rulesVersion),
           record,
         );
         saveDifficulties(next);
@@ -199,51 +291,109 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
       setStatus('idle');
       setError(null);
     },
-    [analyze, locate, model, paperId, pageTextFor, pdfSha256],
+    [analyze, locate, model, paperId, pageTextFor],
+  );
+
+  /**
+   * Runs one page at a time and keeps later requests in a queue.
+   *
+   * The previous implementation dropped overlap silently, so a manual "analyse this page" during
+   * an automatic pass did nothing and the page might never be analysed. Queueing keeps both
+   * requests visible and bounded by the service's own concurrency gate.
+   */
+  const drainQueue = useCallback(async (): Promise<void> => {
+    if (draining.current) return;
+    draining.current = true;
+    try {
+      while (mounted.current && queue.current.length > 0) {
+        const task = queue.current.shift();
+        if (task === undefined) break;
+        // A task for a file the reader has left is dropped: it would only spend money on a
+        // page nobody is looking at.
+        if (task.pdfSha256 !== pdfShaRef.current) continue;
+        inFlight.current = task;
+        await analysePage(task, epoch.current);
+        inFlight.current = null;
+      }
+    } finally {
+      draining.current = false;
+    }
+  }, [analysePage]);
+
+  const schedule = useCallback(
+    (task: ScanTask) => {
+      // A page already being analysed must not be started a second time: the queue only holds
+      // waiting pages, so `includes` alone could not see the request that is already running.
+      if (
+        inFlight.current !== null &&
+        inFlight.current.pdfSha256 === task.pdfSha256 &&
+        inFlight.current.page === task.page
+      ) {
+        // A manual request for the page that is already running upgrades it, so turning the
+        // automatic pass off cannot cancel what the reader explicitly asked for.
+        if (!task.automatic) inFlight.current.automatic = false;
+        return;
+      }
+      const queued = queue.current.find(
+        (entry) => entry.pdfSha256 === task.pdfSha256 && entry.page === task.page,
+      );
+      if (queued !== undefined) {
+        if (!task.automatic) queued.automatic = false;
+        return;
+      }
+      queue.current.push(task);
+      void drainQueue();
+    },
+    [drainQueue],
   );
 
   /** Analyses on request, clearing any earlier failure for that page. */
   const analyse = useCallback(
     (page: number = currentPage) => {
-      failedPages.current.delete(page);
-      void analysePage(page);
+      const task: ScanTask = { page, pdfSha256, automatic: false };
+      failedPages.current.delete(failureKey(pdfSha256, page));
+      schedule(task);
     },
-    [analysePage, currentPage],
+    [currentPage, pdfSha256, schedule],
   );
 
   const reanalyse = useCallback(() => {
+    // The reader asked to start over. Anything already running belongs to the cache this call
+    // is about to clear, so it is invalidated before the records are removed.
+    epoch.current += 1;
+    controller.current?.abort();
+    controller.current = null;
+    inFlight.current = null;
+    queue.current = [];
     failedPages.current.clear();
     setState((current) => {
       const next = withoutPaper(current, pdfSha256);
       saveDifficulties(next);
       return next;
     });
-    void analysePage(currentPage);
-  }, [analysePage, currentPage, pdfSha256]);
+    schedule({ page: currentPage, pdfSha256, automatic: false });
+  }, [currentPage, pdfSha256, schedule]);
 
   // The automatic pass: one page, after the reader has settled on it.
   useEffect(() => {
     if (!prefs.enabled || model === '') return;
     // A paid provider needs a fresh, explicit confirmation before page turns become charges.
     if (online && !onlineConsent) return;
-    if (failedPages.current.has(currentPage)) return;
+    if (failedPages.current.has(failureKey(pdfSha256, currentPage))) return;
     if (state.pages[pageKey(pdfSha256, currentPage, model)] !== undefined) return;
     const timer = window.setTimeout(() => {
-      void analysePage(currentPage);
+      if (!prefs.enabled) return;
+      // Re-check at fire time. A manual request may have answered or failed while this timer
+      // was pending, and the effect's snapshot cannot see either: scheduling again would send
+      // the same page, and billing it, a second time.
+      if (failedPages.current.has(failureKey(pdfSha256, currentPage))) return;
+      if (stateRef.current.pages[pageKey(pdfSha256, currentPage, model)] !== undefined) return;
+      schedule({ page: currentPage, pdfSha256, automatic: true });
     }, SETTLE_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [
-    prefs.enabled,
-    model,
-    online,
-    onlineConsent,
-    currentPage,
-    pdfSha256,
-    state.pages,
-    analysePage,
-  ]);
+  }, [prefs.enabled, model, online, onlineConsent, currentPage, pdfSha256, state.pages, schedule]);
 
   const grantOnlineConsent = useCallback(() => {
     setConsentInstance(serviceInstanceId);
@@ -256,6 +406,14 @@ export function useDifficultyScan(options: DifficultyScanOptions): DifficultySca
       return updated;
     });
     if (!next) {
+      // Turning automatic scanning off drops only its own work. A page the reader asked for
+      // stays queued, and a manual request already running is not cancelled.
+      queue.current = queue.current.filter((task) => !task.automatic);
+      if (inFlight.current?.automatic === true) {
+        controller.current?.abort();
+        controller.current = null;
+        inFlight.current = null;
+      }
       setStatus('idle');
       setError(null);
     }

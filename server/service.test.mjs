@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { request as httpRequest } from 'node:http';
 import { LIMITS } from './config.mjs';
+import { createChatCompletionsProvider } from './providers/openaiCompatible.mjs';
 import { postJson, rawRequest, startTestService, validAsk } from './testing.mjs';
 
 /** Every test gets its own service, so rate limits and concurrency never leak between them. */
@@ -226,10 +228,10 @@ describe('the service as a whole', () => {
     const { base } = await service();
     const allowed = await fetch(`${base}/api/ai/ask`, {
       method: 'OPTIONS',
-      headers: { Origin: 'http://127.0.0.1:1420' },
+      headers: { Origin: 'http://127.0.0.1:1440' },
     });
     expect(allowed.status).toBe(204);
-    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:1420');
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:1440');
 
     const denied = await fetch(`${base}/api/ai/ask`, {
       method: 'OPTIONS',
@@ -410,5 +412,116 @@ describe('the service as a boundary for money', () => {
     expect(log).not.toContain('sk-live-must-not-leak');
     expect(log).not.toContain('invariant to the ordering');
     expect(log).toContain('"passages"');
+  });
+});
+
+/**
+ * A stalled upstream must not wedge the service.
+ *
+ * The concurrency gate is released in `handleAsk`'s `finally`, which only runs if the provider
+ * settles. With a body that never ends, the old adapter never settled: four such calls would
+ * take every slot and every later request would be refused as busy. This test fills all four
+ * slots with stalled bodies and then expects a normal answer.
+ */
+describe('a stalled upstream', () => {
+  it('releases the concurrency slots and answers the next request', async () => {
+    const encoder = new TextEncoder();
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      if (calls <= 4) {
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('{"choices":'));
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '好了' } }],
+          usage: { prompt_tokens: 3, completion_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    };
+    const provider = createChatCompletionsProvider({
+      id: 'openai',
+      label: 'OpenAI',
+      apiKey: 'sk-not-a-real-key',
+      baseUrl: 'https://api.example.test/v1',
+      model: 'gpt-4o-mini',
+      fetchImpl,
+      timeoutMs: 80,
+    });
+    const { base } = await service({ provider });
+
+    const stalled = await Promise.all(
+      Array.from({ length: 4 }, () => postJson(base, '/api/ai/ask', validAsk())),
+    );
+    expect(stalled.map((response) => response.status)).toEqual([504, 504, 504, 504]);
+
+    const after = await postJson(base, '/api/ai/ask', validAsk());
+    expect(after.status).toBe(200);
+  });
+});
+
+/**
+ * A client that closes the socket mid-body must not reach the model.
+ *
+ * `readJsonBody` listens for the socket's `close`; without that, the handler would wait for an
+ * `end` that never arrives and keep one of the four concurrency slots. This fills every slot
+ * with a vanished client and then expects a normal request to be served.
+ */
+describe('a caller that disconnects while sending the body', () => {
+  function abortDuringBody(base) {
+    const url = new URL('/api/ai/ask', base);
+    return new Promise((resolve) => {
+      const request = httpRequest(
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: url.pathname,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        (response) => {
+          response.resume();
+          response.on('end', resolve);
+        },
+      );
+      request.on('error', () => resolve());
+      // A deliberately incomplete JSON document: the server is still waiting for the rest.
+      request.write('{"mode":"explain",');
+      setTimeout(() => {
+        request.destroy();
+        resolve();
+      }, 30);
+    });
+  }
+
+  it('never calls the provider and keeps the service usable', async () => {
+    let calls = 0;
+    const provider = {
+      name: 'openai',
+      label: 'OpenAI',
+      model: 'gpt-4o-mini',
+      complete: async () => {
+        calls += 1;
+        return { text: '好了', usage: null, truncated: false, finishReason: 'stop' };
+      },
+    };
+    const { base } = await service({ provider });
+
+    await Promise.all(Array.from({ length: 4 }, () => abortDuringBody(base)));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(calls).toBe(0);
+
+    const after = await postJson(base, '/api/ai/ask', validAsk());
+    expect(after.status).toBe(200);
+    expect(calls).toBe(1);
   });
 });

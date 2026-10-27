@@ -224,10 +224,14 @@ impl AiSettings {
         self.base_url = if providers::validate_base_url(&base_url).is_ok() {
             base_url
         } else {
-            preset.map(|value| value.base_url.to_string()).unwrap_or_default()
+            preset
+                .map(|value| value.base_url.to_string())
+                .unwrap_or_default()
         };
         if !providers::is_valid_model_name(&self.model) {
-            self.model = preset.map(|value| value.default_model.to_string()).unwrap_or_default();
+            self.model = preset
+                .map(|value| value.default_model.to_string())
+                .unwrap_or_default();
         }
         if !REASONING_EFFORTS.contains(&self.reasoning_effort.as_str()) {
             self.reasoning_effort = default_reasoning_effort();
@@ -383,6 +387,7 @@ fn set_ai_api_key(
     manager: State<'_, AiManager>,
     provider: String,
     key: String,
+    base_url: Option<String>,
 ) -> Result<AiServiceStatus, String> {
     let mut candidate = key.trim().to_string();
     let valid = candidate.chars().count() >= credentials::KEY_MIN_CHARS
@@ -398,7 +403,37 @@ fn set_ai_api_key(
         ));
     }
 
-    let written = credentials::set_for(&provider, &candidate);
+    // A key is saved *for an endpoint*. Binding it here means changing the endpoint later cannot
+    // move the stored secret to a host it was never entered for.
+    let endpoint = match base_url.as_deref().map(providers::normalize_base_url) {
+        Some(value) if value.is_empty() => {
+            let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+            if runtime.settings.provider == provider {
+                providers::endpoint_key(&runtime.settings.base_url)
+            } else {
+                providers::find(&provider)
+                    .and_then(|preset| providers::endpoint_key(preset.base_url))
+            }
+        }
+        Some(value) => {
+            if let Err(error) = providers::validate_base_url(&value) {
+                wipe_string(&mut candidate);
+                return Err(error);
+            }
+            providers::endpoint_key(&value)
+        }
+        None => {
+            let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+            if runtime.settings.provider == provider {
+                providers::endpoint_key(&runtime.settings.base_url)
+            } else {
+                providers::find(&provider)
+                    .and_then(|preset| providers::endpoint_key(preset.base_url))
+            }
+        }
+    };
+
+    let written = credentials::set_for(&provider, &candidate, endpoint.as_deref());
     // This local copy exists only for the duration of the call. The IPC argument itself is
     // owned by Tauri and is not persisted or logged by this shell.
     wipe_string(&mut candidate);
@@ -417,29 +452,74 @@ fn set_ai_api_key(
     Ok(current_status(manager.inner()))
 }
 
+/// What a key deletion actually did, so the interface can tell "deleted" from "deleted, with
+/// historical residue" without reading prose.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApiKeyDeletion {
+    status: AiServiceStatus,
+    /// True when the provider's own credential record is gone.
+    key_removed: bool,
+    /// Historical auxiliary records that could not be cleaned up. They cannot authenticate
+    /// anything without the key, but the reader is told rather than left with a half-true
+    /// "deleted" message.
+    residues: Vec<String>,
+}
+
 #[tauri::command]
 fn delete_ai_api_key(
     app: AppHandle,
     manager: State<'_, AiManager>,
     provider: String,
-) -> Result<AiServiceStatus, String> {
-    credentials::delete_for(&provider)?;
-    // Removing the key of the provider in use must also remove the ability to use it: stop the
-    // online child and return to mock in the same action. A key belonging to some other provider
-    // does not affect the running service.
-    let affected = {
+) -> Result<ApiKeyDeletion, String> {
+    // Revoke first. The old order deleted the store record first and only then stopped the
+    // service; a partial storage failure (most often the legacy `.endpoint` record) returned
+    // early and left a child running with a key the reader had just asked to remove.
+    let revoke = {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-        if runtime.mode == AiMode::Online && runtime.settings.provider == provider {
-            runtime.mode = AiMode::Mock;
-            true
-        } else {
-            false
-        }
+        revoke_online_for_key_delete(&mut runtime, &provider)
     };
-    if affected {
+    if revoke {
         start_service(&app, manager.inner());
     }
-    Ok(current_status(manager.inner()))
+
+    let report = credentials::delete_for(&provider)?;
+
+    // `set_ai_mode` could have started an online child between the revoke and the delete. With
+    // the key gone, that child must not keep running.
+    let reconcile = {
+        let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        reconcile_after_key_delete(&mut runtime, &provider, report.key_removed)
+    };
+    if reconcile {
+        start_service(&app, manager.inner());
+    }
+
+    Ok(ApiKeyDeletion {
+        status: current_status(manager.inner()),
+        key_removed: report.key_removed,
+        residues: report.residues,
+    })
+}
+
+/// Returns the runtime to mock when the key being deleted is the one serving online mode.
+fn revoke_online_for_key_delete(runtime: &mut AiRuntime, provider: &str) -> bool {
+    if runtime.mode == AiMode::Online && runtime.settings.provider == provider {
+        runtime.mode = AiMode::Mock;
+        true
+    } else {
+        false
+    }
+}
+
+/// Returns the runtime to mock when an online start raced the delete and the key is now gone.
+fn reconcile_after_key_delete(runtime: &mut AiRuntime, provider: &str, key_removed: bool) -> bool {
+    if key_removed && runtime.mode == AiMode::Online && runtime.settings.provider == provider {
+        runtime.mode = AiMode::Mock;
+        true
+    } else {
+        false
+    }
 }
 
 #[tauri::command]
@@ -456,14 +536,7 @@ fn set_ai_mode(
             runtime.settings.clone()
         };
         settings.online_ready()?;
-        if !credentials::status_for(&settings.provider).configured {
-            return Err(format!(
-                "还没有配置 {} 的 API Key，不能进入在线模式。",
-                providers::find(&settings.provider)
-                    .map(|preset| preset.label)
-                    .unwrap_or("当前供应商")
-            ));
-        }
+        check_online_credential(&settings.provider, &settings.base_url)?;
     }
     {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
@@ -510,6 +583,7 @@ fn update_ai_settings(
         // A save while online must not leave the running service with settings it cannot use.
         if runtime.mode == AiMode::Online {
             next.online_ready()?;
+            check_online_credential(&next.provider, &next.base_url)?;
         } else {
             next.validate()?;
         }
@@ -547,8 +621,8 @@ async fn list_ai_models(
     base_url: Option<String>,
     api_key: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let preset = providers::find(&provider)
-        .ok_or_else(|| format!("未知的模型提供方：{provider}。"))?;
+    let preset =
+        providers::find(&provider).ok_or_else(|| format!("未知的模型提供方：{provider}。"))?;
     let (stored_provider, stored_base_url) = {
         let runtime = manager.0.lock().expect("AI runtime lock poisoned");
         (
@@ -557,25 +631,17 @@ async fn list_ai_models(
         )
     };
 
-    let requested = providers::normalize_base_url(base_url.as_deref().unwrap_or(""));
-    let base = if !requested.is_empty() {
-        requested
+    let stored_base = providers::normalize_base_url(&stored_base_url);
+    // The stored endpoint belongs to the stored provider; asking a different provider for its
+    // catalogue must not borrow someone else's address.
+    let saved_base = if stored_provider == provider && !stored_base.is_empty() {
+        stored_base
     } else {
-        let stored = providers::normalize_base_url(&stored_base_url);
-        // The stored endpoint belongs to the stored provider; asking a different provider for its
-        // catalogue must not borrow someone else's address.
-        if stored_provider == provider && !stored.is_empty() {
-            stored
-        } else {
-            preset.base_url.to_string()
-        }
+        preset.base_url.to_string()
     };
-    if base.is_empty() {
-        return Err("请先填写 API 地址。".to_string());
-    }
-    providers::validate_base_url(&base)?;
+    let requested = providers::normalize_base_url(base_url.as_deref().unwrap_or(""));
 
-    let mut key = match api_key {
+    let explicit_key = match api_key {
         Some(value) if !value.trim().is_empty() => {
             let candidate = value.trim().to_string();
             let valid = candidate.chars().count() >= credentials::KEY_MIN_CHARS
@@ -590,10 +656,49 @@ async fn list_ai_models(
                     credentials::KEY_MAX_CHARS
                 ));
             }
-            candidate
+            Some(candidate)
         }
-        _ => credentials::get_for(&provider)?
-            .ok_or_else(|| "还没有保存这个提供方的 API Key，可以先保存再获取模型列表。".to_string())?,
+        _ => None,
+    };
+
+    // A caller that supplies a key is allowed to ask an arbitrary endpoint: the secret is the
+    // one it just typed, not the one in the credential store. With no new key, the endpoint
+    // must be the saved one; otherwise the stored credential could be sent to a host it was
+    // never entered for.
+    let base = if explicit_key.is_some() {
+        if requested.is_empty() {
+            saved_base
+        } else {
+            requested
+        }
+    } else {
+        if !requested.is_empty()
+            && providers::endpoint_key(&requested) != providers::endpoint_key(&saved_base)
+        {
+            return Err(
+                "使用已保存的 API Key 时不能更换 API 地址；请先输入 Key，或先保存新的端点。"
+                    .to_string(),
+            );
+        }
+        saved_base
+    };
+    if base.is_empty() {
+        return Err("请先填写 API 地址。".to_string());
+    }
+    providers::validate_base_url(&base)?;
+
+    let mut key = if let Some(key) = explicit_key {
+        key
+    } else {
+        let stored = credentials::get_for(&provider)?.ok_or_else(|| {
+            "还没有保存这个提供方的 API Key，可以先保存再获取模型列表。".to_string()
+        })?;
+        if let Err(error) = check_credential_endpoint(&provider, &stored, &base) {
+            let mut stored = stored;
+            wipe_string(&mut stored.key);
+            return Err(error);
+        }
+        stored.key
     };
 
     let outcome = fetch_models(&base, &key).await;
@@ -638,13 +743,22 @@ async fn fetch_models(base: &str, key: &str) -> Result<Vec<String>, String> {
             return Err("模型列表的响应过大，已放弃读取。".to_string());
         }
     }
-    let text = response
-        .text()
+    // Read with the cap enforced while the bytes arrive. `text()` would buffer an unbounded
+    // chunked response before the length check could run.
+    let mut response = response;
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|_| "读取模型列表的响应失败。".to_string())?;
-    if text.len() > MODELS_RESPONSE_LIMIT {
-        return Err("模型列表的响应过大，已放弃读取。".to_string());
+        .map_err(|_| "读取模型列表的响应失败。".to_string())?
+    {
+        if body.len() + chunk.len() > MODELS_RESPONSE_LIMIT {
+            return Err("模型列表的响应过大，已放弃读取。".to_string());
+        }
+        body.extend_from_slice(&chunk);
     }
+    let text =
+        String::from_utf8(body).map_err(|_| "模型服务返回的不是有效的 UTF-8 JSON。".to_string())?;
     parse_models(&text)
 }
 
@@ -690,11 +804,7 @@ fn parse_models(text: &str) -> Result<Vec<String>, String> {
 
 fn random_token() -> String {
     // 32 hex characters each, well above the service's 32-character floor.
-    format!(
-        "{}{}",
-        Uuid::new_v4().simple(),
-        Uuid::new_v4().simple()
-    )
+    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
 fn sidecar_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -791,6 +901,102 @@ fn with_details(message: String, runtime: &AiRuntime) -> String {
     } else {
         format!("{message}（{tail}）")
     }
+}
+
+/// Why a stored key must not be used for the endpoint currently selected, if it must not.
+///
+/// A key saved by this build carries the scheme and authority it was entered for, written in the
+/// same record. A key from an older build may have no binding, or may have a binding written as a
+/// separate record that a failed save could have paired with the wrong endpoint. Only the first
+/// kind is accepted as a binding; the others are accepted only against the provider's own preset
+/// endpoint. Anything else requires saving the key again — that is what keeps a changed setting
+/// from forwarding an old secret elsewhere.
+fn credential_endpoint_problem(
+    provider: &str,
+    stored: &credentials::StoredKey,
+    base_url: &str,
+) -> Option<String> {
+    let Some(expected) = providers::endpoint_key(base_url) else {
+        return Some("API 地址无效，无法校验 API Key 的绑定关系。".to_string());
+    };
+    let label = providers::find(provider)
+        .map(|preset| preset.label)
+        .unwrap_or("当前供应商");
+    let preset =
+        providers::find(provider).and_then(|preset| providers::endpoint_key(preset.base_url));
+    let is_preset = preset
+        .as_deref()
+        .is_some_and(|value| value.eq_ignore_ascii_case(&expected));
+    let unbound = || {
+        if is_preset {
+            None
+        } else {
+            Some(format!(
+                "保存的 {label} API Key 还没有绑定当前 API 地址；请重新输入并保存 Key，再使用这个地址。"
+            ))
+        }
+    };
+
+    match stored.binding {
+        credentials::BindingTrust::Atomic => match stored.endpoint.as_deref() {
+            Some(bound) if bound.eq_ignore_ascii_case(&expected) => None,
+            Some(bound) => Some(format!(
+                "保存的 {label} API Key 绑定的是 {bound}，当前 API 地址是 {expected}。更换地址后请重新保存 Key。"
+            )),
+            None => unbound(),
+        },
+        // Two separate legacy records cannot prove the key and the endpoint were saved together.
+        // They are trusted only when both name the provider's own preset endpoint; a custom
+        // endpoint must be saved again, deliberately, with the key.
+        credentials::BindingTrust::LegacyPaired => {
+            let same_pair = is_preset
+                && stored
+                    .endpoint
+                    .as_deref()
+                    .is_some_and(|value| value.eq_ignore_ascii_case(&expected));
+            if same_pair {
+                None
+            } else {
+                Some(format!(
+                    "旧版本的 {label} API Key 和 API 地址是分开保存的，无法确认它们来自同一次保存。请重新输入并保存 Key，再使用当前地址。"
+                ))
+            }
+        }
+        credentials::BindingTrust::LegacyUnbound => unbound(),
+    }
+}
+
+fn check_credential_endpoint(
+    provider: &str,
+    stored: &credentials::StoredKey,
+    base_url: &str,
+) -> Result<(), String> {
+    match credential_endpoint_problem(provider, stored, base_url) {
+        Some(problem) => Err(problem),
+        None => Ok(()),
+    }
+}
+
+/// Reads the key that would serve the current online settings, and checks its endpoint binding.
+fn online_credential(provider: &str, base_url: &str) -> Result<credentials::StoredKey, String> {
+    let label = providers::find(provider)
+        .map(|preset| preset.label)
+        .unwrap_or("当前供应商");
+    let mut stored = credentials::get_for(provider)?
+        .ok_or_else(|| format!("还没有配置 {label} 的 API Key，不能进入在线模式。"))?;
+    if let Err(error) = check_credential_endpoint(provider, &stored, base_url) {
+        wipe_string(&mut stored.key);
+        return Err(error);
+    }
+    Ok(stored)
+}
+
+/// The same check without keeping the secret: used by commands that only need to know whether an
+/// online start is allowed.
+fn check_online_credential(provider: &str, base_url: &str) -> Result<(), String> {
+    let mut stored = online_credential(provider, base_url)?;
+    wipe_string(&mut stored.key);
+    Ok(())
 }
 
 fn stop_child(runtime: &mut AiRuntime) {
@@ -1231,12 +1437,26 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
                 // a failed start, not a quiet fallback to a different service.
                 let read = credentials::get_for(&settings.provider);
                 match read {
-                    Ok(Some(mut key)) => {
+                    Ok(Some(mut stored)) => {
+                        if let Err(error) = check_credential_endpoint(
+                            &settings.provider,
+                            &stored,
+                            &settings.base_url,
+                        ) {
+                            wipe_string(&mut stored.key);
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            let failed = failed_status(mode, credential_configured, error);
+                            runtime.status = failed.clone();
+                            drop(runtime);
+                            emit_status(app, &failed);
+                            return;
+                        }
                         let handed = match stdin.as_mut() {
-                            Some(pipe) => write_secret(pipe, &key),
+                            Some(pipe) => write_secret(pipe, &stored.key),
                             None => Err("本地 AI 服务没有可用的凭据通道。".to_string()),
                         };
-                        wipe_string(&mut key);
+                        wipe_string(&mut stored.key);
                         if let Err(error) = handed {
                             let _ = child.kill();
                             let _ = child.wait();
@@ -1391,4 +1611,129 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        credential_endpoint_problem,
+        credentials::{BindingTrust, StoredKey},
+        reconcile_after_key_delete, revoke_online_for_key_delete, AiMode, AiRuntime,
+        AiServiceStatus,
+    };
+    use std::sync::{Arc, Mutex};
+
+    fn stored(binding: BindingTrust, endpoint: Option<&str>) -> StoredKey {
+        StoredKey {
+            key: "sk-test-value".to_string(),
+            endpoint: endpoint.map(str::to_string),
+            binding,
+        }
+    }
+
+    fn test_runtime(provider: &str, mode: AiMode) -> AiRuntime {
+        AiRuntime {
+            child: None,
+            stdin: None,
+            status: AiServiceStatus::empty("stopped", mode),
+            stderr: Arc::new(Mutex::new(std::collections::VecDeque::new())),
+            generation: 0,
+            mode,
+            settings: super::AiSettings {
+                provider: provider.to_string(),
+                ..super::AiSettings::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_bound_key_only_matches_its_authority() {
+        let bound = stored(BindingTrust::Atomic, Some("https://api.deepseek.com"));
+        assert!(
+            credential_endpoint_problem("deepseek", &bound, "https://api.deepseek.com/v1")
+                .is_none()
+        );
+        assert!(
+            credential_endpoint_problem("deepseek", &bound, "https://evil.example/v1").is_some()
+        );
+        // A scheme downgrade is a different endpoint even when the host is the same.
+        assert!(
+            credential_endpoint_problem("deepseek", &bound, "http://api.deepseek.com/v1").is_some()
+        );
+    }
+
+    #[test]
+    fn a_legacy_key_is_accepted_only_for_the_provider_preset() {
+        let legacy = stored(BindingTrust::LegacyUnbound, None);
+        assert!(
+            credential_endpoint_problem("deepseek", &legacy, "https://api.deepseek.com").is_none()
+        );
+        assert!(credential_endpoint_problem(
+            "deepseek",
+            &legacy,
+            "https://api.deepseek.example/v1"
+        )
+        .is_some());
+        assert!(
+            credential_endpoint_problem("custom", &legacy, "https://evil.example/v1").is_some()
+        );
+    }
+
+    /// Two legacy records are not evidence of one save. Only the preset pair is accepted; a
+    /// custom endpoint requires the reader to save the key again, which is what makes the new
+    /// binding deliberate.
+    #[test]
+    fn a_legacy_paired_record_is_trusted_only_for_the_preset_endpoint() {
+        let paired = stored(BindingTrust::LegacyPaired, Some("https://api.deepseek.com"));
+        assert!(
+            credential_endpoint_problem("deepseek", &paired, "https://api.deepseek.com/v1")
+                .is_none()
+        );
+
+        let custom_pair = stored(BindingTrust::LegacyPaired, Some("https://gateway.example"));
+        let problem =
+            credential_endpoint_problem("custom", &custom_pair, "https://gateway.example/v1")
+                .expect("a legacy pair cannot authorize a custom endpoint");
+        assert!(problem.contains("重新输入"));
+
+        // A preset endpoint reached through a different recorded authority is not the pair the
+        // reader saved either.
+        assert!(
+            credential_endpoint_problem("deepseek", &custom_pair, "https://api.deepseek.com")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn deleting_the_online_provider_revokes_it_before_the_store_is_touched() {
+        let mut runtime = test_runtime("deepseek", AiMode::Online);
+        assert!(revoke_online_for_key_delete(&mut runtime, "deepseek"));
+        assert_eq!(runtime.mode, AiMode::Mock);
+    }
+
+    #[test]
+    fn deleting_another_provider_leaves_the_online_runtime_alone() {
+        let mut runtime = test_runtime("deepseek", AiMode::Online);
+        assert!(!revoke_online_for_key_delete(&mut runtime, "openai"));
+        assert_eq!(runtime.mode, AiMode::Online);
+        // Offline deletes never start or stop anything.
+        let mut offline = test_runtime("deepseek", AiMode::Mock);
+        assert!(!revoke_online_for_key_delete(&mut offline, "deepseek"));
+        assert_eq!(offline.mode, AiMode::Mock);
+    }
+
+    /// The delete and an online start can interleave. If the key is gone afterwards, the child
+    /// that started in between must be taken down again; if the delete failed, the key is still
+    /// there and the reader's explicit online start is left alone.
+    #[test]
+    fn a_start_that_races_a_successful_delete_is_reconciled_back_to_mock() {
+        let mut runtime = test_runtime("deepseek", AiMode::Mock);
+        runtime.mode = AiMode::Online;
+        assert!(reconcile_after_key_delete(&mut runtime, "deepseek", true));
+        assert_eq!(runtime.mode, AiMode::Mock);
+
+        runtime.mode = AiMode::Online;
+        assert!(!reconcile_after_key_delete(&mut runtime, "deepseek", false));
+        assert_eq!(runtime.mode, AiMode::Online);
+    }
 }

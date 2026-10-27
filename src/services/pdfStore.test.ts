@@ -31,14 +31,29 @@ function failingFactory(error: DOMException): IDBFactory {
   };
   const database = {
     objectStoreNames: { contains: () => true },
-    transaction: () => ({
-      objectStore: () => ({
-        put: erroringRequest,
-        get: erroringRequest,
-        getKey: erroringRequest,
-        delete: erroringRequest,
-      }),
-    }),
+    transaction: () => {
+      const transaction = {
+        objectStore: () => ({
+          put: erroringRequest,
+          get: erroringRequest,
+          getKey: erroringRequest,
+          delete: erroringRequest,
+        }),
+        error,
+        oncomplete: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        onabort: null as (() => void) | null,
+      };
+      // A failed write aborts the transaction as well as failing its request; the store now
+      // waits for the transaction to settle before reporting an outcome.
+      queueMicrotask(() => {
+        queueMicrotask(() => {
+          transaction.onerror?.();
+          transaction.onabort?.();
+        });
+      });
+      return transaction;
+    },
   } as unknown as IDBDatabase;
   return {
     open: () => {

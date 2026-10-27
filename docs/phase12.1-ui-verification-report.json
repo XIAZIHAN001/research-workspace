@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-25T10:24:46.121Z",
+  "generatedAt": "2026-10-25T13:25:11.247Z",
   "baseUrl": "http://127.0.0.1:4178/",
   "viewportMatrix": [
     "1440x900",
@@ -616,5 +616,5 @@
   ],
   "passed": 64,
   "failed": 0,
-  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-25T10-24-19-ui\\"
+  "screenshots": "D:\\论文阅读解构项目\\docs\\screenshots-phase12\\2026-10-25T13-24-44-ui\\"
 }

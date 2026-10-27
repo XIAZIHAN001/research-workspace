@@ -365,7 +365,9 @@ export function renderPaperBlock(request) {
   const pages = new Set(request.passages.map((passage) => passage.page));
   const lines = [
     OPEN,
-    `论文标题：${request.paper.title}`,
+    // The title is untrusted too: it comes from PDF metadata or a hand-typed record, and a
+    // title containing the closing delimiter would end the data block early.
+    `论文标题：${neutraliseDelimiters(request.paper.title)}`,
     `当前页：第 ${String(request.paper.page)} 页`,
     documentScope
       ? `阅读范围：读者上传了整篇论文，下面按页提供正文（共 ${String(pages.size)} 页）。请先通读全文，再回答问题。`
@@ -374,7 +376,9 @@ export function renderPaperBlock(request) {
         : '阅读范围：读者选中了下面这段原文，另外附了同页的上下文。',
   ];
   if (request.layoutNotice !== null && request.layoutNotice !== '') {
-    lines.push(`排版提示（由阅读器测出，不是模型推断）：${request.layoutNotice}`);
+    lines.push(
+      `排版提示（由阅读器测出，不是模型推断）：${neutraliseDelimiters(request.layoutNotice)}`,
+    );
   }
   for (const passage of request.passages) {
     lines.push(

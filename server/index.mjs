@@ -2,10 +2,10 @@
  * The local AI service.
  *
  * Its whole job is to keep the API key off the browser and the paper text off the network
- * except for the one call the reader asked for. Consequently:
+ * except for the calls the reader explicitly asked for. Consequently:
  *
  * - it listens on 127.0.0.1 only (see `config.mjs`: not configurable);
- * - it serves exactly two paths and forwards nothing;
+ * - it serves only the four known paths and forwards nothing;
  * - the provider, the base URL and the model come from the environment, never the request;
  * - every request is bounded in size, rate and concurrency before it can cost anything;
  * - the response is JSON, and nothing in it is ever served as HTML.
@@ -44,20 +44,24 @@ import { createProvider } from './providers/index.mjs';
 import { createLogger } from './log.mjs';
 import { describePrice, estimateCostCny } from './pricing.mjs';
 
+/** CJK and full-width characters, which tokenizers treat at roughly one token each. */
+const WIDE_CHAR = /[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/gu;
+
 /**
  * A pessimistic input estimate, in tokens, used only for the *upper bound* a call may consume.
  *
- * Chinese text is roughly one token per character and English about a quarter, so half a
- * character per token plus a fixed allowance is above either. Overestimating means a budget is
- * exhausted a little early, which is the safe direction; underestimating would mean a call slips
- * past the limit.
+ * The two scripts are not interchangeable: CJK is roughly one token per character, while Latin
+ * text is about one per three and a half. A single `chars / 2` was above Latin and below CJK —
+ * it refused long Latin documents that would have fitted, and under-reserved Chinese ones. The
+ * fixed allowance covers the message framing.
  */
-function estimatePromptTokens(chars) {
-  return 400 + Math.ceil(chars / 2);
+export function estimatePromptTokens(text) {
+  const wide = text.match(WIDE_CHAR)?.length ?? 0;
+  return 400 + wide + Math.ceil((text.length - wide) / 3.5);
 }
 
-function charCount(system, messages) {
-  return system.length + messages.reduce((sum, message) => sum + (message.content?.length ?? 0), 0);
+function promptText(system, messages) {
+  return system + messages.map((message) => message.content ?? '').join('');
 }
 
 /** Headers a browser needs before it will let the page read our reply, for allowed origins only. */
@@ -105,6 +109,8 @@ export function createAiServer({
     costKnown: true,
     unknownCostRequests: 0,
     exactTokens: true,
+    /** Calls whose token figures include a conservative estimate rather than a reported usage. */
+    estimatedRequests: 0,
   };
   let reservedTokens = 0;
 
@@ -123,6 +129,7 @@ export function createAiServer({
       costKnown: usage.costKnown,
       unknownCostRequests: usage.unknownCostRequests,
       exactTokens: usage.exactTokens,
+      estimatedRequests: usage.estimatedRequests,
     };
   }
 
@@ -131,10 +138,11 @@ export function createAiServer({
    *
    * The reservation is what makes concurrent requests safe: four requests that each fit the
    * remaining budget individually must not all pass and then collectively overspend. It is
-   * released when the call fails and settled with the reported usage when it succeeds.
+   * released when the call provably never reached the provider and settled otherwise.
    */
-  function reserveBudget({ contextChars, maxTokens }) {
-    const bound = estimatePromptTokens(contextChars) + maxTokens;
+  function reserveBudget({ prompt, maxTokens }) {
+    const promptBound = estimatePromptTokens(prompt);
+    const bound = promptBound + maxTokens;
     if (online && usage.requests >= budget.requests) {
       return {
         ok: false,
@@ -149,11 +157,15 @@ export function createAiServer({
     }
     usage.requests += 1;
     reservedTokens += bound;
-    return { ok: true, bound };
+    return { ok: true, bound, promptBound, maxTokens };
   }
 
   function settleBudget(reservation, reported) {
     reservedTokens = Math.max(0, reservedTokens - reservation.bound);
+    // The offline provider has no bill. Its requests are counted above, but it must not appear
+    // in a paid-token or cost total.
+    if (!online) return;
+
     const prompt = typeof reported?.promptTokens === 'number' ? reported.promptTokens : null;
     const completion =
       typeof reported?.completionTokens === 'number' ? reported.completionTokens : null;
@@ -162,21 +174,24 @@ export function createAiServer({
     const cached =
       typeof reported?.cachedPromptTokens === 'number' ? reported.cachedPromptTokens : null;
 
-    if (prompt === null && completion === null) {
-      // The provider did not report usage. Record the upper bound instead of zero, so the
-      // session budget cannot be bypassed by a provider that omits its accounting.
-      usage.promptTokens += reservation.bound;
+    const promptKnown = prompt !== null;
+    const completionKnown = completion !== null;
+    if (!promptKnown || !completionKnown) {
       usage.exactTokens = false;
-    } else {
-      usage.promptTokens += prompt ?? 0;
-      usage.completionTokens += completion ?? 0;
-      if (reasoning !== null) usage.reasoningTokens += reasoning;
-      if (prompt === null || completion === null) usage.exactTokens = false;
+      usage.estimatedRequests += 1;
     }
 
+    // Charge what was reported. Anything missing is charged at the reservation's own upper
+    // bound, never at zero: the call was sent, so the local budget cannot assume it was free.
+    const promptCharge = promptKnown ? prompt : reservation.promptBound;
+    const completionCharge = completionKnown ? completion : reservation.maxTokens;
+    usage.promptTokens += promptCharge;
+    usage.completionTokens += completionCharge;
+    if (reasoning !== null) usage.reasoningTokens += reasoning;
+
     const cost = estimateCostCny(chosen.model, {
-      promptTokens: prompt ?? reservation.bound,
-      completionTokens: completion ?? 0,
+      promptTokens: promptCharge,
+      completionTokens: completionCharge,
       cachedPromptTokens: cached,
     });
     if (cost === null) {
@@ -189,6 +204,23 @@ export function createAiServer({
 
   function releaseBudget(reservation) {
     reservedTokens = Math.max(0, reservedTokens - reservation.bound);
+  }
+
+  /**
+   * Ends a reservation that produced no result.
+   *
+   * - Nothing was sent (`requestSent === false`): the call was free, so the reservation is
+   *   released and nothing is recorded.
+   * - Anything else is unknown: the provider may have generated tokens even though this service
+   *   has no usage. The reserved upper bound is charged and marked as an estimate. That is
+   *   conservative bookkeeping, not a claim about the provider's invoice.
+   */
+  function abandonBudget(reservation, error) {
+    if (error?.requestSent === false) {
+      releaseBudget(reservation);
+      return;
+    }
+    settleBudget(reservation, null);
   }
 
   function maxTokensForCall() {
@@ -270,6 +302,19 @@ export function createAiServer({
       } catch (error) {
         // A body over the cap is a 413; a body that is not JSON is the caller's mistake (400).
         const tooLarge = error instanceof BodyTooLarge;
+        // A client that closed the connection cannot receive a reply, and writing to it would
+        // be a wasted attempt. An oversized body keeps its 413 while the client is still
+        // connected and streaming, so the incomplete check excludes that case.
+        const disconnected = controller.signal.aborted || response.destroyed;
+        if (disconnected || (!tooLarge && !request.complete)) {
+          log.request({
+            method: 'POST',
+            path: url.pathname,
+            status: 499,
+            ms: Date.now() - started,
+          });
+          return;
+        }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
@@ -291,7 +336,7 @@ export function createAiServer({
       // The budget check happens before the call, with a pessimistic input estimate and the
       // generation ceiling, so a refusal is decided without spending anything.
       const reservation = reserveBudget({
-        contextChars: charCount(system, messages),
+        prompt: promptText(system, messages),
         maxTokens,
       });
       if (!reservation.ok) {
@@ -308,6 +353,13 @@ export function createAiServer({
 
       let outcome;
       try {
+        // The caller can disappear while the body is parsed or the budget is reserved. Do not
+        // start a model call for a caller that is already gone; this also covers providers
+        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
+        // `requestSent: false` is what tells it this call never reached the provider.
+        if (controller.signal.aborted) {
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
+        }
         outcome = await chosen.complete({
           system,
           messages,
@@ -316,7 +368,7 @@ export function createAiServer({
           meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
         });
       } catch (error) {
-        releaseBudget(reservation);
+        abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);
@@ -429,6 +481,19 @@ export function createAiServer({
         body = await readJsonBody(request, LIMITS.bodyBytes);
       } catch (error) {
         const tooLarge = error instanceof BodyTooLarge;
+        // A client that closed the connection cannot receive a reply, and writing to it would
+        // be a wasted attempt. An oversized body keeps its 413 while the client is still
+        // connected and streaming, so the incomplete check excludes that case.
+        const disconnected = controller.signal.aborted || response.destroyed;
+        if (disconnected || (!tooLarge && !request.complete)) {
+          log.request({
+            method: 'POST',
+            path: url.pathname,
+            status: 499,
+            ms: Date.now() - started,
+          });
+          return;
+        }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
@@ -447,7 +512,7 @@ export function createAiServer({
       const maxTokens = maxTokensForCall();
 
       const reservation = reserveBudget({
-        contextChars: charCount(system, messages),
+        prompt: promptText(system, messages),
         maxTokens,
       });
       if (!reservation.ok) {
@@ -464,6 +529,13 @@ export function createAiServer({
 
       let outcome;
       try {
+        // The caller can disappear while the body is parsed or the budget is reserved. Do not
+        // start a model call for a caller that is already gone; this also covers providers
+        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
+        // `requestSent: false` is what tells it this call never reached the provider.
+        if (controller.signal.aborted) {
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
+        }
         outcome = await chosen.complete({
           system,
           messages,
@@ -477,7 +549,7 @@ export function createAiServer({
           },
         });
       } catch (error) {
-        releaseBudget(reservation);
+        abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);
@@ -572,6 +644,19 @@ export function createAiServer({
         body = await readJsonBody(request, LIMITS.bodyBytes);
       } catch (error) {
         const tooLarge = error instanceof BodyTooLarge;
+        // A client that closed the connection cannot receive a reply, and writing to it would
+        // be a wasted attempt. An oversized body keeps its 413 while the client is still
+        // connected and streaming, so the incomplete check excludes that case.
+        const disconnected = controller.signal.aborted || response.destroyed;
+        if (disconnected || (!tooLarge && !request.complete)) {
+          log.request({
+            method: 'POST',
+            path: url.pathname,
+            status: 499,
+            ms: Date.now() - started,
+          });
+          return;
+        }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
@@ -590,7 +675,7 @@ export function createAiServer({
       const maxTokens = maxTokensForCall();
 
       const reservation = reserveBudget({
-        contextChars: charCount(system, messages),
+        prompt: promptText(system, messages),
         maxTokens,
       });
       if (!reservation.ok) {
@@ -607,6 +692,13 @@ export function createAiServer({
 
       let outcome;
       try {
+        // The caller can disappear while the body is parsed or the budget is reserved. Do not
+        // start a model call for a caller that is already gone; this also covers providers
+        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
+        // `requestSent: false` is what tells it this call never reached the provider.
+        if (controller.signal.aborted) {
+          throw new ProviderError('network', '请求已取消。', { requestSent: false });
+        }
         outcome = await chosen.complete({
           system,
           messages,
@@ -624,7 +716,7 @@ export function createAiServer({
           },
         });
       } catch (error) {
-        releaseBudget(reservation);
+        abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);

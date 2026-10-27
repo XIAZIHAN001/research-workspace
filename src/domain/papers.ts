@@ -234,7 +234,8 @@ export function applyPaperEdit(
   edit: PaperEdit,
   now: number,
 ): PaperEditResult {
-  const current = papers[paperId];
+  // A bare index would treat `constructor`/`toString` as an existing paper via the prototype.
+  const current = Object.hasOwn(papers, paperId) ? papers[paperId] : undefined;
   if (current === undefined) return { ok: false, failure: { reason: 'unknown-paper' } };
 
   const updated: Paper = { ...current };

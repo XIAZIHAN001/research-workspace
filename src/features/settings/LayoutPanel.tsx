@@ -183,7 +183,10 @@ export function LayoutPanel({
         open={resetOpen}
         title="恢复默认布局？"
         confirmLabel="恢复默认"
-        onConfirm={resetLayoutDefaults}
+        onConfirm={() => {
+          resetLayoutDefaults();
+          setResetOpen(false);
+        }}
         onClose={() => {
           setResetOpen(false);
         }}

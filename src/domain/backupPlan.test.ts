@@ -5,6 +5,7 @@ import type { Project } from './project';
 import type { ProjectsState } from './projectsState';
 import type { Concept, ConceptEvidence, ConceptRelation, KnowledgeState } from './knowledge';
 import type { DifficultyPageRecord, DifficultyState } from './difficulty';
+import { EMPTY_REVIEW_STATE, type ReviewCard, type ReviewState } from './review';
 import {
   EMPTY_PREFERENCES,
   DEFAULT_RESTORE_CHOICE,
@@ -112,12 +113,21 @@ const EMPTY_KNOWLEDGE: KnowledgeState = {
 };
 const EMPTY_DIFFICULTIES: DifficultyState = { pages: {}, ignored: {} };
 
+function reviewCard(conceptId: string, dueAt: number): ReviewCard {
+  return { conceptId, ease: 2.5, intervalDays: 1, reps: 1, lapses: 0, dueAt, lastAt: 1 };
+}
+
+function reviewState(cards: Record<string, ReviewCard>): ReviewState {
+  return { version: 1, cards };
+}
+
 function source(
   projects: ProjectsState = EMPTY_STATE,
   knowledge: KnowledgeState = EMPTY_KNOWLEDGE,
   difficulties: DifficultyState = EMPTY_DIFFICULTIES,
+  review: ReviewState = EMPTY_REVIEW_STATE,
 ) {
-  return { projects, knowledge, difficulties };
+  return { projects, knowledge, difficulties, review };
 }
 
 function contents(
@@ -135,6 +145,7 @@ function contents(
       rejections: knowledge?.rejections ?? [],
     },
     difficulties: EMPTY_DIFFICULTIES,
+    review: EMPTY_REVIEW_STATE,
     preferences: { ...EMPTY_PREFERENCES },
     recovery: {},
     missingFiles: [],
@@ -155,6 +166,7 @@ function rawData(overrides: Record<string, unknown> = {}) {
     },
     knowledge: { version: 1, concepts: [], evidence: [], relations: [] },
     difficulties: { version: 1, pages: {}, ignored: {} },
+    review: { version: 1, cards: {} },
     preferences: { theme: 'dark', paper: 'warm', avatar: null, difficulty: null },
     recovery: {},
     missingFiles: [],
@@ -191,6 +203,49 @@ describe('reading a backup data section', () => {
     expect(parsed.contents.projects.projects).toHaveLength(1);
     expect(parsed.contents.knowledge.concepts).toHaveLength(1);
     expect(parsed.contents.preferences.theme).toBe('dark');
+  });
+
+  it('skips a difficulty cache key that would rewrite the map prototype', () => {
+    const record = {
+      paperId: 'paper1',
+      pdfSha256: SHA_A,
+      page: 1,
+      model: 'mock',
+      rulesVersion: 'd1',
+      analysedAt: 1,
+      suggestions: [],
+      rejected: 0,
+    };
+    const pages = JSON.parse(`{"__proto__":${JSON.stringify(record)}}`) as Record<string, unknown>;
+    const parsed = parseBackupData(rawData({ difficulties: { version: 1, pages, ignored: {} } }));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    // The record is skipped rather than assigned through the prototype setter.
+    expect(Object.keys(parsed.contents.difficulties.pages)).toEqual([]);
+    expect(Object.getPrototypeOf(parsed.contents.difficulties.pages)).toBe(Object.prototype);
+  });
+
+  it('restores an older backup without a review schedule as an empty one', () => {
+    const data = rawData();
+    delete (data as Record<string, unknown>).review;
+    const parsed = parseBackupData(data);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.contents.review.cards).toEqual({});
+  });
+
+  it('skips an unreadable or newer review schedule without refusing the workspace', () => {
+    const newer = parseBackupData(rawData({ review: { version: 99, cards: {} } }));
+    expect(newer.ok).toBe(true);
+    if (!newer.ok) return;
+    expect(newer.warnings.join(' ')).toContain('复习进度');
+    expect(newer.contents.review.cards).toEqual({});
+
+    const broken = parseBackupData(rawData({ review: 'not a schedule' }));
+    expect(broken.ok).toBe(true);
+    if (!broken.ok) return;
+    expect(broken.warnings.join(' ')).toContain('复习进度');
+    expect(broken.contents.review.cards).toEqual({});
   });
 
   it('refuses project data from a newer schema instead of dropping fields', () => {
@@ -549,6 +604,74 @@ describe('merging a restore', () => {
     expect(merged.warnings.join(' ')).toContain('循环');
   });
 
+  it('adds a paper whose id is an Object.prototype property name', () => {
+    for (const id of ['constructor', 'toString', 'valueOf']) {
+      const incoming = contents({
+        projects: {
+          ...EMPTY_STATE,
+          projects: [project('p1', '项目', id)],
+          papers: { [id]: paper(id, '特殊 ID 论文') },
+          selectedId: null,
+        },
+      });
+      const merged = mergeRestore(
+        source(),
+        incoming,
+        DEFAULT_RESTORE_CHOICE,
+        { ...EMPTY_PREFERENCES },
+        NOW,
+      );
+      // A bare index would read Object.prototype's member and report "already here".
+      expect(merged.stats.papersMatchedById).toBe(0);
+      expect(merged.stats.papersAdded).toBe(1);
+      expect(Object.hasOwn(merged.projects.papers, id)).toBe(true);
+      expect(merged.projects.papers[id]?.id).toBe(id);
+      expect(merged.projects.projects[0]?.corePaperId).toBe(id);
+    }
+  });
+
+  it('keeps a review card whose concept id is an Object.prototype property name', () => {
+    const incoming = contents({
+      knowledge: {
+        version: 2,
+        concepts: [concept('constructor', '概念', [])],
+        evidence: [],
+        relations: [],
+      },
+      review: reviewState({ constructor: reviewCard('constructor', 10) }),
+    });
+    const merged = mergeRestore(
+      source(),
+      incoming,
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(merged.review.cards['constructor']?.dueAt).toBe(10);
+  });
+
+  it('does not drop a difficulty page whose key is an Object.prototype property name', () => {
+    const record: DifficultyPageRecord = {
+      paperId: 'paper1',
+      pdfSha256: SHA_A,
+      page: 1,
+      model: 'mock',
+      rulesVersion: 'd1',
+      analysedAt: 7,
+      suggestions: [],
+      rejected: 0,
+    };
+    const incoming = contents({ difficulties: { pages: { constructor: record }, ignored: {} } });
+    const merged = mergeRestore(
+      source(),
+      incoming,
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(merged.difficulties.pages['constructor']?.analysedAt).toBe(7);
+  });
+
   it('merges the difficulty cache without losing dismissals', () => {
     const page = (analysedAt: number): DifficultyPageRecord => ({
       paperId: 'paper1',
@@ -709,6 +832,83 @@ describe('planning a restore', () => {
     expect(plan.conflicts[0]?.kind).toBe('concept');
   });
 
+  it('reports a same-id paper whose tags or summary differ', () => {
+    const currentProjects: ProjectsState = {
+      ...EMPTY_STATE,
+      papers: {
+        paper1: paper('paper1', '论文', {
+          tags: ['本机标签'],
+          summary: {
+            text: '本机摘要',
+            provider: 'mock',
+            providerLabel: '本地模拟',
+            model: 'mock-1',
+            online: false,
+            createdAt: 1,
+          },
+        }),
+      },
+    };
+    const incoming = contents({
+      projects: {
+        ...EMPTY_STATE,
+        papers: {
+          paper1: paper('paper1', '论文', {
+            tags: ['备份标签'],
+            summary: {
+              text: '备份摘要',
+              provider: 'mock',
+              providerLabel: '本地模拟',
+              model: 'mock-1',
+              online: false,
+              createdAt: 2,
+            },
+          }),
+        },
+        selectedId: null,
+      },
+    });
+    const conflicts = collectConflicts(source(currentProjects), incoming);
+    expect(conflicts.map((conflict) => conflict.kind)).toEqual(['paper']);
+  });
+
+  it('reports same-id bookmark and glossary differences too', () => {
+    const currentProjects: ProjectsState = {
+      ...EMPTY_STATE,
+      bookmarks: [{ id: 'bm1', paperId: 'paper1', page: 1, label: '本机书签', createdAt: 1 }],
+      glossary: [
+        {
+          id: 'g1',
+          paperId: 'paper1',
+          term: 'KZG',
+          definition: '本机定义',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    };
+    const incoming = contents({
+      projects: {
+        ...EMPTY_STATE,
+        bookmarks: [{ id: 'bm1', paperId: 'paper1', page: 1, label: '备份书签', createdAt: 1 }],
+        glossary: [
+          {
+            id: 'g1',
+            paperId: 'paper1',
+            term: 'KZG',
+            definition: '备份定义',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        selectedId: null,
+      },
+    });
+    const conflicts = collectConflicts(source(currentProjects), incoming);
+    expect(conflicts.map((conflict) => conflict.kind)).toEqual(['bookmark', 'glossary']);
+    expect(conflicts.map((conflict) => conflict.label)).toEqual(['备份书签', 'KZG']);
+  });
+
   it('blocks when an incoming identifier points at two local papers', () => {
     const currentProjects: ProjectsState = {
       projects: [],
@@ -742,6 +942,65 @@ describe('planning a restore', () => {
       now: NOW,
     });
     expect(plan.blockers.length).toBe(1);
+  });
+});
+
+describe('review schedules in backups', () => {
+  const withConcept = (dueAt: number): { knowledge: KnowledgeState; review: ReviewState } => ({
+    knowledge: { ...EMPTY_KNOWLEDGE, concepts: [concept('c1', '概念', [])] },
+    review: reviewState({ c1: reviewCard('c1', dueAt) }),
+  });
+
+  it('imports cards for concepts that survive the merge, and drops orphans', () => {
+    const merged = mergeRestore(
+      source(),
+      contents({
+        knowledge: {
+          version: 1,
+          concepts: [concept('c1', '概念', [])],
+          evidence: [],
+          relations: [],
+        },
+        review: reviewState({
+          c1: reviewCard('c1', 10),
+          ghost: reviewCard('ghost', 20),
+        }),
+      }),
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(merged.review.cards.c1?.dueAt).toBe(10);
+    // A card whose concept did not come across cannot be reviewed; it is not kept as debris.
+    expect(merged.review.cards.ghost).toBeUndefined();
+  });
+
+  it('keeps the local schedule unless the reader prefers the backup', () => {
+    const incoming = contents(withConcept(20));
+    const current = source(
+      EMPTY_STATE,
+      withConcept(10).knowledge,
+      EMPTY_DIFFICULTIES,
+      withConcept(10).review,
+    );
+
+    const kept = mergeRestore(
+      current,
+      incoming,
+      DEFAULT_RESTORE_CHOICE,
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(kept.review.cards.c1?.dueAt).toBe(10);
+
+    const preferred = mergeRestore(
+      current,
+      incoming,
+      { ...DEFAULT_RESTORE_CHOICE, sameIdPolicy: 'prefer-backup' },
+      { ...EMPTY_PREFERENCES },
+      NOW,
+    );
+    expect(preferred.review.cards.c1?.dueAt).toBe(20);
   });
 });
 

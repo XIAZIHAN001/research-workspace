@@ -44,6 +44,19 @@ describe('OutlinePanel summary card', () => {
     expect(onGenerate).toHaveBeenCalledTimes(1);
   });
 
+  it('never calls an unchecked service free, and asks the host to check it', () => {
+    const onPrepare = vi.fn();
+    const { onGenerate } = renderPanel({
+      summaryScope: { pagesSent: 12, pagesTotal: 12, truncated: false },
+      onPrepareSummary: onPrepare,
+    });
+    fireEvent.click(screen.getByRole('button', { name: '生成摘要卡' }));
+    expect(onPrepare).toHaveBeenCalledTimes(1);
+    expect(onGenerate).not.toHaveBeenCalled();
+    expect(screen.getByText(/尚未确认 AI 服务状态/)).toBeTruthy();
+    expect(screen.queryByText(/不产生任何费用/)).toBeNull();
+  });
+
   it('shows a stored card with its provenance, and regenerates on the same confirm path', () => {
     const { onGenerate, onClear } = renderPanel({ summary });
     expect(screen.getByText(/问题：怎样并行化序列建模/)).toBeTruthy();
@@ -52,6 +65,8 @@ describe('OutlinePanel summary card', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     expect(onGenerate).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: '移除' }));
+    expect(onClear).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '确定移除' }));
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 

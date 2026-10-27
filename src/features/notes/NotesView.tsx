@@ -37,22 +37,34 @@ const QUESTION_STATUS_LABEL: Record<'all' | QuestionStatusFilter, string> = {
 const DRAFT_NOTE_LIMIT = 64;
 
 /**
- * Applies the ceiling with the written-note-first policy. Notes the reader actually wrote are
+ * Characters the service will accept as quotations plus notes (draftContextChars 200_000),
+ * kept below it for the request framing. The count is not enough on its own: a reader with a
+ * few long notes could exceed the budget while carrying nowhere near sixty-four of them.
+ */
+const DRAFT_CHAR_BUDGET = 190_000;
+
+/**
+ * Applies both ceilings with the written-note-first policy. Notes the reader actually wrote are
  * carried before pure highlights, and the kept set is re-sorted by page so the draft still
  * reads in the paper's own order. A reader with 70 highlights and 5 real notes loses nothing.
  */
 function carryNotes(items: readonly Annotation[]): Annotation[] {
   const withBody = items.filter((annotation) => annotation.note.trim() !== '');
   const quoteOnly = items.filter((annotation) => annotation.note.trim() === '');
-  return [
-    ...withBody.slice(0, DRAFT_NOTE_LIMIT),
-    ...quoteOnly.slice(
-      0,
-      Math.max(0, DRAFT_NOTE_LIMIT - Math.min(withBody.length, DRAFT_NOTE_LIMIT)),
-    ),
-  ]
-    .slice(0, DRAFT_NOTE_LIMIT)
-    .sort((one, other) => one.page - other.page || one.createdAt - other.createdAt);
+  const carried: Annotation[] = [];
+  let chars = 0;
+  const take = (list: readonly Annotation[]): void => {
+    for (const annotation of list) {
+      if (carried.length >= DRAFT_NOTE_LIMIT) return;
+      const cost = annotation.quote.length + annotation.note.length;
+      if (chars + cost > DRAFT_CHAR_BUDGET) continue;
+      carried.push(annotation);
+      chars += cost;
+    }
+  };
+  take(withBody);
+  take(quoteOnly);
+  return carried.sort((one, other) => one.page - other.page || one.createdAt - other.createdAt);
 }
 
 /**
@@ -410,8 +422,8 @@ function NotesGroup({
               <p className="hint" role="status">
                 将发送 {String(carriedCount)}{' '}
                 条笔记的原文引用与对应的笔记内容；尚未写过正文的笔记只发引用。
-                {group.items.length > DRAFT_NOTE_LIMIT &&
-                  ` 笔记超过 ${String(DRAFT_NOTE_LIMIT)} 条：写过正文的优先携带，其余按页序填充。`}
+                {carriedCount < group.items.length &&
+                  ` 共 ${String(group.items.length)} 条：写过正文的优先携带，其余按页序填充，直到 ${String(DRAFT_NOTE_LIMIT)} 条或长度上限（本次 ${String(carriedCount)} 条）。`}
                 {draftBusy ? '正在整理…' : '若 AI 服务为在线模式，将产生费用；本地模拟则免费。'}
               </p>
               <div className="notes-draft-actions">
@@ -434,7 +446,12 @@ function NotesGroup({
               </div>
             </>
           ) : (
-            <button type="button" className="btn btn-quiet" onClick={onStartDraft}>
+            <button
+              type="button"
+              className="btn btn-quiet"
+              disabled={draftBusy}
+              onClick={onStartDraft}
+            >
               <Sparkles size={13} aria-hidden="true" />
               AI 整理成稿
             </button>

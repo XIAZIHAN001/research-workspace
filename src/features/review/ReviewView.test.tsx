@@ -112,6 +112,38 @@ describe('ReviewView', () => {
     expect(screen.getByText('唯一概念')).toBeTruthy();
   });
 
+  it('keeps a forgotten card in the session even when the shared clock has not ticked yet', () => {
+    function Harness() {
+      const [cards, setCards] = useState<Record<string, ReturnType<typeof beginCard>>>({
+        c1: beginCard('c1', 0),
+      });
+      return (
+        <ReviewView
+          concepts={[concept('c1', 'Self-attention')]}
+          evidence={[]}
+          papers={{}}
+          cards={cards}
+          now={1}
+          onGrade={(conceptId, grade) => {
+            setCards((current) => ({
+              ...current,
+              [conceptId]: applyGrade(
+                current[conceptId] ?? beginCard(conceptId, Date.now()),
+                grade,
+                Date.now(),
+              ),
+            }));
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: '显示答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '忘了' }));
+    // The card is due now; a shared clock that is a minute behind must not hide it.
+    expect(screen.getByText('Self-attention')).toBeTruthy();
+  });
+
   it('says when nothing is due and when the next batch arrives', () => {
     const scheduled = applyGrade(beginCard('c1', 0), 'good', NOW - 5000);
     const { rerender } = render(

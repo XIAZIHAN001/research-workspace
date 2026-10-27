@@ -145,14 +145,33 @@ export function createPdfBlobStore(
       return await new Promise<T>((resolve, reject) => {
         const transaction = db.transaction(STORE_NAME, mode);
         const request = work(transaction.objectStore(STORE_NAME));
+        let result!: T;
+        let settled = false;
+        const succeed = (): void => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        const fail = (error: unknown): void => {
+          if (settled) return;
+          settled = true;
+          reject(toStoreError(error));
+        };
+        // A request succeeding is not a transaction committing. The caller writes the paper
+        // reference (import) or the next restore step only after this promise resolves, so a
+        // later abort must not look like success.
         request.onsuccess = () => {
-          resolve(request.result);
+          result = request.result;
         };
         request.onerror = () => {
-          reject(toStoreError(request.error));
+          fail(request.error ?? new Error('PDF 文件库读写失败。'));
+        };
+        transaction.oncomplete = succeed;
+        transaction.onerror = () => {
+          fail(transaction.error ?? new Error('PDF 文件库事务失败。'));
         };
         transaction.onabort = () => {
-          reject(toStoreError(transaction.error));
+          fail(transaction.error ?? new Error('PDF 文件库事务已中止。'));
         };
       });
     } catch (error) {

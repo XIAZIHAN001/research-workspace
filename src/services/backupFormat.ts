@@ -103,11 +103,24 @@ export async function sha256Hex(value: BufferSource | string): Promise<string> {
  * after a round trip through any tool that happened to rebuild an object differently.
  */
 export function canonicalJson(value: unknown): string {
+  // This must be hash-equivalent to taking the same data through JSON.stringify and parsing it
+  // back. Two cases where a naive walk differs: an object property whose value is `undefined`
+  // is omitted by JSON, and an array hole becomes `null`.
+  if (value === undefined || typeof value === 'function' || typeof value === 'symbol') {
+    return 'null';
+  }
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([one], [other]) =>
-    one < other ? -1 : one > other ? 1 : 0,
-  );
+  if (Array.isArray(value)) {
+    const items: string[] = [];
+    for (let index = 0; index < value.length; index += 1) items.push(canonicalJson(value[index]));
+    return `[${items.join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(
+      ([, entry]) =>
+        entry !== undefined && typeof entry !== 'function' && typeof entry !== 'symbol',
+    )
+    .sort(([one], [other]) => (one < other ? -1 : one > other ? 1 : 0));
   return `{${entries
     .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
     .join(',')}}`;
@@ -158,6 +171,8 @@ export async function createBackupBlob(input: {
     if (blob.size === 0 || blob.size > PDF_MAX_BYTES) {
       throw new Error('文件大小超出允许范围，无法打包。');
     }
+    // The container is a Blob that references these parts; it does not need the caller to keep
+    // a second Uint8Array alive. `buildBackup` passes Blobs for exactly this reason.
     files.push({
       sha256: file.sha256,
       name: cleanName(file.name),
@@ -208,10 +223,14 @@ export function countData(data: unknown): Record<string, number> {
   const knowledge = record(record(data).knowledge);
   const papers = record(projects.papers);
   const difficulties = record(record(record(data).difficulties).pages);
+  const reviewCards = record(record(record(data).review).cards);
   return {
     projects: list(projects.projects).length,
     papers: Object.keys(papers).length,
     annotations: list(projects.annotations).length,
+    bookmarks: list(projects.bookmarks).length,
+    glossary: list(projects.glossary).length,
+    reviewCards: Object.keys(reviewCards).length,
     concepts: list(knowledge.concepts).length,
     evidence: list(knowledge.evidence).length,
     relations: list(knowledge.relations).length,

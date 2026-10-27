@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { applyGrade, describeDueIn, isDue, orderQueue, type ReviewCard } from './review';
+import {
+  applyGrade,
+  describeDueIn,
+  isDue,
+  orderQueue,
+  parseReviewState,
+  type ReviewCard,
+} from './review';
 
 const DAY = 86_400_000;
 
@@ -72,5 +79,20 @@ describe('describeDueIn', () => {
     expect(describeDueIn(0, 10)).toBe('现在');
     expect(describeDueIn(10 + DAY, 10)).toBe('明天');
     expect(describeDueIn(10 + 3 * DAY, 10)).toBe('3 天后');
+  });
+});
+
+describe('parseReviewState', () => {
+  it('ignores a card key that would mutate the map prototype', () => {
+    const value = JSON.parse(
+      JSON.stringify({
+        version: 1,
+        cards: { c1: card(), ['__proto__']: card({ conceptId: 'evil' }) },
+      }),
+    ) as unknown;
+    const parsed = parseReviewState(value);
+    expect(parsed?.blocked).toBe(false);
+    expect(Object.keys(parsed?.state.cards ?? {})).toStrictEqual(['c1']);
+    expect(Object.getPrototypeOf(parsed?.state.cards ?? {})).toBe(Object.prototype);
   });
 });

@@ -7,6 +7,7 @@ import {
   createPaper,
   resolvePaperIdentity,
   type AddPaperOutcome,
+  type Paper,
   type PaperEdit,
   type PaperEditResult,
   type PaperInput,
@@ -61,7 +62,8 @@ export function useProjects(store: ProjectsStore) {
        */
       linkPaper(projectId: string, paperId: string): void {
         const { papers } = store.getSnapshot().state;
-        const paper = papers[paperId];
+        // Own property only: `papers.constructor` would otherwise be Object's function.
+        const paper = Object.hasOwn(papers, paperId) ? papers[paperId] : undefined;
         if (paper === undefined) return;
         store.dispatch({ type: 'linkPaper', projectId, paper, now: Date.now() });
       },
@@ -82,6 +84,32 @@ export function useProjects(store: ProjectsStore) {
         if (paper === null) return { status: 'invalid' };
         store.dispatch({ type: 'registerPaper', paper });
         return { status: 'added', paper };
+      },
+      /**
+       * Adds a whole bibliography in one write.
+       *
+       * The per-entry action re-reads and re-serializes the workspace for every row, which a
+       * 500-entry import would do 500 times. This resolves the batch against a working copy
+       * (so identifiers reused inside the file still collapse onto one record), then registers
+       * the new papers with one dispatch.
+       */
+      addPapers(inputs: readonly PaperInput[]): AddPaperOutcome[] {
+        const working: Record<string, Paper> = { ...store.getSnapshot().state.papers };
+        const created: Paper[] = [];
+        const now = Date.now();
+        const outcomes = inputs.map((input): AddPaperOutcome => {
+          const identity = resolvePaperIdentity(working, input);
+          if (identity.kind === 'conflict') return { status: 'conflict', papers: identity.papers };
+          if (identity.kind === 'match') return { status: 'added', paper: identity.paper };
+
+          const paper = createPaper(input, makeId, now);
+          if (paper === null) return { status: 'invalid' };
+          working[paper.id] = paper;
+          created.push(paper);
+          return { status: 'added', paper };
+        });
+        if (created.length > 0) store.dispatch({ type: 'registerPapers', papers: created });
+        return outcomes;
       },
       /**
        * Changes one paper's metadata, PDF binding or reading position. Returns why an edit

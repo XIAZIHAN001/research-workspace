@@ -177,6 +177,20 @@ function buildDocumentPassages(
   };
 }
 
+/**
+ * The disclosure a document request would produce, without making the caller rebuild it.
+ *
+ * The summary panel used to estimate pages from the raw page count, which disagreed with the
+ * request once empty pages, the current page, the character cap or the token cap applied.
+ * Both sides now read the same calculation.
+ */
+export function documentScope(
+  pages: readonly DocumentPageText[],
+  skipPage: number | null,
+): AiDocumentScope | null {
+  return buildDocumentPassages(pages, skipPage)?.summary ?? null;
+}
+
 export function buildAskContext(input: AskContextInput): AiAskRequest {
   const text = input.pageText;
   const hasSelection =

@@ -305,8 +305,11 @@ export function buildKnowledgeMessages(request) {
     lines.push('（还没有已确认的概念。）');
   } else {
     for (const concept of request.existingConcepts.slice(0, MAX_CONCEPT_CANDIDATES)) {
-      const aliases = concept.aliases.length > 0 ? ` | 别名：${concept.aliases.join('、')}` : '';
-      lines.push(`- ${concept.name}${aliases}`);
+      const aliases =
+        concept.aliases.length > 0
+          ? ` | 别名：${concept.aliases.map(neutraliseDelimiters).join('、')}`
+          : '';
+      lines.push(`- ${neutraliseDelimiters(concept.name)}${aliases}`);
     }
   }
   lines.push('');
@@ -314,7 +317,9 @@ export function buildKnowledgeMessages(request) {
   if (request.existingRelations.length > 0) {
     lines.push('已有的前置关系（这些方向已经被读者确认，不要再提出相反方向）：');
     for (const relation of request.existingRelations.slice(0, MAX_RELATION_CANDIDATES)) {
-      lines.push(`- ${relation.from} → ${relation.to}（${relation.kind}）`);
+      lines.push(
+        `- ${neutraliseDelimiters(relation.from)} → ${neutraliseDelimiters(relation.to)}（${relation.kind}）`,
+      );
     }
     lines.push('');
   }

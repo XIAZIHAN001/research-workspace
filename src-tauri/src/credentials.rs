@@ -34,11 +34,146 @@ const LEGACY_DEEPSEEK_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey.dev";
 #[cfg(not(debug_assertions))]
 const LEGACY_DEEPSEEK_TARGET: &str = "ResearchWorkspace/DeepSeekApiKey";
 
+/// The endpoint a key was entered for, stored beside it in the credential store.
+///
+/// Keeping the binding in the credential store rather than in `ai-preferences.json` matters:
+/// the preferences file is ordinary mutable JSON, while a command that changes the endpoint
+/// must not also be able to claim a new binding for a key it cannot read.
+#[cfg(debug_assertions)]
+fn endpoint_target_name(provider: &str) -> String {
+    format!("ResearchWorkspace/Provider/{provider}.dev.endpoint")
+}
+
+#[cfg(not(debug_assertions))]
+fn endpoint_target_name(provider: &str) -> String {
+    format!("ResearchWorkspace/Provider/{provider}.endpoint")
+}
+
+/// How much the recorded endpoint can be trusted.
+///
+/// The current build writes key and endpoint as one record, so the pair is what the reader saved.
+/// The two earlier layouts could not: they wrote separate credential records, and a failed second
+/// write left a key beside an endpoint it may never have been entered for. Reading such a pair is
+/// still possible, but calling it a binding would be a claim the store cannot support.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingTrust {
+    /// Key and endpoint were written together by this build.
+    Atomic,
+    /// Key and endpoint came from two separate legacy targets; they may not belong together.
+    LegacyPaired,
+    /// Key came from the single-provider record and has no endpoint binding.
+    LegacyUnbound,
+}
+
+/// What the credential store holds: the secret, the authority it was entered for, and how much
+/// that pairing can be trusted.
+#[derive(Clone)]
+pub struct StoredKey {
+    pub key: String,
+    pub endpoint: Option<String>,
+    pub binding: BindingTrust,
+}
+
+/// What a delete actually accomplished.
+///
+/// `Err` from `delete_for` means the key itself could not be removed (or was deliberately kept
+/// to stop a legacy fallback from taking its place). A successful delete can still leave
+/// historical auxiliary records behind; those are reported here rather than turned into a
+/// failure that hides the key's removal.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DeleteReport {
+    /// The per-provider key record is gone (or was already absent).
+    pub key_removed: bool,
+    /// Records that could not be cleaned up. They cannot authenticate anything without a key.
+    pub residues: Vec<String>,
+}
+
 /// The minimum and maximum lengths accepted before anything is written. Vendor keys are longer
 /// than this in practice; the bounds exist to reject an empty or absurd value, not to encode a
 /// vendor's current format.
 pub const KEY_MIN_CHARS: usize = 8;
 pub const KEY_MAX_CHARS: usize = 1024;
+
+/// Windows Credential Manager accepts at most 2560 bytes in one generic credential blob
+/// (`CRED_MAX_CREDENTIAL_BLOB_SIZE` is 5 * 512). The combined record is checked against it
+/// before anything is written, so a failure is reported without touching the previous record.
+const MAX_RECORD_BYTES: usize = 2560;
+
+/// A key and the endpoint it is bound to live in **one** credential blob, so a single
+/// `CredWriteW` replaces both. The leading unit separator cannot appear in a valid API key
+/// (the command accepts only printable ASCII) and the inner separator cannot appear in a
+/// normalized endpoint (URL validation rejects control characters).
+const RECORD_MAGIC: &str = "\u{1e}RWK2\u{1f}";
+const RECORD_SEPARATOR: char = '\u{1f}';
+
+/// The storage operations used by the public functions. Production uses the OS credential
+/// store; tests inject a map that can fail writes or deletes on purpose.
+trait Backend {
+    fn get(&self, target: &str) -> Result<Option<String>, String>;
+    fn set(&self, target: &str, value: &str) -> Result<(), String>;
+    fn delete(&self, target: &str) -> Result<(), String>;
+}
+
+struct OsBackend;
+
+impl Backend for OsBackend {
+    fn get(&self, target: &str) -> Result<Option<String>, String> {
+        platform::get(target)
+    }
+
+    fn set(&self, target: &str, value: &str) -> Result<(), String> {
+        platform::set(target, value)
+    }
+
+    fn delete(&self, target: &str) -> Result<(), String> {
+        platform::delete(target)
+    }
+}
+
+fn normalize_endpoint(value: Option<String>) -> Option<String> {
+    value
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+/// Packs the key and its binding into one blob. Every write is a single credential record, so
+/// there is no intermediate state where a new key exists beside the previous binding.
+fn encode_record(key: &str, endpoint: Option<&str>) -> Result<String, String> {
+    if key.is_empty() || key.contains(RECORD_SEPARATOR) {
+        return Err("系统凭据内容不合法，已拒绝保存。".to_string());
+    }
+    let endpoint = endpoint
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("");
+    if endpoint.contains(RECORD_SEPARATOR) {
+        return Err("API 地址包含无法保存的字符，已拒绝保存。".to_string());
+    }
+    let record = format!("{RECORD_MAGIC}{endpoint}{RECORD_SEPARATOR}{key}");
+    if record.len() > MAX_RECORD_BYTES {
+        return Err("API Key 与 API 地址合计过长，系统凭据无法安全保存。".to_string());
+    }
+    Ok(record)
+}
+
+/// Returns `None` for a record written by an older build (a bare key with no binding), and
+/// `Err` for a blob that starts like the current format but cannot be decoded. Treating a
+/// damaged current record as an old bare key would invent a binding or a key.
+fn decode_record(raw: &str) -> Result<Option<(String, Option<String>)>, String> {
+    let Some(rest) = raw.strip_prefix(RECORD_MAGIC) else {
+        return Ok(None);
+    };
+    let Some((endpoint, key)) = rest.split_once(RECORD_SEPARATOR) else {
+        return Err("系统凭据格式无法识别，已拒绝使用。".to_string());
+    };
+    if key.is_empty() {
+        return Err("系统凭据格式无法识别，已拒绝使用。".to_string());
+    }
+    Ok(Some((
+        key.to_string(),
+        normalize_endpoint(Some(endpoint.to_string())),
+    )))
+}
 
 /// What the interface is allowed to know: whether a key exists, and why it could not be read.
 #[derive(Clone, Debug, Serialize)]
@@ -57,6 +192,13 @@ fn target_for(provider: &str) -> Result<String, String> {
     Ok(target_name(provider))
 }
 
+fn endpoint_target_for(provider: &str) -> Result<String, String> {
+    if crate::providers::find(provider).is_none() {
+        return Err(format!("未知的模型提供方：{provider}。"));
+    }
+    Ok(endpoint_target_name(provider))
+}
+
 pub fn status_for(provider: &str) -> CredentialStatus {
     match get_for(provider) {
         Ok(value) => CredentialStatus {
@@ -70,46 +212,133 @@ pub fn status_for(provider: &str) -> CredentialStatus {
     }
 }
 
-/// Reads the key. The caller owns the returned string and must not log it.
-pub fn get_for(provider: &str) -> Result<Option<String>, String> {
-    let target = target_for(provider)?;
-    if let Some(key) = platform::get(&target)? {
-        return Ok(Some(key));
-    }
-    if provider != "deepseek" {
-        return Ok(None);
-    }
-    // Upgrade path: a key written by a version that only knew one provider. Copy it to the new
-    // target and clear the old one; a failed copy still returns the key, so the reader is not
-    // locked out by a storage hiccup.
-    let Some(key) = platform::get(LEGACY_DEEPSEEK_TARGET)? else {
-        return Ok(None);
-    };
-    if platform::set(&target, &key).is_ok() {
-        let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
-    }
-    Ok(Some(key))
+/// Reads the key and the endpoint it is bound to. The caller owns the returned secret and must
+/// not log it.
+pub fn get_for(provider: &str) -> Result<Option<StoredKey>, String> {
+    get_for_with(&OsBackend, provider)
 }
 
-/// Stores or replaces the key for one provider.
-pub fn set_for(provider: &str, key: &str) -> Result<(), String> {
+fn get_for_with(backend: &dyn Backend, provider: &str) -> Result<Option<StoredKey>, String> {
     let target = target_for(provider)?;
-    platform::set(&target, key)?;
+    let endpoint_target = endpoint_target_for(provider)?;
+
+    let Some(raw) = backend.get(&target)? else {
+        if provider != "deepseek" {
+            return Ok(None);
+        }
+        // Upgrade path: a key written by a version that only knew one provider. The new
+        // combined record is written first; if that write fails the legacy key is still
+        // returned and the old record is left alone, so a storage hiccup neither signs the
+        // reader out nor destroys the only copy.
+        let Some(legacy) = backend.get(LEGACY_DEEPSEEK_TARGET)? else {
+            return Ok(None);
+        };
+        // The single-key layout recorded no endpoint. A `.endpoint` left in the other legacy
+        // target cannot prove it was saved with this key, so it is not copied into the new
+        // atomic record: doing that would invent a binding the reader may never have authorised.
+        if let Ok(record) = encode_record(&legacy, None) {
+            if backend.set(&target, &record).is_ok() {
+                let _ = backend.delete(&endpoint_target);
+                let _ = backend.delete(LEGACY_DEEPSEEK_TARGET);
+            }
+        }
+        return Ok(Some(StoredKey {
+            key: legacy,
+            endpoint: None,
+            binding: BindingTrust::LegacyUnbound,
+        }));
+    };
+
+    match decode_record(&raw)? {
+        Some((key, endpoint)) => Ok(Some(StoredKey {
+            key,
+            endpoint,
+            binding: BindingTrust::Atomic,
+        })),
+        // A record written by the earlier build that kept the binding in a second target.
+        // Read the pair as it is; the next save replaces both with one atomic record.
+        None => {
+            let endpoint = normalize_endpoint(backend.get(&endpoint_target)?);
+            let binding = if endpoint.is_some() {
+                BindingTrust::LegacyPaired
+            } else {
+                BindingTrust::LegacyUnbound
+            };
+            Ok(Some(StoredKey {
+                key: raw,
+                endpoint,
+                binding,
+            }))
+        }
+    }
+}
+
+/// Stores or replaces the key for one provider, bound to `endpoint`.
+///
+/// Key and binding are encoded together and written as one credential record. A failed write
+/// leaves the previous record untouched, so the store can never hold the new key beside the
+/// old binding. An empty endpoint is stored inside the record as "unbound"; the next online
+/// start will refuse until the reader saves the key again against a real endpoint.
+pub fn set_for(provider: &str, key: &str, endpoint: Option<&str>) -> Result<(), String> {
+    set_for_with(&OsBackend, provider, key, endpoint)
+}
+
+fn set_for_with(
+    backend: &dyn Backend,
+    provider: &str,
+    key: &str,
+    endpoint: Option<&str>,
+) -> Result<(), String> {
+    let target = target_for(provider)?;
+    let endpoint_target = endpoint_target_for(provider)?;
+    let record = encode_record(key, endpoint)?;
+    backend.set(&target, &record)?;
+
+    // The combined record is authoritative from here on. These are the old separate targets;
+    // cleaning them up is best-effort because a failure cannot change which endpoint the saved
+    // key is bound to, and reads prefer the combined record anyway.
+    let _ = backend.delete(&endpoint_target);
     if provider == "deepseek" {
-        // Two targets for one key would make "delete" ambiguous; now the legacy one is gone.
-        let _ = platform::delete(LEGACY_DEEPSEEK_TARGET);
+        let _ = backend.delete(LEGACY_DEEPSEEK_TARGET);
     }
     Ok(())
 }
 
 /// Removes the key. Deleting an absent credential succeeds: the desired end state holds.
-pub fn delete_for(provider: &str) -> Result<(), String> {
+///
+/// The legacy DeepSeek fallback is removed first. If that fails the per-provider key is kept,
+/// so a requested deletion cannot make the old fallback the active credential again.
+pub fn delete_for(provider: &str) -> Result<DeleteReport, String> {
+    delete_for_with(&OsBackend, provider)
+}
+
+fn delete_for_with(backend: &dyn Backend, provider: &str) -> Result<DeleteReport, String> {
     let target = target_for(provider)?;
-    platform::delete(&target)?;
+    let endpoint_target = endpoint_target_for(provider)?;
     if provider == "deepseek" {
-        platform::delete(LEGACY_DEEPSEEK_TARGET)?;
+        backend.delete(LEGACY_DEEPSEEK_TARGET).map_err(|error| {
+            format!(
+                "旧版 DeepSeek 回退凭据没有删除，为避免旧 Key 重新生效，当前 Key 已保留：{error}"
+            )
+        })?;
     }
-    Ok(())
+    backend
+        .delete(&target)
+        .map_err(|error| format!("API Key 没有删除：{error}"))?;
+
+    // The key is gone; this auxiliary record cannot authenticate anything on its own. A failure
+    // is reported as residue instead of a failed deletion, because the caller must still be told
+    // to revoke online use — which is exactly what the old `?` here prevented.
+    let mut report = DeleteReport {
+        key_removed: true,
+        residues: Vec::new(),
+    };
+    if let Err(error) = backend.delete(&endpoint_target) {
+        report
+            .residues
+            .push(format!("旧版 API 地址记录未能清理：{error}"));
+    }
+    Ok(report)
 }
 
 #[cfg(windows)]
@@ -117,8 +346,8 @@ mod platform {
     use std::ptr;
     use windows_sys::Win32::Foundation::{GetLastError, ERROR_NOT_FOUND};
     use windows_sys::Win32::Security::Credentials::{
-        CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CREDENTIALW, CredDeleteW, CredFree, CredReadW,
-        CredWriteW,
+        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
+        CRED_TYPE_GENERIC,
     };
 
     fn wide(text: &str) -> Vec<u16> {
@@ -273,7 +502,91 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::target_for;
+    use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::collections::BTreeMap;
+
+    /// A credential store in memory. Failure counters let a test fail exactly one write or one
+    /// delete, which is how the "key written but binding not" state used to appear.
+    #[derive(Default)]
+    struct FakeBackend {
+        values: RefCell<BTreeMap<String, String>>,
+        get_failures: RefCell<BTreeMap<String, usize>>,
+        set_failures: RefCell<BTreeMap<String, usize>>,
+        delete_failures: RefCell<BTreeMap<String, usize>>,
+        set_calls: Cell<usize>,
+    }
+
+    impl FakeBackend {
+        fn seed(&self, target: &str, value: &str) {
+            self.values
+                .borrow_mut()
+                .insert(target.to_string(), value.to_string());
+        }
+
+        fn value(&self, target: &str) -> Option<String> {
+            self.values.borrow().get(target).cloned()
+        }
+
+        fn fail_set(&self, target: &str, times: usize) {
+            self.set_failures
+                .borrow_mut()
+                .insert(target.to_string(), times);
+        }
+
+        fn fail_delete(&self, target: &str, times: usize) {
+            self.delete_failures
+                .borrow_mut()
+                .insert(target.to_string(), times);
+        }
+
+        fn set_calls(&self) -> usize {
+            self.set_calls.get()
+        }
+
+        fn take_failure(counter: &RefCell<BTreeMap<String, usize>>, target: &str) -> bool {
+            let mut map = counter.borrow_mut();
+            if let Some(remaining) = map.get_mut(target) {
+                if *remaining > 0 {
+                    *remaining -= 1;
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
+    impl Backend for FakeBackend {
+        fn get(&self, target: &str) -> Result<Option<String>, String> {
+            if Self::take_failure(&self.get_failures, target) {
+                return Err("模拟读取失败".to_string());
+            }
+            Ok(self.values.borrow().get(target).cloned())
+        }
+
+        fn set(&self, target: &str, value: &str) -> Result<(), String> {
+            if Self::take_failure(&self.set_failures, target) {
+                return Err("模拟写入失败".to_string());
+            }
+            self.set_calls.set(self.set_calls.get() + 1);
+            self.values
+                .borrow_mut()
+                .insert(target.to_string(), value.to_string());
+            Ok(())
+        }
+
+        fn delete(&self, target: &str) -> Result<(), String> {
+            if Self::take_failure(&self.delete_failures, target) {
+                return Err("模拟删除失败".to_string());
+            }
+            self.values.borrow_mut().remove(target);
+            Ok(())
+        }
+    }
+
+    fn read_key(backend: &FakeBackend, provider: &str) -> Option<StoredKey> {
+        get_for_with(backend, provider).expect("read the credential")
+    }
 
     #[test]
     fn only_registered_providers_get_a_target() {
@@ -290,5 +603,421 @@ mod tests {
             target_for("deepseek").expect("target"),
             target_for("openai").expect("target")
         );
+    }
+
+    #[test]
+    fn legacy_endpoint_targets_stay_distinct_and_validated() {
+        let key_target = target_for("deepseek").expect("target");
+        let endpoint_target = endpoint_target_for("deepseek").expect("endpoint target");
+        assert_ne!(key_target, endpoint_target);
+        assert!(endpoint_target.ends_with(".endpoint"));
+        assert!(endpoint_target_for("mock").is_err());
+    }
+
+    #[test]
+    fn a_first_save_writes_one_record_with_the_binding() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-first-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        // One CredWriteW: key and binding cannot be observed apart.
+        assert_eq!(backend.set_calls(), 1);
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-first-value-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://a.example"));
+        let target = target_for("deepseek").expect("target");
+        assert!(backend
+            .value(&target)
+            .expect("record")
+            .starts_with(RECORD_MAGIC));
+        assert!(backend
+            .value(&endpoint_target_for("deepseek").expect("endpoint target"))
+            .is_none());
+    }
+
+    #[test]
+    fn updating_the_key_for_the_same_endpoint_replaces_the_record() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-old-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save old");
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-new-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save new");
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-new-value-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://a.example"));
+        assert_eq!(backend.set_calls(), 2);
+    }
+
+    #[test]
+    fn changing_the_key_and_the_endpoint_updates_both_together() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-old-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save old");
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-new-value-000000",
+            Some("https://b.example"),
+        )
+        .expect("save new");
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-new-value-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://b.example"));
+    }
+
+    /// The exact failure the old two-write layout allowed: the key write succeeds, the binding
+    /// write fails, and the next read pairs the new key with the old endpoint. Here the single
+    /// record write fails as a whole, so the previous pair is still what the store returns.
+    #[test]
+    fn a_failed_save_never_pairs_the_new_key_with_the_old_endpoint() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-old-value-000000",
+            Some("https://old.example"),
+        )
+        .expect("seed old pair");
+        let target = target_for("deepseek").expect("target");
+        backend.fail_set(&target, 1);
+
+        let result = set_for_with(
+            &backend,
+            "deepseek",
+            "sk-new-value-000000",
+            Some("https://new.example"),
+        );
+        assert!(result.is_err());
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-old-value-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://old.example"));
+        assert!(!backend
+            .value(&target)
+            .expect("record")
+            .contains("sk-new-value-000000"));
+    }
+
+    /// A store left by the earlier build: the key alone in one target, the endpoint in another.
+    /// It must still be read, and a failed replacement must leave that pair untouched.
+    #[test]
+    fn a_legacy_dual_record_is_read_and_a_failed_write_leaves_it_intact() {
+        let backend = FakeBackend::default();
+        let target = target_for("deepseek").expect("target");
+        let endpoint_target = endpoint_target_for("deepseek").expect("endpoint target");
+        backend.seed(&target, "sk-legacy-old-000000");
+        backend.seed(&endpoint_target, "https://legacy.example");
+
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-legacy-old-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://legacy.example"));
+        // Reading does not rewrite the old layout.
+        assert_eq!(
+            backend.value(&target).as_deref(),
+            Some("sk-legacy-old-000000")
+        );
+
+        backend.fail_set(&target, 1);
+        assert!(set_for_with(
+            &backend,
+            "deepseek",
+            "sk-legacy-new-000000",
+            Some("https://new.example"),
+        )
+        .is_err());
+        assert_eq!(
+            backend.value(&target).as_deref(),
+            Some("sk-legacy-old-000000")
+        );
+        assert_eq!(
+            backend.value(&endpoint_target).as_deref(),
+            Some("https://legacy.example")
+        );
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-legacy-old-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://legacy.example"));
+    }
+
+    /// A store already left in the old failure state (new key written, old binding still
+    /// there) can only be read as it is; there is no record of what the intended endpoint was.
+    /// What matters is that the new code does not create another one and does not rewrite it
+    /// behind the reader's back.
+    #[test]
+    fn a_legacy_pair_left_by_a_failed_two_write_save_is_read_as_stored() {
+        let backend = FakeBackend::default();
+        let target = target_for("deepseek").expect("target");
+        let endpoint_target = endpoint_target_for("deepseek").expect("endpoint target");
+        backend.seed(&target, "sk-partial-new-000000");
+        backend.seed(&endpoint_target, "https://old.example");
+
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-partial-new-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://old.example"));
+
+        backend.fail_set(&target, 1);
+        assert!(set_for_with(
+            &backend,
+            "deepseek",
+            "sk-next-value-000000",
+            Some("https://next.example"),
+        )
+        .is_err());
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-partial-new-000000");
+        assert_eq!(stored.endpoint.as_deref(), Some("https://old.example"));
+    }
+
+    #[test]
+    fn a_legacy_single_key_is_migrated_to_one_record() {
+        let backend = FakeBackend::default();
+        backend.seed(LEGACY_DEEPSEEK_TARGET, "sk-legacy-value-000000");
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-legacy-value-000000");
+        assert_eq!(stored.endpoint, None);
+        let target = target_for("deepseek").expect("target");
+        assert!(backend
+            .value(&target)
+            .expect("record")
+            .starts_with(RECORD_MAGIC));
+        assert!(backend.value(LEGACY_DEEPSEEK_TARGET).is_none());
+    }
+
+    #[test]
+    fn a_failed_migration_keeps_the_legacy_key_readable() {
+        let backend = FakeBackend::default();
+        backend.seed(LEGACY_DEEPSEEK_TARGET, "sk-legacy-value-000000");
+        let target = target_for("deepseek").expect("target");
+        backend.fail_set(&target, 1);
+        let stored = read_key(&backend, "deepseek").expect("legacy key");
+        assert_eq!(stored.key, "sk-legacy-value-000000");
+        assert!(backend.value(LEGACY_DEEPSEEK_TARGET).is_some());
+        assert!(backend.value(&target).is_none());
+    }
+
+    #[test]
+    fn deleting_fails_closed_and_is_idempotent() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-delete-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        let target = target_for("deepseek").expect("target");
+        backend.fail_delete(&target, 1);
+        assert!(delete_for_with(&backend, "deepseek").is_err());
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-delete-value-000000");
+
+        delete_for_with(&backend, "deepseek").expect("delete");
+        assert!(read_key(&backend, "deepseek").is_none());
+        delete_for_with(&backend, "deepseek").expect("delete again");
+    }
+
+    #[test]
+    fn a_failed_legacy_delete_does_not_resurrect_the_old_key() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-current-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        backend.seed(LEGACY_DEEPSEEK_TARGET, "sk-ancient-value-000000");
+        backend.fail_delete(LEGACY_DEEPSEEK_TARGET, 1);
+
+        assert!(delete_for_with(&backend, "deepseek").is_err());
+        // The per-provider key was not deleted, so the old fallback cannot take over.
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-current-value-000000");
+    }
+
+    /// The reported failure mode: the main record is gone, a historical `.endpoint` record
+    /// cannot be removed, and the old `?` chain turned that into a total failure. The caller
+    /// then skipped its "switch to mock / stop the child" step while no key was left.
+    #[test]
+    fn a_stale_endpoint_record_cannot_hide_that_the_key_is_gone() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-delete-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        // A leftover from the two-target era, as a failed cleanup would leave it.
+        backend.seed(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            "https://stale.example",
+        );
+        backend.fail_delete(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            1,
+        );
+
+        let report = delete_for_with(&backend, "deepseek").expect("partial delete is a success");
+        // The key is gone: the deletion did have an effect and must be reportable as such.
+        assert!(report.key_removed);
+        assert_eq!(report.residues.len(), 1);
+        assert!(read_key(&backend, "deepseek").is_none());
+    }
+
+    /// A failure of the main record is a failure, and says so. The caller must not report a
+    /// complete deletion while the key is still readable.
+    #[test]
+    fn a_failed_main_delete_is_reported_as_a_failure() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-delete-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        backend.fail_delete(&target_for("deepseek").expect("target"), 1);
+
+        let error = delete_for_with(&backend, "deepseek").expect_err("delete must fail");
+        assert!(error.contains("没有删除"));
+        assert!(read_key(&backend, "deepseek").is_some());
+    }
+
+    /// A legacy key migrated beside an unrelated legacy `.endpoint` record must not be bound to
+    /// that endpoint. The old migration copied it into the new atomic record, which then claimed
+    /// a binding the reader may never have authorised.
+    #[test]
+    fn a_legacy_migration_does_not_invent_an_endpoint_binding() {
+        let backend = FakeBackend::default();
+        backend.seed(LEGACY_DEEPSEEK_TARGET, "sk-legacy-value-000000");
+        backend.seed(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            "https://unrelated.example",
+        );
+
+        let stored = read_key(&backend, "deepseek").expect("legacy key");
+        assert_eq!(stored.key, "sk-legacy-value-000000");
+        assert_eq!(stored.endpoint, None);
+        assert_eq!(stored.binding, BindingTrust::LegacyUnbound);
+        // The migrated record says "unbound" as well; a later read cannot revive the endpoint.
+        let reread = read_key(&backend, "deepseek").expect("migrated key");
+        assert_eq!(reread.endpoint, None);
+        assert_eq!(reread.binding, BindingTrust::Atomic);
+    }
+
+    /// The three storage layouts must remain distinguishable, because only the first can be
+    /// called a binding the reader authorised as a pair.
+    #[test]
+    fn only_the_combined_record_is_reported_as_atomic() {
+        let atomic = FakeBackend::default();
+        set_for_with(
+            &atomic,
+            "deepseek",
+            "sk-atomic-value-000000",
+            Some("https://a.example"),
+        )
+        .expect("save");
+        assert_eq!(
+            read_key(&atomic, "deepseek").expect("key").binding,
+            BindingTrust::Atomic
+        );
+
+        let paired = FakeBackend::default();
+        paired.seed(
+            &target_for("deepseek").expect("target"),
+            "sk-legacy-value-000000",
+        );
+        paired.seed(
+            &endpoint_target_for("deepseek").expect("endpoint target"),
+            "https://legacy.example",
+        );
+        assert_eq!(
+            read_key(&paired, "deepseek").expect("key").binding,
+            BindingTrust::LegacyPaired
+        );
+
+        let unbound = FakeBackend::default();
+        unbound.seed(
+            &target_for("deepseek").expect("target"),
+            "sk-legacy-value-000000",
+        );
+        assert_eq!(
+            read_key(&unbound, "deepseek").expect("key").binding,
+            BindingTrust::LegacyUnbound
+        );
+    }
+
+    #[test]
+    fn an_unbound_key_stays_unbound() {
+        let backend = FakeBackend::default();
+        set_for_with(&backend, "deepseek", "sk-unbound-value-00000", None).expect("save");
+        let stored = read_key(&backend, "deepseek").expect("key");
+        assert_eq!(stored.key, "sk-unbound-value-00000");
+        assert_eq!(stored.endpoint, None);
+    }
+
+    #[test]
+    fn keys_are_isolated_per_provider() {
+        let backend = FakeBackend::default();
+        set_for_with(
+            &backend,
+            "deepseek",
+            "sk-deepseek-value-0000",
+            Some("https://deepseek.example"),
+        )
+        .expect("save deepseek");
+        set_for_with(
+            &backend,
+            "openai",
+            "sk-openai-value-000000",
+            Some("https://openai.example"),
+        )
+        .expect("save openai");
+        assert_eq!(
+            read_key(&backend, "deepseek").expect("deepseek").key,
+            "sk-deepseek-value-0000"
+        );
+        assert_eq!(
+            read_key(&backend, "openai").expect("openai").key,
+            "sk-openai-value-000000"
+        );
+        delete_for_with(&backend, "deepseek").expect("delete deepseek");
+        assert!(read_key(&backend, "deepseek").is_none());
+        assert!(read_key(&backend, "openai").is_some());
+    }
+
+    #[test]
+    fn an_oversized_record_is_rejected_before_any_write() {
+        let backend = FakeBackend::default();
+        let key = "k".repeat(64);
+        let endpoint = format!("https://{}", "a".repeat(MAX_RECORD_BYTES));
+        assert!(set_for_with(&backend, "deepseek", &key, Some(&endpoint)).is_err());
+        assert_eq!(backend.set_calls(), 0);
+    }
+
+    #[test]
+    fn a_damaged_record_fails_closed_instead_of_becoming_a_bare_key() {
+        let backend = FakeBackend::default();
+        let target = target_for("deepseek").expect("target");
+        backend.seed(&target, &format!("{RECORD_MAGIC}missing-separator"));
+        assert!(get_for_with(&backend, "deepseek").is_err());
     }
 }

@@ -12,6 +12,18 @@ import { extractPageText } from './paperRetrieval';
  */
 const cache = new Map<string, readonly DocumentPageText[]>();
 
+/** A long session may open many papers; keep only the most recent transcripts. */
+const MAX_CACHED_TRANSCRIPTS = 4;
+
+function remember(key: string, pages: readonly DocumentPageText[]): void {
+  cache.set(key, pages);
+  while (cache.size > MAX_CACHED_TRANSCRIPTS) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
+
 export interface DocumentTextState {
   /** Pages in reading order. Empty until the first extraction finishes. */
   pages: readonly DocumentPageText[];
@@ -50,7 +62,7 @@ export function useDocumentText(
         }
       }
       if (cancelled) return;
-      cache.set(key, pages);
+      remember(key, pages);
       setResult({ key, pages });
     })();
 

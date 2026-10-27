@@ -144,6 +144,13 @@ describe('configProblems', () => {
     expect(problems.some((problem) => problem.includes('https'))).toBe(true);
   });
 
+  it('trusts only the Vite dev origins by default, not arbitrary loopback pages', () => {
+    const config = readConfig({});
+    expect(config.allowedOrigins).toContain('http://127.0.0.1:1440');
+    expect(config.allowedOrigins).toContain('http://localhost:1440');
+    expect(config.allowedOrigins).not.toContain('http://127.0.0.1:3000');
+  });
+
   it('accepts the custom Tauri scheme used by Linux and macOS webviews', () => {
     const problems = configProblems(readConfig({ AI_ALLOWED_ORIGINS: 'tauri://localhost' }));
     expect(problems).toEqual([]);
