@@ -73,6 +73,57 @@ describe('createChatCompletionsProvider', () => {
     expect(calls[0].options.redirect).toBe('error');
   });
 
+  it('does not call fetch when the signal was already cancelled', async () => {
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      throw new Error('fetch must not be called');
+    };
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+    const controller = new AbortController();
+    controller.abort();
+
+    const error = await provider
+      .complete({ system: 'S', messages: [], maxTokens: 64, signal: controller.signal })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.code).toBe('network');
+    expect(error.message).toContain('取消');
+    // An event registered after the cancellation never fires; the synchronous check is what
+    // keeps the paper from leaving the machine.
+    expect(calls).toBe(0);
+  });
+
+  it('aborts the in-flight fetch when the caller cancels', async () => {
+    let calls = 0;
+    let upstreamSignal = null;
+    const fetchImpl = (_url, options) => {
+      calls += 1;
+      upstreamSignal = options.signal;
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    };
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+    const controller = new AbortController();
+    const pending = provider
+      .complete({ system: 'S', messages: [], maxTokens: 64, signal: controller.signal })
+      .catch((caught) => caught);
+
+    controller.abort();
+    const error = await pending;
+
+    expect(calls).toBe(1);
+    expect(upstreamSignal?.aborted).toBe(true);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.code).toBe('network');
+  });
+
   it('times out a body that never ends after the headers, and cancels it', async () => {
     let cancelled = false;
     const fetchImpl = async () =>

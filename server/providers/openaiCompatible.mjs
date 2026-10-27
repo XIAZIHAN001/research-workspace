@@ -183,6 +183,13 @@ export function createChatCompletionsProvider({
       // The deadline and the caller's cancellation must cover the response body as well as the
       // request. Clearing them when `fetch` resolves would leave a stalled stream with neither.
       try {
+        // A signal that was already cancelled before this call never fires its event at the
+        // listener above. Check the state synchronously, before any network work: an aborted
+        // request must not send the paper, and must not spend the reader's credit.
+        if (signal?.aborted === true) {
+          throw new ProviderError('network', '请求已取消。');
+        }
+
         let response;
         try {
           response = await fetchImpl(`${baseUrl}/chat/completions`, {

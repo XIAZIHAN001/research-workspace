@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { request as httpRequest } from 'node:http';
 import { LIMITS } from './config.mjs';
 import { createChatCompletionsProvider } from './providers/openaiCompatible.mjs';
 import { postJson, rawRequest, startTestService, validAsk } from './testing.mjs';
@@ -465,5 +466,62 @@ describe('a stalled upstream', () => {
 
     const after = await postJson(base, '/api/ai/ask', validAsk());
     expect(after.status).toBe(200);
+  });
+});
+
+/**
+ * A client that closes the socket mid-body must not reach the model.
+ *
+ * `readJsonBody` listens for the socket's `close`; without that, the handler would wait for an
+ * `end` that never arrives and keep one of the four concurrency slots. This fills every slot
+ * with a vanished client and then expects a normal request to be served.
+ */
+describe('a caller that disconnects while sending the body', () => {
+  function abortDuringBody(base) {
+    const url = new URL('/api/ai/ask', base);
+    return new Promise((resolve) => {
+      const request = httpRequest(
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: url.pathname,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+        (response) => {
+          response.resume();
+          response.on('end', resolve);
+        },
+      );
+      request.on('error', () => resolve());
+      // A deliberately incomplete JSON document: the server is still waiting for the rest.
+      request.write('{"mode":"explain",');
+      setTimeout(() => {
+        request.destroy();
+        resolve();
+      }, 30);
+    });
+  }
+
+  it('never calls the provider and keeps the service usable', async () => {
+    let calls = 0;
+    const provider = {
+      name: 'openai',
+      label: 'OpenAI',
+      model: 'gpt-4o-mini',
+      complete: async () => {
+        calls += 1;
+        return { text: '好了', usage: null, truncated: false, finishReason: 'stop' };
+      },
+    };
+    const { base } = await service({ provider });
+
+    await Promise.all(Array.from({ length: 4 }, () => abortDuringBody(base)));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(calls).toBe(0);
+
+    const after = await postJson(base, '/api/ai/ask', validAsk());
+    expect(after.status).toBe(200);
+    expect(calls).toBe(1);
   });
 });

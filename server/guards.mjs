@@ -153,6 +153,11 @@ export function readJsonBody(request, maxBytes) {
       }
     });
     request.on('error', reject);
+    // A client can close the connection mid-body. Without this, `readJsonBody` would wait for
+    // an `end` that never comes and the handler would hold a concurrency slot forever.
+    request.on('close', () => {
+      if (!request.complete) reject(new Error('客户端已断开连接。'));
+    });
   });
 }
 

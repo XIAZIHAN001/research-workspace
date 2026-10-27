@@ -274,6 +274,19 @@ export function createAiServer({
       } catch (error) {
         // A body over the cap is a 413; a body that is not JSON is the caller's mistake (400).
         const tooLarge = error instanceof BodyTooLarge;
+        // A client that closed the connection cannot receive a reply, and writing to it would
+        // be a wasted attempt. An oversized body keeps its 413 while the client is still
+        // connected and streaming, so the incomplete check excludes that case.
+        const disconnected = controller.signal.aborted || response.destroyed;
+        if (disconnected || (!tooLarge && !request.complete)) {
+          log.request({
+            method: 'POST',
+            path: url.pathname,
+            status: 499,
+            ms: Date.now() - started,
+          });
+          return;
+        }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
@@ -312,6 +325,12 @@ export function createAiServer({
 
       let outcome;
       try {
+        // The caller can disappear while the body is parsed or the budget is reserved. Do not
+        // start a model call for a caller that is already gone; this also covers providers
+        // that do not inspect the signal themselves. The reservation is released by the catch.
+        if (controller.signal.aborted) {
+          throw new ProviderError('network', '请求已取消。');
+        }
         outcome = await chosen.complete({
           system,
           messages,
@@ -433,6 +452,19 @@ export function createAiServer({
         body = await readJsonBody(request, LIMITS.bodyBytes);
       } catch (error) {
         const tooLarge = error instanceof BodyTooLarge;
+        // A client that closed the connection cannot receive a reply, and writing to it would
+        // be a wasted attempt. An oversized body keeps its 413 while the client is still
+        // connected and streaming, so the incomplete check excludes that case.
+        const disconnected = controller.signal.aborted || response.destroyed;
+        if (disconnected || (!tooLarge && !request.complete)) {
+          log.request({
+            method: 'POST',
+            path: url.pathname,
+            status: 499,
+            ms: Date.now() - started,
+          });
+          return;
+        }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
@@ -468,6 +500,12 @@ export function createAiServer({
 
       let outcome;
       try {
+        // The caller can disappear while the body is parsed or the budget is reserved. Do not
+        // start a model call for a caller that is already gone; this also covers providers
+        // that do not inspect the signal themselves. The reservation is released by the catch.
+        if (controller.signal.aborted) {
+          throw new ProviderError('network', '请求已取消。');
+        }
         outcome = await chosen.complete({
           system,
           messages,
@@ -576,6 +614,19 @@ export function createAiServer({
         body = await readJsonBody(request, LIMITS.bodyBytes);
       } catch (error) {
         const tooLarge = error instanceof BodyTooLarge;
+        // A client that closed the connection cannot receive a reply, and writing to it would
+        // be a wasted attempt. An oversized body keeps its 413 while the client is still
+        // connected and streaming, so the incomplete check excludes that case.
+        const disconnected = controller.signal.aborted || response.destroyed;
+        if (disconnected || (!tooLarge && !request.complete)) {
+          log.request({
+            method: 'POST',
+            path: url.pathname,
+            status: 499,
+            ms: Date.now() - started,
+          });
+          return;
+        }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
@@ -611,6 +662,12 @@ export function createAiServer({
 
       let outcome;
       try {
+        // The caller can disappear while the body is parsed or the budget is reserved. Do not
+        // start a model call for a caller that is already gone; this also covers providers
+        // that do not inspect the signal themselves. The reservation is released by the catch.
+        if (controller.signal.aborted) {
+          throw new ProviderError('network', '请求已取消。');
+        }
         outcome = await chosen.complete({
           system,
           messages,
