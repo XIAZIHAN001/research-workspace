@@ -1,6 +1,6 @@
 # Installed Windows runtime acceptance checkpoint
 
-Status: **integrated, Windows execution pending / NOT RUN**. The preceding production checkpoint `e14684af52ddc42a51b8327c4618d4287c27a55e` passed all CI, including the original Chromium SIGKILL recovery regression. This separate checkpoint adds acceptance scripts and workflow steps, with no application-code changes. Execution results must be checked for its exact commit before claiming a runtime pass.
+Status: **integrated; latest Windows acceptance FAIL before application launch**. Run `42212710072` on checkpoint `88d1c79b` passed hosted preflight, same-build installer selection, silent installation and installed-version checks, then failed the resource-hash comparison. Application/WebView2 checks and screenshots were **NOT RUN**. The correction below still needs its own hosted execution. This separate checkpoint adds acceptance scripts and workflow steps, with no application-code changes. Execution results must be checked for its exact commit before claiming a runtime pass.
 
 ## Safety and scope
 
@@ -17,7 +17,7 @@ Missing WebView2, a usable desktop, or CDP/window attachment is BLOCKED / **NOT 
 Covered runtime checks:
 
 - Match source version, HEAD, tree, GitHub run and attempt to a pre-build marker; require clean source and exactly one fresh x64 NSIS installer. Record SHA-256, version and source identity.
-- Install that artifact silently under a unique explicit `RUNNER_TEMP` directory. Require exit code 0, real installed EXE/sidecar/launcher, installed version and matching build-resource hashes. No fallback.
+- Install that artifact silently under a unique explicit `RUNNER_TEMP` directory. Require exit code 0, real installed EXE/sidecar/launcher, installed version and whole-file hashes matching the expected NSIS payload described below. No fallback.
 - Launch the installed EXE with an allowlisted environment and Windows-only PATH. Attach Playwright to its real WebView2 using CDP and wait on `ai_service_info`, not an obsolete badge.
 - Verify Mock mode, the owned installed sidecar, authenticated health and a synthetic offline answer, plus unauthenticated rejection.
 - Capture actual Home and 设置 → AI 服务 screenshots with the current 离线模拟 control. No key is present when screenshots are taken.
@@ -25,6 +25,16 @@ Covered runtime checks:
 - Perform independently bounded process, synthetic-credential and CDP cleanup, then write the final report. Observed-process termination checks PID, executable path and exact creation time through one open OS handle. Each app/installer launch retains its `ChildProcess` immediately, before the first fallible snapshot. If observation fails, Windows-only cleanup can stop that root through its retained native child handle, never by a fresh PID lookup; unverified descendants still force `owned-cleanup: FAIL` and `cleanupIncomplete: true`, even when root termination succeeds. Native identity JSON round-trip is checked before installation. No global process-name kill exists. Credential cleanup deletes only the current provider record if its complete blob hash matches this test's generated fake record. Synthetic installation/profile directories are left for VM disposal.
 
 **Explicitly NOT RUN/out of scope:** clean consumer Windows 10/11 prerequisites, upgrade/uninstall, installer-dialog UX, PDF import/reading UI, backup export/restore UI, all real or paid upstream calls. Passing this narrow gate is not release approval. Screenshot capture is evidence, not a claim of human visual review.
+
+## Installed payload identity
+
+The pinned [Tauri CLI 2.12.3 bundler](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle.rs) replaces the **first** `__TAURI_BUNDLE_TYPE_VAR_UNK` byte sequence with `__TAURI_BUNDLE_TYPE_VAR_NSS` before NSIS packaging, then restores the original build-tree EXE. Its [NSIS template](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi) includes that patched file directly. Raw installed-versus-restored-EXE hash equality was therefore an incorrect harness assumption.
+
+The gate reads the actual installed `node_modules/@tauri-apps/cli/package.json` version and supports only this reviewed `2.12.3` mapping. It copies the build EXE bytes in memory and applies exactly that first-marker replacement. It compares the entire expected buffer's SHA-256 and length with the untouched installed file. A missing build marker, unsupported CLI version, unpatched installed EXE or any other byte difference fails closed. Existing NSS constants are allowed; neither marker uniqueness nor replacement of all occurrences is assumed. Node sidecar and launcher hashes still require exact, unmodified build-byte equality. Signing or custom packaging that introduces other changes requires a separately reviewed mapping, not broader normalization or excluded byte ranges.
+
+Reports retain installer exit/version and all three roles' raw build and installed hashes, sizes, expected packaged hashes, comparison method and match results before a comparison can throw. Unsupported mapping or missing-marker errors leave the main EXE's expected hash unavailable with a classified error; they do not hide the other roles' raw hashes. No file contents, paths containing user data, credential payloads or environment dumps are added.
+
+Run `42212710072` logged successful NSIS bundle-type patching. Static extraction of its SHA-256-verified installer found an EXE containing two NSS markers and no UNK marker, consistent with one original NSS constant plus the documented replacement. No Windows executable was run during that inspection. The old report did not retain individual resource hashes, so the exact first failing comparison and whether another resource also differed cannot be proven retrospectively. The new diagnostics and next hosted run must resolve that remaining uncertainty.
 
 ## Workflow integration
 
@@ -84,6 +94,6 @@ npm run check
 node --check scripts/verify/windows-runtime.mjs
 ```
 
-Portable tests exercise runner denial, same-job artifact identity/freshness, installed-only resource paths, process identity/PID reuse and descendant ownership, malformed snapshots, injected first-observation failures/timeouts/missing roots for both launch paths, and fail-closed sanitized report/cleanup status. They **do not** validate PowerShell/PInvoke on Windows, NSIS command handling, the actual WebView2 session, Windows Credential Manager, UI screenshots or runtime process behavior. Those remain NOT RUN until the proposed gate executes on the designated runner.
+Portable tests exercise runner denial, same-job artifact identity/freshness, installed-only resource paths, exact first-marker payload derivation, unrelated byte mutations and raw-resource mismatches, unsupported CLI/missing-marker refusal, retained per-role failure diagnostics, process identity/PID reuse and descendant ownership, malformed snapshots, injected first-observation failures/timeouts/missing roots for both launch paths, and fail-closed sanitized report/cleanup status. They **do not** validate PowerShell/PInvoke on Windows, NSIS command handling, the actual WebView2 session, Windows Credential Manager, UI screenshots or runtime process behavior. The current correction's hosted execution remains pending; application/WebView2 checks have not yet run.
 
 References: [Playwright WebView2 CDP](https://playwright.dev/docs/webview2), [NSIS installer command line](https://nsis.sourceforge.io/Docs/Chapter3.html). NSIS `/S` is case-sensitive; `/D=<absolute path>` is last and unquoted even when the directory contains spaces. No `/NCRC` flag is used. The Windows-only retained-handle fallback follows [libuv Windows `uv_process_kill`](https://raw.githubusercontent.com/libuv/libuv/v1.x/src/win/process.c); it never calls PID-based `process.kill`.

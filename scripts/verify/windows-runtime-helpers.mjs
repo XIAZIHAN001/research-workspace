@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { win32 as path } from 'node:path';
 
 function requireValue(condition, code) {
@@ -107,6 +108,73 @@ export function installedPaths(directory, files) {
     'INSTALLED_RESOURCES_MISSING',
   );
   return expected;
+}
+
+/**
+ * Tauri CLI 2.12.3 bundle.rs patches only the first UNK marker before NSIS,
+ * then restores the build-tree EXE. Derive the exact expected payload in a copy;
+ * never normalize installed bytes or exclude any byte from the comparison.
+ * https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle.rs
+ */
+export function verifyResourceHashes(install, resources, cliVersion) {
+  const roles = ['exe', 'sidecar', 'launcher'];
+  requireValue(
+    resources.length === roles.length &&
+      resources.every(
+        (entry, index) =>
+          entry.role === roles[index] &&
+          Buffer.isBuffer(entry.buildBytes) &&
+          Buffer.isBuffer(entry.installedBytes),
+      ),
+    'RESOURCE_HASH_INPUT_INVALID',
+  );
+  const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  install.tauriCliVersion =
+    typeof cliVersion === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cliVersion)
+      ? cliVersion
+      : 'unknown';
+  install.resourceHashesMatchExpected = false;
+  // Preserve every role's raw hashes before a marker/version/comparison can fail.
+  install.resourceHashes = resources.map((entry) => {
+    const buildSha256 = digest(entry.buildBytes);
+    const installedSha256 = digest(entry.installedBytes);
+    return {
+      role: entry.role,
+      buildSha256,
+      installedSha256,
+      buildSize: entry.buildBytes.length,
+      installedSize: entry.installedBytes.length,
+      expectedSha256: entry.role === 'exe' ? null : buildSha256,
+      method: entry.role === 'exe' ? 'unavailable' : 'verbatim',
+      matches:
+        entry.role === 'exe'
+          ? null
+          : entry.installedBytes.length === entry.buildBytes.length &&
+            installedSha256 === buildSha256,
+    };
+  });
+  const exe = install.resourceHashes[0];
+  if (cliVersion !== '2.12.3') {
+    exe.comparisonError = 'TAURI_CLI_HASH_MAPPING_UNSUPPORTED';
+    throw new Error(exe.comparisonError);
+  }
+  exe.method = 'tauri-2.12.3-nsis-first-marker';
+  const marker = Buffer.from('__TAURI_BUNDLE_TYPE_VAR_UNK');
+  const buildBytes = resources[0].buildBytes;
+  const offset = buildBytes.indexOf(marker);
+  if (offset < 0) {
+    exe.comparisonError = 'TAURI_BUNDLE_MARKER_MISSING';
+    throw new Error(exe.comparisonError);
+  }
+  const expected = Buffer.from(buildBytes);
+  Buffer.from('__TAURI_BUNDLE_TYPE_VAR_NSS').copy(expected, offset);
+  exe.expectedSha256 = digest(expected);
+  exe.matches = exe.installedSize === expected.length && exe.installedSha256 === exe.expectedSha256;
+  requireValue(
+    install.resourceHashes.every((entry) => entry.matches === true),
+    'INSTALLED_RESOURCE_HASH_MISMATCH',
+  );
+  install.resourceHashesMatchExpected = true;
 }
 
 export function sameProcess(expected, current) {

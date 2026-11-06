@@ -14,6 +14,7 @@ import {
   runnerGuardCode,
   selectInstaller,
   installedPaths,
+  verifyResourceHashes,
   nsisInvocation,
   spawnObserved,
   cleanupUnobservedLaunches,
@@ -480,6 +481,7 @@ try {
         observe: trackRoot,
       });
       const exitCode = await bounded(() => launched.completion, 120_000);
+      report.install = { exitCode };
       demand(exitCode === 0, 'INSTALLER_EXIT_FAILED');
       const expected = [
         join(installDirectory, 'research-workspace.exe'),
@@ -493,25 +495,25 @@ try {
         version.version === source.version || version.version === `${source.version}.0`,
         'INSTALLED_VERSION_MISMATCH',
       );
+      report.install.version = version.version;
       const built = [
         join(ROOT, 'src-tauri/target/release/research-workspace.exe'),
         join(ROOT, 'src-tauri/sidecar/rw-node.exe'),
         join(ROOT, 'src-tauri/sidecar/server/desktop.mjs'),
       ];
-      for (let index = 0; index < expected.length; index++)
-        demand(
-          (await hash(expected[index])) === (await hash(built[index])),
-          'INSTALLED_RESOURCE_HASH_MISMATCH',
-        );
-      report.install = {
-        exitCode,
-        version: version.version,
-        exeSha256: await hash(paths.exe),
-        sidecarSha256: await hash(paths.sidecar),
-        launcherSha256: await hash(paths.launcher),
-        resourceHashesMatchBuild: true,
-        strippedDevelopmentPath: true,
-      };
+      // Read the installed CLI package, not just the declared dependency version.
+      const cli = JSON.parse(
+        await readFile(join(ROOT, 'node_modules/@tauri-apps/cli/package.json'), 'utf8'),
+      );
+      const resources = await Promise.all(
+        ['exe', 'sidecar', 'launcher'].map(async (role, index) => ({
+          role,
+          buildBytes: await readFile(built[index]),
+          installedBytes: await readFile(expected[index]),
+        })),
+      );
+      verifyResourceHashes(report.install, resources, cli.version);
+      report.install.strippedDevelopmentPath = true;
     });
     await step('installed-ipc-mock', async () => {
       await launch();

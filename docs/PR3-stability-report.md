@@ -41,9 +41,9 @@
 
 历史 PR 中的 1811 项 Vitest、37 项 Rust 和桌面冒烟数字不代表本轮验收。
 
-- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **116 个文件 / 2298 项 Vitest，0 失败、0 跳过**。
+- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **116 个文件 / 2308 项 Vitest，0 失败、0 跳过**。
 - `npm run build`：通过；保留 Vite 既有的大于 500 kB chunk 提示，未通过提高阈值隐藏。
-- 本轮新增 **487 项 JS/TS 回归**（首轮生产整改 245、崩溃验收脚本 9、持久化与冲突边界 190、Windows 验收脚本 26、中文视觉/时序验收脚本 17）和 **15 项 Rust 回归**。
+- 本轮新增 **497 项 JS/TS 回归**（首轮生产整改 245、崩溃验收脚本 9、持久化与冲突边界 190、Windows 验收脚本 36、中文视觉/时序验收脚本 17）和 **15 项 Rust 回归**。
 - `cargo fmt --check`：通过。
 - Windows GNU 目标完整 Tauri `cargo check --release --all-targets`：通过（包含测试代码类型检查）。
 - 从当前源码构造的隔离 Rust 逻辑 harness：49/49 通过；不含 Windows Credential Manager 的实际调用验收。
@@ -128,6 +128,17 @@
 - Windows 52/52 Rust 与 release check 通过，之后构建标记环境检查返回 NOT RUN 并以非零码退出。NSIS 构建、安装与运行未执行，不能说整条 CI 通过，也不是已证实的产品运行故障。
 - 实际官方 runner 镜像为 `windows-2025-vs2026` / `20261030.294.1`。[对应镜像发布](https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261030.294)使用新的 `ImageOS=win25-vs2026`，原校验只接受 `win` 加数字，已在便携测试中复现拒绝。旧运行没有保存构建标记报告且丢弃了具体拒绝代码，不能证明这是那次第一个或唯一失败的断言。
 - 后续诊断补丁仅增加这个确证的官方镜像标识、保留脱敏的具体拒绝代码，并单独保存构建标记报告；不放宽托管 VM、显式 opt-in、空账户、源提交或产物检查。该补丁的本地全量 gate 为 116 文件 / 2298 项测试通过，26 项 Windows helper 定向测试与独立复审通过；安装后运行仍须再次以新提交的 CI 验证。
+
+### `88d1c79b` 安装资源比对与精确打包变换
+
+[Actions 42212710072](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42212710072) 对应 HEAD `88d1c79bb9afeff6d95fd7e5cfe81f11bfaec183`，测试合并提交 `30ec0387e5f13b5b0d777420b03ab766172464ad` 的 tree 同为 `56e0f404419d3d4c62be8088250ad55756695434`。
+
+- Node 22.13/24、2298 项测试、Chromium 22/22、Windows 52/52 Rust、release 与 NSIS 构建通过。构建标记、空账户/进程、实际 WebView2 与同次产物检查均通过，原镜像识别阻断解除。
+- 静默安装退出码 0、安装版本校验通过，之后 `INSTALLED_RESOURCE_HASH_MISMATCH` 阻断；应用、Mock 和凭据测试均未运行。清理 PASS。[真实运行报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42212710072/artifacts/13499769285) 已保存，整条 Windows job 仍失败。
+- 固定依赖 Tauri CLI 2.12.3 的[官方打包实现](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle.rs)会在 NSIS 打包前把主程序第一个 `__TAURI_BUNDLE_TYPE_VAR_UNK` 改为 `__TAURI_BUNDLE_TYPE_VAR_NSS`，完成后恢复构建目录原文件。因此直接要求安装后的主 EXE 与恢复后的构建 EXE 原始 hash 相等，是验收脚本的错误假设。
+- 该次日志实际记录了 NSIS bundle-type patch，且无 patch 失败警告。下载产物的 SHA-256 与报告一致（`d657cf46fe736f76813530d31250beddfdc9bc2a70a4c6f211c157a0e9ef5d0a`）；仅静态提取的主 EXE 含两个 NSS 常量、无 UNK。本地未执行 Windows 程序，也没有据此声称应用运行成功。旧报告未保留三个比较项的 hash，不能反推它的全部比较结果。
+- 后续校验只对构建字节的副本执行固定版本的精确首次 UNK→NSS 变换，再比较完整预期与安装字节的 SHA-256；绝不归一化安装字节、忽略字节区间或允许原始相等回退。Node/launcher 仍须原样完整相等；不支持的 CLI 版本、缺标记或其他字节变化继续失败关闭。安装退出码、版本与各资源 build/expected/installed hash 在断言失败前保存。
+- 这是验收比较规则修正，不是放宽应用安全策略。新的精确提交仍须重新运行 Windows 安装与应用门禁。
 
 ## 独立复审
 

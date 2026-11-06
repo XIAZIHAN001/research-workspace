@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'vitest';
+import * as runtimeHelpers from './windows-runtime-helpers.mjs';
 import {
   assertHostedRunner,
   runnerGuardCode,
@@ -100,6 +102,187 @@ test('installed paths never accept absent executable or an outside fallback', ()
   assert.throws(() =>
     installedPaths(root, [expected[0].replace('installed', 'build'), ...expected.slice(1)]),
   );
+});
+
+const bundleMarker = '__TAURI_BUNDLE_TYPE_VAR_UNK';
+const nsisMarker = '__TAURI_BUNDLE_TYPE_VAR_NSS';
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+function resourceFixture() {
+  return [
+    {
+      role: 'exe',
+      buildBytes: Buffer.from(`prefix:${bundleMarker}:suffix`),
+      installedBytes: Buffer.from(`prefix:${nsisMarker}:suffix`),
+    },
+    ...['sidecar', 'launcher'].map((role) => ({
+      role,
+      buildBytes: Buffer.from(`synthetic-${role}`),
+      installedBytes: Buffer.from(`synthetic-${role}`),
+    })),
+  ];
+}
+function verifyHashes(install, resources = resourceFixture(), version = '2.12.3') {
+  assert.equal(typeof runtimeHelpers.verifyResourceHashes, 'function');
+  return runtimeHelpers.verifyResourceHashes(install, resources, version);
+}
+
+test('hashes the complete expected NSIS payload without changing either input', () => {
+  const resources = resourceFixture();
+  const original = resources.map((entry) => [
+    Buffer.from(entry.buildBytes),
+    Buffer.from(entry.installedBytes),
+  ]);
+  const install = {};
+  verifyHashes(install, resources);
+  assert.equal(install.tauriCliVersion, '2.12.3');
+  assert.equal(install.resourceHashesMatchExpected, true);
+  for (const [index, row] of install.resourceHashes.entries()) {
+    assert.equal(row.role, resources[index].role);
+    assert.equal(row.buildSha256, sha256(original[index][0]));
+    assert.equal(row.expectedSha256, sha256(original[index][1]));
+    assert.equal(row.installedSha256, sha256(original[index][1]));
+    assert.equal(row.buildSize, original[index][0].length);
+    assert.equal(row.installedSize, original[index][1].length);
+    assert.equal(row.matches, true);
+    assert.equal(row.method, index === 0 ? 'tauri-2.12.3-nsis-first-marker' : 'verbatim');
+    assert.deepEqual(resources[index].buildBytes, original[index][0]);
+    assert.deepEqual(resources[index].installedBytes, original[index][1]);
+  }
+  assert.notEqual(install.resourceHashes[0].buildSha256, install.resourceHashes[0].expectedSha256);
+});
+
+test('requires the first-marker transformation, without accepting raw EXE equality', () => {
+  const resources = resourceFixture();
+  resources[0].installedBytes = Buffer.from(resources[0].buildBytes);
+  const install = {};
+  assert.throws(() => verifyHashes(install, resources), /INSTALLED_RESOURCE_HASH_MISMATCH/);
+  assert.equal(install.resourceHashes[0].matches, false);
+});
+
+test('matches Tauri first-occurrence semantics rather than replacing every marker', () => {
+  const resources = resourceFixture();
+  resources[0].buildBytes = Buffer.from(`${bundleMarker}:${bundleMarker}`);
+  resources[0].installedBytes = Buffer.from(`${nsisMarker}:${bundleMarker}`);
+  verifyHashes({}, resources);
+  for (const changed of [`${bundleMarker}:${nsisMarker}`, `${nsisMarker}:${nsisMarker}`]) {
+    resources[0].installedBytes = Buffer.from(changed);
+    assert.throws(() => verifyHashes({}, resources), /INSTALLED_RESOURCE_HASH_MISMATCH/);
+  }
+});
+
+test('preserves pre-existing NSS constants before and after the first UNK marker', () => {
+  const resources = resourceFixture();
+  resources[0].buildBytes = Buffer.from(`${nsisMarker}:${bundleMarker}:${nsisMarker}`);
+  resources[0].installedBytes = Buffer.from(`${nsisMarker}:${nsisMarker}:${nsisMarker}`);
+  verifyHashes({}, resources);
+  assert.equal(resources[0].buildBytes.toString(), `${nsisMarker}:${bundleMarker}:${nsisMarker}`);
+});
+
+test('requires all three correctly identified resource buffers before hash verification', () => {
+  for (const resources of [
+    [],
+    resourceFixture().slice(0, 2),
+    resourceFixture().reverse(),
+    resourceFixture().map((entry) => ({ ...entry, buildBytes: 'not a byte buffer' })),
+  ]) {
+    assert.throws(() => verifyHashes({}, resources), /RESOURCE_HASH_INPUT_INVALID/);
+  }
+});
+
+test('rejects every one-byte payload mutation and appended or removed bytes', () => {
+  const resources = resourceFixture();
+  const expected = Buffer.from(resources[0].installedBytes);
+  for (let index = 0; index < expected.length; index++) {
+    resources[0].installedBytes = Buffer.from(expected);
+    resources[0].installedBytes[index] ^= 1;
+    assert.throws(() => verifyHashes({}, resources), /INSTALLED_RESOURCE_HASH_MISMATCH/);
+  }
+  for (const changed of [Buffer.concat([expected, Buffer.from([0])]), expected.subarray(1)]) {
+    resources[0].installedBytes = changed;
+    assert.throws(() => verifyHashes({}, resources), /INSTALLED_RESOURCE_HASH_MISMATCH/);
+  }
+});
+
+test('never applies the executable transformation to sidecar or launcher resources', () => {
+  for (const index of [1, 2]) {
+    const resources = resourceFixture();
+    resources[index].buildBytes = Buffer.from(bundleMarker);
+    resources[index].installedBytes = Buffer.from(nsisMarker);
+    const install = {};
+    assert.throws(() => verifyHashes(install, resources), /INSTALLED_RESOURCE_HASH_MISMATCH/);
+    assert.equal(install.resourceHashes[index].method, 'verbatim');
+    assert.equal(install.resourceHashes[index].expectedSha256, sha256(resources[index].buildBytes));
+  }
+});
+
+test('missing or already-patched build markers fail closed with raw hash diagnostics', () => {
+  for (const marker of ['', nsisMarker]) {
+    const resources = resourceFixture();
+    resources[0].buildBytes = Buffer.from(`prefix:${marker}:suffix`);
+    const install = {};
+    assert.throws(() => verifyHashes(install, resources), /TAURI_BUNDLE_MARKER_MISSING/);
+    assert.equal(install.resourceHashes.length, 3);
+    assert.equal(install.resourceHashes[0].buildSha256, sha256(resources[0].buildBytes));
+    assert.equal(install.resourceHashes[0].installedSha256, sha256(resources[0].installedBytes));
+    assert.equal(install.resourceHashes[0].expectedSha256, null);
+    assert.equal(install.resourceHashesMatchExpected, false);
+  }
+});
+
+test('unsupported actual CLI versions fail closed and never echo arbitrary package text', () => {
+  for (const version of [
+    '2.12.2',
+    '2.12.4',
+    undefined,
+    '2.12.3-secret-payload',
+    ['2.12.3'],
+    { version: 'secret-payload' },
+  ]) {
+    const install = {};
+    assert.throws(
+      () => verifyHashes(install, resourceFixture(), version ?? null),
+      /TAURI_CLI_HASH_MAPPING_UNSUPPORTED/,
+    );
+    assert.equal(install.resourceHashes.length, 3);
+    assert.equal(install.resourceHashes[0].expectedSha256, null);
+    assert.equal(install.resourceHashesMatchExpected, false);
+    assert.ok(!JSON.stringify(install).includes('secret-payload'));
+    assert.equal(
+      install.tauriCliVersion,
+      typeof version === 'string' && /^\d+\.\d+\.\d+$/.test(version) ? version : 'unknown',
+    );
+  }
+});
+
+test('failure reports retain all role hashes and installation evidence before throwing', () => {
+  for (const index of [0, 1, 2]) {
+    const resources = resourceFixture();
+    resources[index].installedBytes = Buffer.from('different synthetic bytes');
+    const report = makeReport(['install-and-resources', 'installed-ipc-mock']);
+    report.install = { exitCode: 0, version: '0.13.2.0' };
+    try {
+      verifyHashes(report.install, resources);
+      assert.fail('Changed resource must fail');
+    } catch (error) {
+      assert.equal(error.message, 'INSTALLED_RESOURCE_HASH_MISMATCH');
+      report.terminalError = error.message;
+      report.checks[0].status = 'FAIL';
+    }
+    const result = finishReport(report);
+    assert.equal(result.status, 'FAIL');
+    assert.equal(result.checks[1].status, 'NOT RUN');
+    assert.equal(result.install.exitCode, 0);
+    assert.equal(result.install.version, '0.13.2.0');
+    assert.equal(result.install.resourceHashesMatchExpected, false);
+    assert.equal(result.install.resourceHashes.length, 3);
+    for (const [roleIndex, row] of result.install.resourceHashes.entries()) {
+      assert.equal(row.installedSha256, sha256(resources[roleIndex].installedBytes));
+      assert.match(row.buildSha256, /^[a-f0-9]{64}$/);
+      assert.match(row.expectedSha256, /^[a-f0-9]{64}$/);
+      assert.equal(row.matches, roleIndex !== index);
+    }
+    assert.ok(!JSON.stringify(result).includes('synthetic bytes'));
+  }
 });
 
 const root = {
