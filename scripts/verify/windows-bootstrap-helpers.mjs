@@ -132,6 +132,7 @@ const tokenReasons = new Set([
   'buffer-size',
   'read-query-error',
   'scalar-size',
+  'scalar-class',
   'sid-invalid',
   'sid-conversion-error',
   'statistics-size',

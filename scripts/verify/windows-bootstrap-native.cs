@@ -146,10 +146,27 @@ public static class WindowsBootstrapNative {
     try { TokenApi(GetTokenInformation(token, kind, buffer, length, out length), TokenField(kind), "read-query-error"); return buffer; }
     catch { Marshal.FreeHGlobal(buffer); throw; }
   }
+  public delegate bool FixedScalarQuery(int kind, IntPtr buffer, uint capacity, out uint length, out int error);
+  public static uint ReadScalar(int kind, FixedScalarQuery query) {
+    // TOKEN_TYPE, session/SandboxInert/UIAccess DWORDs and one-DWORD TOKEN_ELEVATION only.
+    // https://learn.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-token_information_class
+    TokenNeed(kind == 8 || kind == 12 || kind == 15 || kind == 20 || kind == 26, TokenField(kind), "scalar-class");
+    IntPtr value = Marshal.AllocHGlobal(4);
+    try {
+      uint length; int error;
+      if (!query(kind, value, 4, out length, out error))
+        throw new GateFailure("NATIVE_API_FAILED", error) { TokenFailure = new TokenFailureDetail { field = TokenField(kind), reason = "read-query-error" } };
+      TokenNeed(length == 4, TokenField(kind), "scalar-size");
+      return unchecked((uint)Marshal.ReadInt32(value));
+    } finally { Marshal.FreeHGlobal(value); }
+  }
   static uint Scalar(IntPtr token, int kind) {
-    uint length; IntPtr value = Info(token, kind, out length);
-    try { TokenNeed(length == 4, TokenField(kind), "scalar-size"); return unchecked((uint)Marshal.ReadInt32(value)); }
-    finally { Marshal.FreeHGlobal(value); }
+    // No NULL/zero sizing probe and no retry: fixed-size classes have a documented four-byte buffer.
+    return ReadScalar(kind, (int requested, IntPtr buffer, uint capacity, out uint length, out int error) => {
+      bool success = GetTokenInformation(token, requested, buffer, capacity, out length);
+      error = success ? 0 : Marshal.GetLastWin32Error();
+      return success;
+    });
   }
   static string SidText(IntPtr sid, string field) {
     TokenNeed(sid != IntPtr.Zero && IsValidSid(sid), field, "sid-invalid");

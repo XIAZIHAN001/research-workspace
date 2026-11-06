@@ -461,3 +461,35 @@ test('token-failure evidence cannot coexist with bootstrap or context PASS', () 
     assert.equal(JSON.stringify(observation).includes('private'), false);
   }
 });
+
+test('fixed scalar diagnostics retain unsupported-class refusal without widening error24 acceptance', () => {
+  const observed = {
+    ...verified,
+    status: 'FAIL',
+    phase: 'caller-token',
+    code: 'TOKEN_REJECTED',
+    win32Error: 24,
+    nativeTests: 57,
+    candidateVerified: false,
+    childVerified: false,
+    atomicJob: false,
+    noInheritedHandles: false,
+    resumed: false,
+    exited: false,
+    cleanupVerified: false,
+    exitCode: null,
+    activeProcesses: null,
+    tokenFailure: { field: 'elevation', reason: 'size-query-error' },
+  };
+  const outcome = bootstrapOutcome('probe', id, observed, null);
+  assert.equal(outcome.status, 'FAIL');
+  assert.equal(outcome.native.win32Error, 24);
+  assert.deepEqual(outcome.native.tokenFailure, { field: 'elevation', reason: 'size-query-error' });
+  assert.deepEqual(
+    projectNativeOutcome({
+      ...observed,
+      tokenFailure: { field: 'integrity', reason: 'scalar-class' },
+    }).tokenFailure,
+    { field: 'integrity', reason: 'scalar-class' },
+  );
+});

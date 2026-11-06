@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 // Synthetic policy tests only. Probe/run still exercise the actual Windows APIs separately.
 public static class WindowsBootstrapNativeTests {
@@ -88,6 +89,29 @@ public static class WindowsBootstrapNativeTests {
     RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "primary-required"); count++;
     invalidAccount = Token(); invalidAccount.Integrity = 4096;
     RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "integrity-below-medium"); count++;
+    // Replay the observed elevation contract: NULL/zero returns ERROR_BAD_LENGTH, typed four-byte read succeeds.
+    foreach (int kind in new int[] { 8, 12, 15, 20, 26 }) {
+      int calls = 0;
+      uint value = WindowsBootstrapNative.ReadScalar(kind, (int requested, IntPtr buffer, uint capacity, out uint length, out int error) => {
+        calls++; Check(requested == kind); length = 4;
+        if (buffer == IntPtr.Zero || capacity == 0) { error = 24; return false; }
+        Check(capacity == 4); Marshal.WriteInt32(buffer, 1); error = 0; return true;
+      });
+      Check(value == 1 && calls == 1); count++;
+    }
+    foreach (uint returned in new uint[] { 0, 3, 8 }) {
+      RejectDetail(() => WindowsBootstrapNative.ReadScalar(20, (int requested, IntPtr buffer, uint capacity, out uint length, out int error) => {
+        Check(requested == 20 && buffer != IntPtr.Zero && capacity == 4); length = returned; error = 0; return true;
+      }), "elevation", "scalar-size"); count++;
+    }
+    int failedCalls = 0;
+    RejectDetail(() => WindowsBootstrapNative.ReadScalar(20, (int requested, IntPtr buffer, uint capacity, out uint length, out int error) => {
+      failedCalls++; Check(requested == 20 && buffer != IntPtr.Zero && capacity == 4); length = 4; error = 24; return false;
+    }), "elevation", "read-query-error", 24); Check(failedCalls == 1); count++;
+    bool unknownQueried = false;
+    RejectDetail(() => WindowsBootstrapNative.ReadScalar(25, (int requested, IntPtr buffer, uint capacity, out uint length, out int error) => {
+      unknownQueried = true; length = 4; error = 0; return true;
+    }), "integrity", "scalar-class"); Check(!unknownQueried); count++;
     return count;
   }
 }

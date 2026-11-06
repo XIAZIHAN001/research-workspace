@@ -192,6 +192,14 @@
 - [实际探针报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42236056011/artifacts/13511991333)的 ZIP SHA-256 已验证为 `d20945ec80be021681ac7b6ec88b9c1eb58c8d042038194e76c4de76e6d62fbb`。不能据此归因为产品故障，亦不能断言普通权限路线不可行。
 - 旧字段将多处 token 查询/结构/账户校验拒绝合并为同一代码，且首次长度查询的非预期 API 错误会丢失具体数字。后续独立诊断 checkpoint 只保留固定允许列表中的查询字段与拒绝谓词、实际数值 Win32 错误；不输出 SID、LUID、原始缓冲区、环境或任意异常文本，不改变查询顺序、接受条件、令牌操作和清理路径。
 
+### `74290a69` 定位固定大小 token 查询错误
+
+[Actions 42238096155](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42238096155) 对应 HEAD `74290a692a0546cebc32a8ca0cafa59aab9fea6b`，测试合并提交 `db702ed8e7264bab24a6404b0344628fec51e14d` 与其 tree 同为 `7354f7d860817eec8a29cad97adb4e5e3e0f4c62`。Node22/24、118 文件 / 2350 测试与真实 Chromium 22/22 通过，Windows 失败。
+
+- C# 编译与 57 项原生合成测试通过；[探针报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42238096155/artifacts/13512508611)精确记录 `elevation / size-query-error / Win32 24（ERROR_BAD_LENGTH）`，仍在 SAFER、作业或子驱动之前。ZIP SHA-256 为 `e53e10f6d0056e7c0ff0610c9599492058d919766f1a0dffbdc2d7fc07dc7667`。
+- 泛用空缓冲区长度查询错误地假设所有字段都必须先返回 122。Microsoft 将 [TOKEN_ELEVATION](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_elevation) 定义为单个 DWORD；既有应用诊断的固定 4 字节读取也已在 Windows 实测成功。这确认了验收调用的问题，不代表产品故障或普通权限运行已成功。
+- 下一 checkpoint 对已有的五种固定标量直接使用 4 字节缓冲区，必须 API 成功且返回长度恰为 4。变量长度查询不变，不把错误 24 当作成功、不重试其他启动方式、不修改任何 token 值判断或系统权限。模拟查询回归重现零长度请求返回 24，并要求实际标量读取器只调用一次非空 4 字节请求。真实平台结果仍待下一次 CI。
+
 ## 独立复审
 
 复审不仅检查本轮 diff，也复查了受影响的旧路径。独立故障注入复现并关闭：
