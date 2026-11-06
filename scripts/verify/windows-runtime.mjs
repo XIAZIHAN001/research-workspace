@@ -20,6 +20,7 @@ import {
   projectProcessOutcome,
   confirmedProcessExit,
   projectWindowCounts,
+  captureProcessDiagnostics,
   ownedProcessRole,
   ownedProcessCounts,
   nsisInvocation,
@@ -396,11 +397,19 @@ async function launch() {
       },
     });
   } finally {
-    // One bounded, sanitized observation, even when attachment failed. Never inspect titles,
-    // command lines, environment, browser profile contents or another application's windows.
+    // Bounded, sanitized observations even when attachment failed. Native-only parsing of
+    // owned WebView arguments emits fixed flags, never raw argv, environment or token data.
+    let diagnosticWebviews = null;
     try {
       const live = await snapshot(4000);
       evidence.ownedProcesses = ownedProcessCounts(live, owned, paths, roots);
+      diagnosticWebviews = owned
+        .map((identity, index) => ({ ordinal: index + 1, identity }))
+        .filter(
+          ({ identity }) =>
+            ownedProcessRole(identity, paths, roots) === 'webview2' &&
+            live.some((row) => sameProcess(identity, row)),
+        );
     } catch {
       evidence.ownedProcesses = { observation: 'unavailable' };
     }
@@ -409,6 +418,15 @@ async function launch() {
     } catch {
       evidence.window = projectWindowCounts(null);
     }
+    await captureProcessDiagnostics({
+      evidence,
+      app,
+      webviews: diagnosticWebviews,
+      budgetMs: Math.max(0, Math.min(8000, deadline - Date.now())),
+      inspectToken: (process, timeout) => native('inspect-token', { process }, timeout),
+      inspectFlags: (processes, timeout) =>
+        native('inspect-debug-flags', { processes, expectedPort: port }, timeout),
+    });
   }
   if (!attached) throw new Blocked('WEBVIEW2_CDP_OR_WINDOW_UNAVAILABLE');
   ({ browser, page } = attached);
@@ -500,6 +518,18 @@ try {
         runId: env.GITHUB_RUN_ID,
         runAttempt: env.GITHUB_RUN_ATTEMPT,
       };
+      report.host.nativeDiagnosticSelfTest = { status: 'NOT RUN' };
+      const nativeTests = await native('self-test-diagnostics', {}, 8000);
+      const validCount =
+        Number.isInteger(nativeTests?.cases) && nativeTests.cases > 0 && nativeTests.cases <= 10000;
+      report.host.nativeDiagnosticSelfTest = {
+        status: nativeTests?.passed === true && validCount ? 'PASS' : 'FAIL',
+        cases: validCount ? nativeTests.cases : 0,
+      };
+      demand(
+        report.host.nativeDiagnosticSelfTest.status === 'PASS',
+        'NATIVE_DIAGNOSTIC_SELF_TEST_FAILED',
+      );
     });
     let installer;
     let source;

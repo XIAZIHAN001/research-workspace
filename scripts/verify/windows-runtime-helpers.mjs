@@ -586,7 +586,9 @@ export async function connectWebView({ evidence, budgetMs, discover, connect, ch
 export function projectProcessOutcome(value) {
   const select = (key, allowed, fallback) =>
     allowed.includes(value?.[key]) ? value[key] : fallback;
-  return {
+  const errorCode = (code) =>
+    Number.isInteger(code) && code >= 0 && code <= 0xffffffff ? code : null;
+  const projected = {
     result: select(
       'result',
       ['matched', 'stopped', 'exited', 'absent', 'mismatch', 'failed', 'observed', 'unavailable'],
@@ -606,23 +608,45 @@ export function projectProcessOutcome(value) {
         'window-process',
         'window-rect',
         'wait-window-after',
+        'token-open',
+        'token-elevation',
+        'token-integrity',
+        'wait-token-after',
+        'command-line',
+        'parse-arguments',
+        'wait-arguments-after',
         'complete',
         'bridge',
         'timeout',
       ],
       'bridge',
     ),
-    win32Error:
-      Number.isInteger(value?.win32Error) && value.win32Error >= 0 && value.win32Error <= 0xffffffff
-        ? value.win32Error
-        : null,
-    identity: select('identity', ['matched', 'mismatch', 'unavailable'], 'unavailable'),
+    win32Error: errorCode(value?.win32Error),
+    identity: select(
+      'identity',
+      ['matched', 'creation-time', 'mismatch', 'unavailable'],
+      'unavailable',
+    ),
     exitState: select(
       'exitState',
       ['signaled', 'nonsignaled', 'unavailable', 'absent'],
       'unavailable',
     ),
   };
+  if (value?.imageFailureExit != null) {
+    const proof = value.imageFailureExit;
+    projected.imageFailureExit = {
+      creationTime: ['matched', 'mismatch'].includes(proof.creationTime)
+        ? proof.creationTime
+        : 'unavailable',
+      timeError: errorCode(proof.timeError),
+      exitState: ['signaled', 'nonsignaled'].includes(proof.exitState)
+        ? proof.exitState
+        : 'unavailable',
+      waitError: errorCode(proof.waitError),
+    };
+  }
+  return projected;
 }
 
 export function confirmedProcessExit(value) {
@@ -633,12 +657,133 @@ export function confirmedProcessExit(value) {
       outcome.exitState === 'signaled' &&
       Number.isInteger(outcome.win32Error) &&
       (outcome.result !== 'stopped' || outcome.win32Error === 0)) ||
+    (outcome.result === 'exited' &&
+      outcome.phase === 'query-image' &&
+      outcome.identity === 'creation-time' &&
+      outcome.win32Error > 0 &&
+      outcome.exitState === 'signaled' &&
+      outcome.imageFailureExit?.creationTime === 'matched' &&
+      outcome.imageFailureExit.timeError === 0 &&
+      outcome.imageFailureExit.exitState === 'signaled' &&
+      outcome.imageFailureExit.waitError === 0) ||
     (outcome.result === 'absent' &&
       outcome.phase === 'open' &&
       outcome.win32Error === 87 &&
       outcome.identity === 'unavailable' &&
       outcome.exitState === 'absent')
   );
+}
+
+function verifiedLiveObservation(value) {
+  return (
+    value.result === 'observed' &&
+    value.identity === 'matched' &&
+    value.exitState === 'nonsignaled' &&
+    value.win32Error === 0
+  );
+}
+
+export function projectTokenObservation(value) {
+  const projected = { ...projectProcessOutcome(value), elevation: null, integrity: 'unavailable' };
+  if (
+    verifiedLiveObservation(projected) &&
+    typeof value?.elevation === 'boolean' &&
+    ['untrusted', 'low', 'medium', 'medium-plus', 'high', 'system', 'protected', 'other'].includes(
+      value.integrity,
+    )
+  ) {
+    projected.elevation = value.elevation;
+    projected.integrity = value.integrity;
+  }
+  return projected;
+}
+
+export function projectDebugObservation(value) {
+  const projected = { ...projectProcessOutcome(value), flags: null };
+  const flags = value?.flags;
+  const classifiedCount = (classification, count, singles) =>
+    Number.isInteger(count) &&
+    count >= 0 &&
+    count <= 4096 &&
+    (classification === 'absent'
+      ? count === 0
+      : classification === 'duplicate'
+        ? count >= 2
+        : singles.includes(classification) && count === 1);
+  if (
+    verifiedLiveObservation(projected) &&
+    flags &&
+    [
+      'browser-candidate',
+      'renderer',
+      'gpu-process',
+      'utility',
+      'crashpad-handler',
+      'other',
+    ].includes(flags.processType) &&
+    classifiedCount(flags.port, flags.portCount, ['expected', 'different', 'invalid']) &&
+    classifiedCount(flags.address, flags.addressCount, ['loopback', 'different', 'invalid']) &&
+    typeof flags.pipe === 'boolean'
+  ) {
+    projected.flags = Object.fromEntries(
+      ['processType', 'port', 'portCount', 'address', 'addressCount', 'pipe'].map((key) => [
+        key,
+        flags[key],
+      ]),
+    );
+  }
+  return projected;
+}
+
+/** Native adapters must enforce the supplied timeout on the actual subprocess. */
+export async function captureProcessDiagnostics({
+  evidence,
+  app,
+  webviews,
+  inspectToken,
+  inspectFlags,
+  budgetMs,
+}) {
+  const end = Date.now() + Math.max(0, Math.min(8000, budgetMs));
+  const left = (cap) => Math.max(0, Math.min(cap, end - Date.now()));
+  evidence.token = projectTokenObservation(null);
+  evidence.debugArguments = { observation: 'unavailable' };
+  try {
+    const timeout = left(3000);
+    if (timeout > 0) evidence.token = projectTokenObservation(await inspectToken(app, timeout));
+  } catch {
+    /* Never retain native exceptions. */
+  }
+  if (
+    !Array.isArray(webviews) ||
+    webviews.length > 32 ||
+    webviews.some(
+      (entry) => !Number.isInteger(entry.ordinal) || entry.ordinal < 1 || entry.ordinal > 100000,
+    )
+  )
+    return;
+  if (webviews.length === 0) {
+    evidence.debugArguments = { observation: 'no-tracked-webviews', processes: [] };
+    return;
+  }
+  try {
+    const timeout = left(5000);
+    if (timeout <= 0) return;
+    const values = await inspectFlags(
+      webviews.map((entry) => entry.identity),
+      timeout,
+    );
+    if (!Array.isArray(values) || values.length !== webviews.length) return;
+    evidence.debugArguments = {
+      observation: 'completed',
+      processes: values.map((value, index) => ({
+        ordinal: webviews[index].ordinal,
+        ...projectDebugObservation(value),
+      })),
+    };
+  } catch {
+    /* Missing/denied rows remain unavailable, never absent flags. */
+  }
 }
 
 export function projectWindowCounts(value) {

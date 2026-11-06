@@ -151,6 +151,17 @@
 - 现有证据不能区分 CDP 发现、连接初始化和页面创建失败，也不能确定原生清理失败原因；尚不能断言产品故障或宿主不支持桌面。已确认脚本每次完整连接只等待 2.5 秒，页面尚未出现即断开；后续脚本 checkpoint 将增加有界页面等待和脱敏阶段诊断，以及同一进程句柄的退出证据，不放宽产品安全设置或把不确定清理改成通过。
 - 原任务要求的隔离 Windows PDF 导入/阅读、备份导出/恢复、强制退出、重启后数据持久化和无孤儿 sidecar，仍是必须完成或记录具体环境阻塞的门禁。窄运行脚本未覆盖这些流程，不代表它们不在任务范围内。
 
+### `5f10bf3b` 连接阶段与退出确认的实际证据
+
+[Actions 42220406169](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42220406169) 对应 HEAD `5f10bf3b7d1d8a6258cb2a53c42b7779b0e2ec0b`；测试合并提交 `97af749f290ea80c9127c650f1e6edcff81f1f1a` 的 tree 同为 `e574f4c2844191af53f66765044a01110e5995e9`。
+
+- 本地冻结后 116 文件 / 2317 测试、TypeScript、ESLint、Prettier、生产构建和独立复审通过。远程 Node22 全部通过；Node24 的 2317 测试和构建通过，但从官方 Ubuntu 镜像下载 61.2 MB 中文字体包停滞近 18 分钟，触发 job 超时。该提交的 Chromium 验收未执行，不能沿用上一提交 22/22 的结果替代。
+- Windows 52/52 Rust、release、NSIS、静默安装、版本和全部整文件 hash 通过。安装包 SHA-256 为 `826fde8e8a182768057ff06b432e1c88634a03354c09e29fb2afaddcb1fa1fa7`。[运行报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42220406169/artifacts/13504281167) 已回读。
+- 45 秒内发生 37 次 CDP 发现请求，保留的最后 32 次均被拒绝连接，未进入 Playwright attach/page。已验证应用根进程存活，同时观察到一个 sidecar、六个所属 WebView2 进程及三个可见且有面积的应用窗口。因此不能说产品没有启动，也不能把本次原因归为旧页面等待逻辑。
+- 清理正向确认应用根进程停止、sidecar 及大部分所属进程已不存在；一个已跟踪 WebView2 在查询映像路径时返回 Win32 错误 31，退出状态尚未获得，最终仍是 **FAIL / cleanupIncomplete**。错误 31 本身不代表退出，也不证明活进程残留。
+- [Microsoft 当前安全指南](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags)说明 High Integrity 宿主忽略 `WEBVIEW2_*` 环境覆盖；[GitHub 托管 runner 说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#administrative-privileges)说明 Windows 默认管理员运行。尚未实测本次应用的 token/integrity 与实际调试参数，只能列为优先假设。后续 checkpoint 仅采集身份验证后的只读分类证据，不更改安全策略或产品设置。
+- Mock、假凭据、截图、后续重启、PDF 与备份桌面流程仍未执行。独立修正字体准备的下载上限和可信文件校验，不跳过中文视觉前置条件；Windows 诊断与字体准备分别保留可回滚提交。
+
 ## 独立复审
 
 复审不仅检查本轮 diff，也复查了受影响的旧路径。独立故障注入复现并关闭：
@@ -167,9 +178,9 @@
 
 ## 当前环境限制
 
-- Chromium 本地启动在 `process_singleton_posix.cc` 报 `socket() failed: Operation not permitted (1)`；普通执行与获批提权执行结果一致。**0 项浏览器断言在本地执行**。远程 Chromium 的实际执行结果按上方各精确提交分别记录，最新已核对的 `69ae3d46` 为 22/22。
+- Chromium 本地启动在 `process_singleton_posix.cc` 报 `socket() failed: Operation not permitted (1)`；普通执行与获批提权执行结果一致。**0 项浏览器断言在本地执行**。远程 Chromium 的实际执行结果按上方各精确提交分别记录，最新已完成的 `69ae3d46` 为 22/22；`5f10bf3b` 因字体下载超时未执行浏览器验收。
 - Linux 完整 Tauri 测试缺少 `glib-2.0`。已在隔离临时目录补齐 Windows Rust target 与官方 Debian binutils，完整 Tauri Windows debug 和 release/all-targets 交叉编译实际通过；这仍不是 Windows 程序执行、MSVC 链接或 NSIS 安装验收。
-- 全新托管 Windows VM 已实际执行 `69ae3d46` 的静默安装、版本和完整资源校验；应用根进程启动后 CDP/页面连接阻塞，后续交互与凭据测试未执行，清理未确认。不能沿用此前 PR 的冒烟结论。
+- 全新托管 Windows VM 已实际执行 `5f10bf3b` 的静默安装、版本和完整资源校验；应用窗口存在但 CDP 端口连接被拒绝，后续交互与凭据测试未执行，一个所属 WebView 的退出未确认。不能沿用此前 PR 的冒烟结论。
 
 ## Windows 桌面人工门禁
 
@@ -213,7 +224,7 @@ Rust 拥有的密钥字符串、编码凭据及子进程 stdin 临时缓冲区�
 
 1. 远程 Actions 的准确提交结果必须另行检查；不能把工作流存在当作 CI 成功。
 2. 本地隔离 Chromium 启动受限；本地 22 项计划检查均未执行。
-3. `69ae3d46` 的 NSIS 静默安装、版本与资源校验已通过；Windows 交互、Credential Manager 和完整数据流程仍未执行，清理未确认。交叉编译或浏览器成功不替代这些检查。
+3. `5f10bf3b` 的 NSIS 静默安装、版本与资源校验已通过；Windows 交互、Credential Manager 和完整数据流程仍未执行，清理未确认。交叉编译或浏览器成功不替代这些检查。
 4. 一次仅允许一个升级后的可编辑窗口；旧应用版本必须先关闭。Web Locks 不可用会明确阻断启动。
 5. 孤立 PDF 仅处理恢复日志派生的候选，每次启动最多清理一个；未知或引用信息无法确认的文件保留，不做全盘盲删。
 6. macOS/Linux 系统凭据后端仍未实现，不阻塞 Windows 代码整改，但不宣称跨平台在线 AI 支持。

@@ -920,3 +920,198 @@ test('owned process counts omit paths and never admit a reused PID or unrelated 
     0,
   );
 });
+
+const exitOnly = {
+  result: 'exited',
+  phase: 'query-image',
+  win32Error: 31,
+  identity: 'creation-time',
+  exitState: 'signaled',
+  imageFailureExit: { creationTime: 'matched', timeError: 0, exitState: 'signaled', waitError: 0 },
+};
+test('image failure accepts only explicit exact-time same-handle exit proof', () => {
+  assert.equal(runtimeHelpers.confirmedProcessExit(exitOnly), true);
+  assert.deepEqual(runtimeHelpers.projectProcessOutcome(exitOnly), exitOnly);
+  for (const patch of [
+    { result: 'stopped' },
+    { result: 'failed' },
+    { phase: 'identity' },
+    { win32Error: 0 },
+    { identity: 'unavailable' },
+    { exitState: 'nonsignaled' },
+    { imageFailureExit: undefined },
+    ...[
+      { creationTime: 'mismatch' },
+      { creationTime: 'unavailable' },
+      { timeError: 5 },
+      { timeError: null },
+      { exitState: 'nonsignaled' },
+      { exitState: 'unavailable' },
+      { waitError: 6 },
+      { waitError: null },
+    ].map((nested) => ({ imageFailureExit: { ...exitOnly.imageFailureExit, ...nested } })),
+  ])
+    assert.equal(runtimeHelpers.confirmedProcessExit({ ...exitOnly, ...patch }), false);
+  // Neither the Windows error nor signaled alone establishes tracked ownership.
+  assert.equal(runtimeHelpers.confirmedProcessExit({ ...exitOnly, identity: 'mismatch' }), false);
+});
+
+test('exit-only diagnostic projection preserves failures but excludes raw native data', () => {
+  const result = runtimeHelpers.projectProcessOutcome({
+    ...exitOnly,
+    rawTime: 'secret',
+    path: 'secret',
+    imageFailureExit: { ...exitOnly.imageFailureExit, token: 'secret', creationTime: 'secret' },
+  });
+  assert.equal(result.imageFailureExit.creationTime, 'unavailable');
+  assert.equal(runtimeHelpers.confirmedProcessExit(result), false);
+  assert.ok(!JSON.stringify(result).includes('secret'));
+});
+
+const observedProcess = {
+  result: 'observed',
+  phase: 'complete',
+  win32Error: 0,
+  identity: 'matched',
+  exitState: 'nonsignaled',
+};
+test('token projection emits only verified elevation and integrity classes', () => {
+  const result = runtimeHelpers.projectTokenObservation({
+    ...observedProcess,
+    elevation: true,
+    integrity: 'high',
+    token: 'secret',
+    sid: 'secret',
+  });
+  assert.deepEqual(result, { ...observedProcess, elevation: true, integrity: 'high' });
+  for (const patch of [
+    { identity: 'creation-time' },
+    { exitState: 'signaled' },
+    { result: 'failed' },
+    { win32Error: 5 },
+    { elevation: 'secret' },
+    { integrity: 'secret' },
+  ]) {
+    const unavailable = runtimeHelpers.projectTokenObservation({ ...result, ...patch });
+    assert.equal(unavailable.elevation, null);
+    assert.equal(unavailable.integrity, 'unavailable');
+    assert.ok(!JSON.stringify(unavailable).includes('secret'));
+  }
+});
+
+test('debug flag projection keeps fixed classifications and never treats unreadable as absent', () => {
+  const flags = {
+    processType: 'browser-candidate',
+    port: 'expected',
+    portCount: 1,
+    address: 'loopback',
+    addressCount: 1,
+    pipe: false,
+  };
+  const result = runtimeHelpers.projectDebugObservation({
+    ...observedProcess,
+    flags,
+    argv: 'secret',
+  });
+  assert.deepEqual(result, { ...observedProcess, flags });
+  const classified = runtimeHelpers.projectDebugObservation({
+    ...observedProcess,
+    flags: {
+      ...flags,
+      port: 'duplicate',
+      portCount: 2,
+      address: 'absent',
+      addressCount: 0,
+      pipe: true,
+    },
+  });
+  assert.equal(classified.flags.port, 'duplicate');
+  assert.equal(classified.flags.address, 'absent');
+  for (const patch of [
+    { result: 'unavailable' },
+    { identity: 'mismatch' },
+    { exitState: 'signaled' },
+    { flags: null },
+    { flags: { ...flags, port: 'secret' } },
+    { flags: { ...flags, processType: 'secret' } },
+    { flags: { ...flags, portCount: -1 } },
+    { flags: { ...flags, portCount: '1' } },
+    { flags: { ...flags, pipe: 'secret' } },
+    { flags: { ...flags, portCount: 2 } },
+  ]) {
+    const unavailable = runtimeHelpers.projectDebugObservation({
+      ...observedProcess,
+      flags,
+      ...patch,
+    });
+    assert.equal(unavailable.flags, null);
+    assert.ok(!JSON.stringify(unavailable).includes('secret'));
+  }
+});
+
+test('process diagnostics bound native calls and project only tracked ordered results', async () => {
+  const evidence = {};
+  await runtimeHelpers.captureProcessDiagnostics({
+    evidence,
+    app: root,
+    webviews: [{ ordinal: 3, identity: child }],
+    budgetMs: 1000,
+    inspectToken: async (identity, timeout) => {
+      assert.equal(identity, root);
+      assert.ok(timeout > 0 && timeout <= 1000);
+      return { ...observedProcess, elevation: true, integrity: 'high', token: 'secret' };
+    },
+    inspectFlags: async (identities, timeout) => {
+      assert.deepEqual(identities, [child]);
+      assert.ok(timeout > 0 && timeout <= 1000);
+      return [
+        {
+          ...observedProcess,
+          flags: {
+            processType: 'browser-candidate',
+            port: 'absent',
+            portCount: 0,
+            address: 'absent',
+            addressCount: 0,
+            pipe: false,
+          },
+          argv: 'secret',
+        },
+      ];
+    },
+  });
+  assert.equal(evidence.token.elevation, true);
+  assert.equal(evidence.debugArguments.processes[0].ordinal, 3);
+  assert.equal(evidence.debugArguments.processes[0].flags.port, 'absent');
+  assert.ok(!JSON.stringify(evidence).includes('secret'));
+  assert.ok(!JSON.stringify(evidence).includes('installed'));
+});
+
+test('process diagnostics preserve unavailable on exceptions, missing rows or exhausted budget', async () => {
+  for (const malformed of [null, [], [{}, {}]]) {
+    const evidence = {};
+    await runtimeHelpers.captureProcessDiagnostics({
+      evidence,
+      app: root,
+      webviews: [{ ordinal: 3, identity: child }],
+      budgetMs: 100,
+      inspectToken: async () => {
+        throw new Error('secret');
+      },
+      inspectFlags: async () => malformed,
+    });
+    assert.equal(evidence.token.elevation, null);
+    assert.equal(evidence.debugArguments.observation, 'unavailable');
+    assert.ok(!JSON.stringify(evidence).includes('secret'));
+  }
+  const evidence = {};
+  await runtimeHelpers.captureProcessDiagnostics({
+    evidence,
+    app: root,
+    webviews: [{ ordinal: 3, identity: child }],
+    budgetMs: 1,
+    inspectToken: async () => new Promise((resolve) => setTimeout(() => resolve(null), 10)),
+    inspectFlags: async () => assert.fail('native flags must not start after the budget'),
+  });
+  assert.equal(evidence.debugArguments.observation, 'unavailable');
+});
