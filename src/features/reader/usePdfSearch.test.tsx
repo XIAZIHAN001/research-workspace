@@ -62,3 +62,130 @@ it('keeps a complete long-document index when search is closed and reopened', as
   });
   expect(getTextContent).toHaveBeenCalledTimes(200);
 });
+
+function deferredContent() {
+  let resolve!: (value: { items: { str: string }[] }) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<{ items: { str: string }[] }>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+it('retries a failed search build on close/reopen and retains the recovered index', async () => {
+  vi.useFakeTimers();
+  try {
+    const failed = deferredContent();
+    const recovered = deferredContent();
+    const getTextContent = vi
+      .fn()
+      .mockReturnValueOnce(failed.promise)
+      .mockReturnValueOnce(recovered.promise);
+    const doc = {
+      numPages: 1,
+      getPage: vi.fn(async () => ({ getTextContent })),
+    } as unknown as PDFDocumentProxy;
+    const hook = renderHook(({ enabled }) => usePdfSearch(doc, enabled), {
+      initialProps: { enabled: true },
+    });
+    act(() => hook.result.current.setQuery('recovered'));
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(getTextContent).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      failed.reject(new Error('temporary extraction failure'));
+      await vi.runAllTimersAsync();
+    });
+    expect(hook.result.current.status).toBe('ready');
+    expect(hook.result.current.hits).toEqual([]);
+    hook.rerender({ enabled: false });
+    expect(hook.result.current.status).toBe('idle');
+    hook.rerender({ enabled: true });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(getTextContent).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      recovered.resolve({ items: [{ str: 'recovered text' }] });
+      await vi.runAllTimersAsync();
+    });
+    // The ready-index render installs the query debounce after the extraction act commits.
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(hook.result.current.hits).toEqual([
+      { page: 1, start: 0, end: 9, snippet: 'recovered', ordinal: 0 },
+    ]);
+    hook.rerender({ enabled: false });
+    hook.rerender({ enabled: true });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(getTextContent).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.hits[0]?.snippet).toBe('recovered');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each(['before', 'after'] as const)(
+  'isolates a replacement document when old extraction completes %s the replacement',
+  async (completionOrder) => {
+    vi.useFakeTimers();
+    try {
+      const oldContent = deferredContent();
+      const newContent = deferredContent();
+      const oldGetPage = vi.fn(async () => ({ getTextContent: () => oldContent.promise }));
+      const newGetPage = vi.fn(async () => ({ getTextContent: () => newContent.promise }));
+      const oldDoc = { numPages: 2, getPage: oldGetPage } as unknown as PDFDocumentProxy;
+      const newDoc = { numPages: 1, getPage: newGetPage } as unknown as PDFDocumentProxy;
+      const hook = renderHook(({ doc }) => usePdfSearch(doc, true), {
+        initialProps: { doc: oldDoc },
+      });
+      act(() => hook.result.current.setQuery('document'));
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(oldGetPage).toHaveBeenCalledTimes(1);
+      hook.rerender({ doc: newDoc });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(hook.result.current.status).toBe('indexing');
+      expect(hook.result.current.hits).toEqual([]);
+      expect(hook.result.current.total).toBe(1);
+      const finishOld = async () => {
+        await act(async () => {
+          oldContent.resolve({ items: [{ str: 'OLD DOCUMENT' }] });
+          await vi.runAllTimersAsync();
+        });
+      };
+      if (completionOrder === 'before') {
+        await finishOld();
+        expect(hook.result.current.status).toBe('indexing');
+        expect(hook.result.current.scanned).toBe(0);
+        expect(hook.result.current.hits).toEqual([]);
+      }
+      await act(async () => {
+        newContent.resolve({ items: [{ str: 'new document' }] });
+        await vi.runAllTimersAsync();
+      });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      if (completionOrder === 'after') await finishOld();
+      expect(hook.result.current.status).toBe('ready');
+      expect(hook.result.current.hits).toEqual([
+        { page: 1, start: 4, end: 12, snippet: 'document', ordinal: 0 },
+      ]);
+      expect(hook.result.current.scanned).toBe(1);
+      expect(hook.result.current.total).toBe(1);
+      expect(oldGetPage).toHaveBeenCalledTimes(1);
+      expect(newGetPage).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
