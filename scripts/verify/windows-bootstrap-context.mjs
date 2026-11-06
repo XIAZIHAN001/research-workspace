@@ -58,6 +58,7 @@ export function contextObservation(output, succeeded) {
   const value = JSON.parse(output);
   if (
     succeeded !== true ||
+    value.tokenFailure != null ||
     value.status !== 'PASS' ||
     value.phase !== 'complete' ||
     value.code !== 'OK' ||
@@ -80,6 +81,7 @@ export function contextObservation(output, succeeded) {
         code: projected.code,
         win32Error: projected.win32Error,
         compilerCode: projected.compilerCode,
+        tokenFailure: projected.tokenFailure,
       },
     };
   }

@@ -384,3 +384,80 @@ test('credential verification requires closed application work and positive proc
     assert.equal(bootstrapOutcome('runtime', id, native, runtime).credentialCleanup, 'unverified');
   }
 });
+
+test('token failure diagnostics retain fixed query/predicate classes without sensitive values', () => {
+  const result = projectNativeOutcome({
+    status: 'FAIL',
+    phase: 'caller-token',
+    code: 'TOKEN_REJECTED',
+    win32Error: 5,
+    tokenFailure: {
+      field: 'groups',
+      reason: 'size-query-error',
+      sid: 'S-1-5-private',
+      luid: 'private-logon',
+      value: 'private-buffer',
+    },
+  });
+  assert.deepEqual(result.tokenFailure, { field: 'groups', reason: 'size-query-error' });
+  assert.equal(result.win32Error, 5);
+  assert.equal(JSON.stringify(result).includes('private'), false);
+  const context = contextObservation(
+    JSON.stringify({
+      status: 'FAIL',
+      phase: 'child-token',
+      code: 'TOKEN_REJECTED',
+      win32Error: 0,
+      tokenFailure: { field: 'account', reason: 'user-account-shape' },
+    }),
+    true,
+  );
+  assert.deepEqual(context.native.tokenFailure, { field: 'account', reason: 'user-account-shape' });
+});
+
+test('unknown or absent token diagnostic fields never become raw report text', () => {
+  for (const tokenFailure of [
+    null,
+    undefined,
+    { field: 'private-sid', reason: 'missing-logon-sid' },
+    { field: 'groups', reason: 'private-secret' },
+    { field: {}, reason: [] },
+  ]) {
+    const result = projectNativeOutcome({ ...verified, tokenFailure });
+    assert.equal(result.tokenFailure, null);
+    assert.equal(JSON.stringify(result).includes('private'), false);
+  }
+});
+
+test('token-failure evidence cannot coexist with bootstrap or context PASS', () => {
+  const runtime = {
+    ...child,
+    cleanupIncomplete: false,
+    syntheticCredentialCleanup: 'verified',
+    checks: runtimeChecks,
+  };
+  const context = {
+    status: 'PASS',
+    phase: 'complete',
+    code: 'OK',
+    win32Error: 0,
+    ordinary: true,
+    sameIdentity: true,
+    exactCreation: true,
+    imageMatched: true,
+    jobMember: true,
+    desktopAvailable: true,
+  };
+  for (const tokenFailure of [
+    { field: 'groups', reason: 'missing-logon-sid' },
+    { field: 'private-value', reason: 'private-secret' },
+  ]) {
+    const outcome = bootstrapOutcome('runtime', id, { ...verified, tokenFailure }, runtime);
+    assert.equal(outcome.status, 'FAIL');
+    assert.equal(outcome.credentialCleanup, 'unverified');
+    const observation = contextObservation(JSON.stringify({ ...context, tokenFailure }), true);
+    assert.equal(observation.status, 'FAIL');
+    assert.equal(JSON.stringify(outcome).includes('private'), false);
+    assert.equal(JSON.stringify(observation).includes('private'), false);
+  }
+});

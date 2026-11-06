@@ -16,6 +16,13 @@ public static class WindowsBootstrapNativeTests {
     try { action(); } catch (WindowsBootstrapNative.GateFailure) { return; }
     throw new InvalidOperationException("NATIVE_SELF_TEST_FAILED");
   }
+  static void RejectDetail(Action action, string field, string reason, int error = 0) {
+    try { action(); } catch (WindowsBootstrapNative.GateFailure failure) {
+      Check(failure.TokenFailure != null && failure.TokenFailure.field == field && failure.TokenFailure.reason == reason && failure.Error == error);
+      return;
+    }
+    throw new InvalidOperationException("NATIVE_SELF_TEST_FAILED");
+  }
   public static int Run() {
     int count = 0;
     WindowsBootstrapNative.ValidateOrdinary(Token(), Token()); count++;
@@ -66,6 +73,21 @@ public static class WindowsBootstrapNativeTests {
     Check(!WindowsBootstrapNative.ExpectedResume(0) && !WindowsBootstrapNative.ExpectedResume(2) && !WindowsBootstrapNative.ExpectedResume(0xffffffff)); count++;
     Check(WindowsBootstrapNative.CleanupProven(true, 0)); count++;
     Check(!WindowsBootstrapNative.CleanupProven(false, 0) && !WindowsBootstrapNative.CleanupProven(true, 1)); count++;
+    WindowsBootstrapNative.ValidateInfoSize(false, 122, 24, 1); count++;
+    RejectDetail(() => WindowsBootstrapNative.ValidateInfoSize(false, 5, 0, 2), "groups", "size-query-error", 5); count++;
+    RejectDetail(() => WindowsBootstrapNative.ValidateInfoSize(true, 999, 24, 1), "user", "size-query-unexpected-success"); count++;
+    RejectDetail(() => WindowsBootstrapNative.ValidateInfoSize(false, 122, 0, 3), "privileges", "buffer-size"); count++;
+    RejectDetail(() => WindowsBootstrapNative.ValidateInfoSize(false, 122, 1048577, 25), "integrity", "buffer-size"); count++;
+    var invalidAccount = Token(); invalidAccount.User = "S-1-5-18";
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "user-account-shape"); count++;
+    invalidAccount = Token(); invalidAccount.Authentication = "0000000000000000";
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "authentication-zero"); count++;
+    invalidAccount = Token(); invalidAccount.Logon = "not-a-logon";
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "logon-shape"); count++;
+    invalidAccount = Token(); invalidAccount.Type = 2;
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "primary-required"); count++;
+    invalidAccount = Token(); invalidAccount.Integrity = 4096;
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(invalidAccount, Token()), "account", "integrity-below-medium"); count++;
     return count;
   }
 }

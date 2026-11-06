@@ -17,18 +17,21 @@ public static class WindowsBootstrapNative {
   const uint QueryToken = 0x0008, DuplicateSource = 0x000b, LaunchToken = 0x008b;
   const uint WaitTimeout = 258, WaitFailed = 0xffffffff;
   public class GateFailure : Exception {
-    public string Code; public int Error;
+    public string Code; public int Error; public TokenFailureDetail TokenFailure;
     public GateFailure(string code, int error = 0) : base(code) { Code = code; Error = error; }
   }
+  public class TokenFailureDetail { public string field, reason; }
   public class Outcome {
     public string status = "FAIL", phase = "input", code = "NATIVE_FAILURE";
     public int win32Error, nativeTests;
+    public TokenFailureDetail tokenFailure;
     public bool candidateVerified, childVerified, atomicJob, noInheritedHandles, resumed, exited, cleanupVerified, forcedTermination;
     public uint? exitCode, activeProcesses;
   }
   public class ContextOutcome {
     public string status = "FAIL", phase = "input", code = "NATIVE_FAILURE";
     public int win32Error;
+    public TokenFailureDetail tokenFailure;
     public bool ordinary, sameIdentity, exactCreation, imageMatched, jobMember, desktopAvailable;
   }
   public class TokenFacts {
@@ -110,67 +113,92 @@ public static class WindowsBootstrapNative {
   public static bool SameCreation(long a, long b) { return a > 0 && a == b; }
   public static bool ExpectedResume(uint count) { return count == 1; }
   public static bool CleanupProven(bool exited, uint active) { return exited && active == 0; }
+  static string TokenField(int kind) {
+    switch (kind) {
+      case 1: return "user"; case 2: return "groups"; case 3: return "privileges";
+      case 8: return "type"; case 10: return "statistics"; case 12: return "session";
+      case 15: return "sandbox"; case 20: return "elevation"; case 25: return "integrity";
+      case 26: return "ui-access"; default: return "unavailable";
+    }
+  }
+  static void TokenNeed(bool value, string field, string reason, int error = 0) {
+    if (!value) throw new GateFailure("TOKEN_REJECTED", error) { TokenFailure = new TokenFailureDetail { field = field, reason = reason } };
+  }
+  static void TokenApi(bool value, string field, string reason) {
+    if (!value) {
+      int error = Marshal.GetLastWin32Error();
+      throw new GateFailure("NATIVE_API_FAILED", error) { TokenFailure = new TokenFailureDetail { field = field, reason = reason } };
+    }
+  }
+  // Same sizing predicate as before, split only to retain the failing clause and actual API error.
+  public static void ValidateInfoSize(bool first, int error, uint length, int kind) {
+    string field = TokenField(kind);
+    TokenNeed(!first, field, "size-query-unexpected-success");
+    TokenNeed(error == 122, field, "size-query-error", error);
+    TokenNeed(length > 0 && length <= 1024 * 1024, field, "buffer-size");
+  }
   static IntPtr Info(IntPtr token, int kind, out uint length) {
     length = 0;
     bool first = GetTokenInformation(token, kind, IntPtr.Zero, 0, out length);
     int error = Marshal.GetLastWin32Error();
-    Need(!first && error == 122 && length > 0 && length <= 1024 * 1024, "TOKEN_REJECTED");
+    ValidateInfoSize(first, error, length, kind);
     IntPtr buffer = Marshal.AllocHGlobal((int)length);
-    try { Api(GetTokenInformation(token, kind, buffer, length, out length)); return buffer; }
+    try { TokenApi(GetTokenInformation(token, kind, buffer, length, out length), TokenField(kind), "read-query-error"); return buffer; }
     catch { Marshal.FreeHGlobal(buffer); throw; }
   }
   static uint Scalar(IntPtr token, int kind) {
     uint length; IntPtr value = Info(token, kind, out length);
-    try { Need(length == 4, "TOKEN_REJECTED"); return unchecked((uint)Marshal.ReadInt32(value)); }
+    try { TokenNeed(length == 4, TokenField(kind), "scalar-size"); return unchecked((uint)Marshal.ReadInt32(value)); }
     finally { Marshal.FreeHGlobal(value); }
   }
-  static string SidText(IntPtr sid) {
-    Need(sid != IntPtr.Zero && IsValidSid(sid), "TOKEN_REJECTED");
-    IntPtr text; Api(ConvertSidToStringSidW(sid, out text));
+  static string SidText(IntPtr sid, string field) {
+    TokenNeed(sid != IntPtr.Zero && IsValidSid(sid), field, "sid-invalid");
+    IntPtr text; TokenApi(ConvertSidToStringSidW(sid, out text), field, "sid-conversion-error");
     try { return Marshal.PtrToStringUni(text); } finally { LocalFree(text); }
   }
   static uint Integrity(IntPtr token) {
     uint length; IntPtr value = Info(token, 25, out length);
     try {
       var label = Marshal.PtrToStructure<SidAttributes>(value);
-      Need((label.Attributes & 0x20) != 0 && SidText(label.Sid).StartsWith("S-1-16-", StringComparison.Ordinal), "TOKEN_REJECTED");
+      TokenNeed((label.Attributes & 0x20) != 0, "integrity", "integrity-attribute");
+      TokenNeed(SidText(label.Sid, "integrity").StartsWith("S-1-16-", StringComparison.Ordinal), "integrity", "integrity-sid-shape");
       byte count = Marshal.ReadByte(GetSidSubAuthorityCount(label.Sid));
-      Need(count == 1, "TOKEN_REJECTED");
+      TokenNeed(count == 1, "integrity", "integrity-subauthorities");
       return unchecked((uint)Marshal.ReadInt32(GetSidSubAuthority(label.Sid, 0)));
     } finally { Marshal.FreeHGlobal(value); }
   }
   static TokenFacts Facts(IntPtr token) {
     var result = new TokenFacts { Groups = new Dictionary<string,uint>(StringComparer.Ordinal), Privileges = new Dictionary<string,uint>(StringComparer.Ordinal) };
     uint length; IntPtr buffer = Info(token, 1, out length);
-    try { result.User = SidText(Marshal.ReadIntPtr(buffer)); } finally { Marshal.FreeHGlobal(buffer); }
+    try { result.User = SidText(Marshal.ReadIntPtr(buffer), "user"); } finally { Marshal.FreeHGlobal(buffer); }
     buffer = Info(token, 10, out length);
     try {
-      Need(length >= Marshal.SizeOf<TokenStatistics>(), "TOKEN_REJECTED");
+      TokenNeed(length >= Marshal.SizeOf<TokenStatistics>(), "statistics", "statistics-size");
       var statistics = Marshal.PtrToStructure<TokenStatistics>(buffer);
       result.Authentication = statistics.AuthenticationId.ToString();
     } finally { Marshal.FreeHGlobal(buffer); }
     buffer = Info(token, 2, out length);
     try {
       int count = Marshal.ReadInt32(buffer), offset = (int)Marshal.OffsetOf<FirstGroup>("First"), stride = Marshal.SizeOf<SidAttributes>();
-      Need(count > 0 && count <= 4096 && offset + count * stride <= length, "TOKEN_REJECTED");
+      TokenNeed(count > 0 && count <= 4096 && offset + count * stride <= length, "groups", "group-buffer-shape");
       for (int i = 0; i < count; i++) {
         var group = Marshal.PtrToStructure<SidAttributes>(IntPtr.Add(buffer, offset + i * stride));
-        string sid = SidText(group.Sid);
-        Need(!result.Groups.ContainsKey(sid), "TOKEN_REJECTED");
+        string sid = SidText(group.Sid, "groups");
+        TokenNeed(!result.Groups.ContainsKey(sid), "groups", "duplicate-group-sid");
         result.Groups.Add(sid, group.Attributes);
-        if ((group.Attributes & 0xc0000000) == 0xc0000000) { Need(result.Logon == null, "TOKEN_REJECTED"); result.Logon = sid; }
+        if ((group.Attributes & 0xc0000000) == 0xc0000000) { TokenNeed(result.Logon == null, "groups", "duplicate-logon-sid"); result.Logon = sid; }
       }
-      Need(result.Logon != null, "TOKEN_REJECTED");
+      TokenNeed(result.Logon != null, "groups", "missing-logon-sid");
     } finally { Marshal.FreeHGlobal(buffer); }
     buffer = Info(token, 3, out length);
     try {
       int count = Marshal.ReadInt32(buffer), stride = Marshal.SizeOf<LuidAttributes>();
-      Need(count >= 0 && count <= 1024 && 4 + count * stride <= length, "TOKEN_REJECTED");
+      TokenNeed(count >= 0 && count <= 1024 && 4 + count * stride <= length, "privileges", "privilege-buffer-shape");
       for (int i = 0; i < count; i++) {
         var privilege = Marshal.PtrToStructure<LuidAttributes>(IntPtr.Add(buffer, 4 + i * stride));
         var text = new StringBuilder(256); int size = text.Capacity;
-        Api(LookupPrivilegeNameW(null, ref privilege.Luid, text, ref size));
-        Need(!result.Privileges.ContainsKey(text.ToString()), "TOKEN_REJECTED");
+        TokenApi(LookupPrivilegeNameW(null, ref privilege.Luid, text, ref size), "privileges", "privilege-name-error");
+        TokenNeed(!result.Privileges.ContainsKey(text.ToString()), "privileges", "duplicate-privilege");
         result.Privileges.Add(text.ToString(), privilege.Attributes);
       }
     } finally { Marshal.FreeHGlobal(buffer); }
@@ -182,8 +210,17 @@ public static class WindowsBootstrapNative {
     return Regex.IsMatch(sid, @"^S-1-5-32-(544|547|548|549|550|551|552)$") || Regex.IsMatch(sid, @"^S-1-5-21-\d+-\d+-\d+-(512|518|519|520)$");
   }
   static void AccountIdentity(TokenFacts source) {
-    Need(source != null && source.Type == 1 && source.Integrity >= 8192 && !String.IsNullOrEmpty(source.User) && !String.IsNullOrEmpty(source.Authentication) && !String.IsNullOrEmpty(source.Logon), "TOKEN_REJECTED");
-    Need(Regex.IsMatch(source.User, @"^S-1-5-21-\d+-\d+-\d+-[1-9]\d*$") && Regex.IsMatch(source.Authentication, "^[a-f0-9]{16}$") && source.Authentication != "0000000000000000" && Regex.IsMatch(source.Logon, @"^S-1-5-5-\d+-\d+$"), "TOKEN_REJECTED");
+    // Preserve the original short-circuit order; diagnostics never substitute a different identity.
+    TokenNeed(source != null, "account", "facts-missing");
+    TokenNeed(source.Type == 1, "account", "primary-required");
+    TokenNeed(source.Integrity >= 8192, "account", "integrity-below-medium");
+    TokenNeed(!String.IsNullOrEmpty(source.User), "account", "user-missing");
+    TokenNeed(!String.IsNullOrEmpty(source.Authentication), "account", "authentication-missing");
+    TokenNeed(!String.IsNullOrEmpty(source.Logon), "account", "logon-missing");
+    TokenNeed(Regex.IsMatch(source.User, @"^S-1-5-21-\d+-\d+-\d+-[1-9]\d*$"), "account", "user-account-shape");
+    TokenNeed(Regex.IsMatch(source.Authentication, "^[a-f0-9]{16}$"), "account", "authentication-shape");
+    TokenNeed(source.Authentication != "0000000000000000", "account", "authentication-zero");
+    TokenNeed(Regex.IsMatch(source.Logon, @"^S-1-5-5-\d+-\d+$"), "account", "logon-shape");
   }
   public static void ValidateOrdinary(TokenFacts source, TokenFacts candidate) {
     AccountIdentity(source); Need(candidate != null, "TOKEN_REJECTED");
@@ -362,7 +399,7 @@ public static class WindowsBootstrapNative {
       result.phase = "job-drain"; result.activeProcesses = Drain(job, 3000);
       Need(exitCode == 0, "CHILD_EXIT_FAILED"); Need(result.activeProcesses == 0, "JOB_NOT_EMPTY");
       result.cleanupVerified = true; result.status = "PASS"; result.phase = "complete"; result.code = "OK";
-    } catch (GateFailure failure) { result.code = failure.Code; result.win32Error = failure.Error; }
+    } catch (GateFailure failure) { result.code = failure.Code; result.win32Error = failure.Error; result.tokenFailure = failure.TokenFailure; }
       catch { result.code = "NATIVE_FAILURE"; }
     finally {
       if (child.Process != IntPtr.Zero) {
@@ -409,7 +446,7 @@ public static class WindowsBootstrapNative {
       desktop = OpenInputDesktop(0, false, 1); Api(desktop != IntPtr.Zero); Need(Environment.UserInteractive, "NATIVE_INPUT_INVALID"); result.desktopAvailable = true;
       Need(SameCreation(Creation(process), expected) && WaitForSingleObject(process, 0) == WaitTimeout, "CREATION_IDENTITY_MISMATCH");
       result.status = "PASS"; result.phase = "complete"; result.code = "OK";
-    } catch (GateFailure failure) { result.code = failure.Code; result.win32Error = failure.Error; }
+    } catch (GateFailure failure) { result.code = failure.Code; result.win32Error = failure.Error; result.tokenFailure = failure.TokenFailure; }
       catch { result.code = "NATIVE_FAILURE"; }
     finally { if (desktop != IntPtr.Zero) CloseDesktop(desktop); Close(ref actual); Close(ref current); Close(ref process); }
     return result;

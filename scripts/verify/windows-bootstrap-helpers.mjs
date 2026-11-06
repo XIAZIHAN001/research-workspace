@@ -113,12 +113,60 @@ const codes = new Set([
   'FILE_IDENTITY_FAILED',
 ]);
 
+const tokenFields = new Set([
+  'user',
+  'statistics',
+  'groups',
+  'privileges',
+  'type',
+  'session',
+  'sandbox',
+  'elevation',
+  'integrity',
+  'ui-access',
+  'account',
+]);
+const tokenReasons = new Set([
+  'size-query-unexpected-success',
+  'size-query-error',
+  'buffer-size',
+  'read-query-error',
+  'scalar-size',
+  'sid-invalid',
+  'sid-conversion-error',
+  'statistics-size',
+  'group-buffer-shape',
+  'duplicate-group-sid',
+  'duplicate-logon-sid',
+  'missing-logon-sid',
+  'privilege-buffer-shape',
+  'privilege-name-error',
+  'duplicate-privilege',
+  'integrity-attribute',
+  'integrity-sid-shape',
+  'integrity-subauthorities',
+  'facts-missing',
+  'primary-required',
+  'integrity-below-medium',
+  'user-missing',
+  'authentication-missing',
+  'logon-missing',
+  'user-account-shape',
+  'authentication-shape',
+  'authentication-zero',
+  'logon-shape',
+]);
+
 /** Never copy native strings or unknown fields to retained artifacts. */
 export function projectNativeOutcome(value) {
   const result = {
     status: value?.status === 'PASS' ? 'PASS' : 'FAIL',
     phase: phases.has(value?.phase) ? value.phase : 'unavailable',
     code: codes.has(value?.code) ? value.code : 'NATIVE_FAILURE',
+    tokenFailure:
+      tokenFields.has(value?.tokenFailure?.field) && tokenReasons.has(value?.tokenFailure?.reason)
+        ? { field: value.tokenFailure.field, reason: value.tokenFailure.reason }
+        : null,
     compilerCode: /^CS[0-9]{4}$/.test(value?.compilerCode ?? '') ? value.compilerCode : null,
     win32Error:
       Number.isInteger(value?.win32Error) && value.win32Error >= 0 && value.win32Error <= 0xffffffff
@@ -194,6 +242,7 @@ export function bootstrapOutcome(mode, id, nativeValue, child) {
           (check, index) => check.name === requiredRuntimeChecks[index] && check.status === 'PASS',
         ));
   const contained =
+    nativeValue?.tokenFailure == null &&
     native.status === 'PASS' &&
     native.phase === 'complete' &&
     native.code === 'OK' &&
@@ -216,6 +265,7 @@ export function bootstrapOutcome(mode, id, nativeValue, child) {
       mode === 'probe'
         ? 'not-exercised'
         : linked &&
+            nativeValue?.tokenFailure == null &&
             child.cleanupIncomplete === false &&
             native.cleanupVerified === true &&
             native.activeProcesses === 0 &&
