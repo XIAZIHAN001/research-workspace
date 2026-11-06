@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'vitest';
 import * as runtimeHelpers from './windows-runtime-helpers.mjs';
@@ -619,5 +620,303 @@ test('refused build-marker mode preserves a precise code in a separate NOT RUN r
     report.checks
       .filter((entry) => entry.name !== 'owned-cleanup')
       .every((entry) => entry.status === 'NOT RUN'),
+  );
+});
+
+// Exercise the attachment orchestrator without launching a Windows process.
+function fakeWebView(pageDelay = 0) {
+  const page = { synthetic: true };
+  let pageReady = pageDelay === 0;
+  let closed = false;
+  const context = {
+    pages: () => (pageReady ? [page] : []),
+    waitForEvent: async (event) => {
+      assert.equal(event, 'page');
+      await new Promise((resolve) => setTimeout(resolve, pageDelay));
+      pageReady = true;
+      assert.equal(closed, false, 'The connection must survive until its page arrives');
+      return page;
+    },
+  };
+  return {
+    page,
+    browser: {
+      contexts: () => [context],
+      close: async () => {
+        closed = true;
+      },
+    },
+    isClosed: () => closed,
+  };
+}
+
+test('CDP attachment keeps an established connection while waiting for its delayed page', async () => {
+  assert.equal(typeof runtimeHelpers.connectWebView, 'function');
+  const fixture = fakeWebView(25);
+  const evidence = {};
+  const result = await runtimeHelpers.connectWebView({
+    evidence,
+    budgetMs: 200,
+    discover: async () => ({ result: 'ready', httpStatus: 200 }),
+    connect: async () => fixture.browser,
+    checkAlive: async () => true,
+  });
+  assert.equal(result.page, fixture.page);
+  assert.equal(fixture.isClosed(), false);
+  assert.equal(evidence.attempts[0].page, 'ready');
+  assert.equal(evidence.attemptCount, 1);
+});
+
+test('CDP budget bounds a hanging attach and closes its eventual late connection', async () => {
+  const evidence = {};
+  const fixture = fakeWebView();
+  const start = Date.now();
+  const result = await runtimeHelpers.connectWebView({
+    evidence,
+    budgetMs: 35,
+    discover: async () => ({ result: 'ready' }),
+    connect: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      return fixture.browser;
+    },
+    checkAlive: async () => true,
+  });
+  assert.equal(result, null);
+  assert.ok(Date.now() - start < 150);
+  assert.equal(evidence.attempts[0].attach, 'timeout');
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(fixture.isClosed(), true);
+});
+
+test('CDP errors and discovery records retain classifications, never arbitrary text', async () => {
+  assert.equal(
+    runtimeHelpers.classifyCdpError({ code: 'ECONNREFUSED', message: 'secret' }),
+    'refused',
+  );
+  assert.equal(
+    runtimeHelpers.classifyCdpError({ name: 'TimeoutError', message: 'secret' }),
+    'timeout',
+  );
+  assert.equal(
+    runtimeHelpers.classifyCdpError(new Error('Protocol error secret')),
+    'protocol-error',
+  );
+  assert.equal(
+    runtimeHelpers.classifyCdpError(
+      new Error('browserType.connectOverCDP: Protocol error (Browser.getVersion): secret'),
+    ),
+    'protocol-error',
+  );
+  assert.equal(runtimeHelpers.classifyCdpError(new Error('secret')), 'unavailable');
+  const evidence = {};
+  await runtimeHelpers.connectWebView({
+    evidence,
+    budgetMs: 30,
+    discover: async () => ({ result: 'ready', httpStatus: 200, body: 'secret' }),
+    connect: async () => {
+      throw new Error('secret');
+    },
+    checkAlive: async () => true,
+  });
+  assert.equal(evidence.attempts[0].attach, 'unavailable');
+  assert.ok(!JSON.stringify(evidence).includes('secret'));
+});
+
+test('CDP page wait consumes the same total budget and closes an empty connection', async () => {
+  const evidence = {};
+  const fixture = fakeWebView(100);
+  // A disconnected page arrival is irrelevant and must never become an accepted page.
+  fixture.browser.contexts = () => [{ pages: () => [], waitForEvent: () => new Promise(() => {}) }];
+  const start = Date.now();
+  const result = await runtimeHelpers.connectWebView({
+    evidence,
+    budgetMs: 40,
+    discover: async () => ({ result: 'ready' }),
+    connect: async () => fixture.browser,
+    checkAlive: async () => true,
+  });
+  assert.equal(result, null);
+  assert.ok(Date.now() - start < 150);
+  assert.equal(evidence.attempts[0].page, 'timeout');
+  assert.equal(fixture.isClosed(), true);
+});
+
+test('CDP never attaches after refused discovery and never hides a dead app', async () => {
+  let connections = 0;
+  const evidence = {};
+  await assert.rejects(
+    runtimeHelpers.connectWebView({
+      evidence,
+      budgetMs: 100,
+      discover: async () => ({ result: 'refused' }),
+      connect: async () => {
+        connections++;
+      },
+      checkAlive: async () => false,
+    }),
+    /INSTALLED_APP_EXITED_BEFORE_WINDOW/,
+  );
+  assert.equal(connections, 0);
+  assert.equal(evidence.attempts[0].discovery.result, 'refused');
+});
+
+const stoppedProcess = {
+  result: 'stopped',
+  phase: 'complete',
+  win32Error: 0,
+  identity: 'matched',
+  exitState: 'signaled',
+};
+test('cleanup accepts only kernel absence or a verified signaled process handle', () => {
+  assert.equal(runtimeHelpers.confirmedProcessExit(stoppedProcess), true);
+  assert.equal(
+    runtimeHelpers.confirmedProcessExit({
+      ...stoppedProcess,
+      result: 'exited',
+      phase: 'terminate',
+      win32Error: 5,
+    }),
+    true,
+  );
+  assert.equal(
+    runtimeHelpers.confirmedProcessExit({
+      result: 'absent',
+      phase: 'open',
+      win32Error: 87,
+      identity: 'unavailable',
+      exitState: 'absent',
+    }),
+    true,
+  );
+  for (const changed of [
+    { result: 'failed', phase: 'terminate', win32Error: 5, exitState: 'nonsignaled' },
+    { identity: 'mismatch' },
+    { exitState: 'unavailable' },
+    { result: 'matched', exitState: 'nonsignaled' },
+    {
+      result: 'absent',
+      phase: 'open',
+      win32Error: 5,
+      identity: 'unavailable',
+      exitState: 'absent',
+    },
+    { win32Error: 'unavailable' },
+    { result: 'absent', phase: 'open', win32Error: 87, identity: 'mismatch', exitState: 'absent' },
+  ])
+    assert.equal(runtimeHelpers.confirmedProcessExit({ ...stoppedProcess, ...changed }), false);
+});
+
+test('loopback CDP discovery bounds and classifies real HTTP without retaining response data', async () => {
+  let reply;
+  let requests = 0;
+  const server = createHttpServer((request, response) => {
+    requests++;
+    reply(request, response);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  try {
+    const cases = [
+      {
+        code: 200,
+        body: JSON.stringify({
+          webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/synthetic`,
+          secret: 'secret-payload',
+        }),
+        expected: 'ready',
+      },
+      {
+        code: 200,
+        body: JSON.stringify({
+          webSocketDebuggerUrl: 'ws://other.invalid/devtools/browser/secret-payload',
+        }),
+        expected: 'unsafe-endpoint',
+      },
+      { code: 200, body: '{secret-payload', expected: 'invalid-response' },
+      { code: 200, body: '{"secret":"secret-payload"}', expected: 'missing-endpoint' },
+      { code: 200, body: 'secret-payload'.repeat(6000), expected: 'oversize' },
+      { code: 302, body: '', expected: 'http-status' },
+    ];
+    for (const fixture of cases) {
+      const before = requests;
+      reply = (_, response) => {
+        response.writeHead(fixture.code, {
+          Location: `http://127.0.0.1:${port}/should-not-follow`,
+        });
+        response.end(fixture.body);
+      };
+      const result = await runtimeHelpers.probeCdp(port, 1000);
+      assert.equal(result.result, fixture.expected);
+      assert.equal(result.httpStatus, fixture.code);
+      assert.equal(requests, before + 1);
+      assert.ok(!JSON.stringify(result).includes('secret-payload'));
+    }
+    reply = () => {};
+    assert.deepEqual(await runtimeHelpers.probeCdp(port, 30), { result: 'timeout' });
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+  assert.equal((await runtimeHelpers.probeCdp(port, 500)).result, 'refused');
+});
+
+test('native process and window projections remove unknown fields and invalid values', () => {
+  const result = runtimeHelpers.projectProcessOutcome({
+    ...stoppedProcess,
+    path: 'secret',
+    message: 'secret',
+  });
+  assert.deepEqual(result, stoppedProcess);
+  assert.ok(
+    !JSON.stringify(
+      runtimeHelpers.projectProcessOutcome({
+        result: 'secret',
+        phase: 'secret',
+        win32Error: 'secret',
+        identity: 'secret',
+        exitState: 'secret',
+      }),
+    ).includes('secret'),
+  );
+  const counts = runtimeHelpers.projectWindowCounts({
+    result: 'observed',
+    identity: 'matched',
+    exitState: 'nonsignaled',
+    phase: 'complete',
+    win32Error: 0,
+    windows: { total: 2, visible: 1, minimized: 0, withArea: 2 },
+    title: 'secret',
+  });
+  assert.equal(counts.windows.visible, 1);
+  assert.ok(!JSON.stringify(counts).includes('secret'));
+  assert.equal(
+    runtimeHelpers.projectWindowCounts({ ...counts, identity: 'mismatch' }).windows,
+    null,
+  );
+});
+
+test('owned process counts omit paths and never admit a reused PID or unrelated process', () => {
+  const appPath = root.path;
+  const counts = runtimeHelpers.ownedProcessCounts(
+    [root, child, { ...child, pid: 99 }],
+    [root, child],
+    { exe: appPath, sidecar: child.path },
+    [root],
+  );
+  assert.equal(counts.app, 1);
+  assert.equal(counts.sidecar, 1);
+  assert.equal(
+    Object.values(counts).reduce((sum, value) => sum + value, 0),
+    2,
+  );
+  assert.ok(!JSON.stringify(counts).includes('installed'));
+  assert.equal(
+    runtimeHelpers.ownedProcessCounts(
+      [{ ...root, startedAt: '2027-01-01T00:00:00Z' }],
+      [root],
+      { exe: appPath },
+      [root],
+    ).app,
+    0,
   );
 });

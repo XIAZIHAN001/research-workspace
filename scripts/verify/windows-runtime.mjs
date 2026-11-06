@@ -15,6 +15,13 @@ import {
   selectInstaller,
   installedPaths,
   verifyResourceHashes,
+  probeCdp,
+  connectWebView,
+  projectProcessOutcome,
+  confirmedProcessExit,
+  projectWindowCounts,
+  ownedProcessRole,
+  ownedProcessCounts,
   nsisInvocation,
   spawnObserved,
   cleanupUnobservedLaunches,
@@ -59,6 +66,7 @@ const deadline = Date.now() + 8 * 60_000;
 let cleaning = false;
 let cleanupDeadline;
 let browser;
+const cdpConnections = new Set();
 let page;
 let app;
 let paths;
@@ -107,7 +115,7 @@ async function command(executable, args, input, milliseconds = 20_000) {
             maxBuffer: 2 * 1024 * 1024,
           },
           (error, stdout) => {
-            if (error) reject(new Error('SUBPROCESS_FAILED'));
+            if (error) reject(new Error(error.killed ? 'SUBPROCESS_TIMEOUT' : 'SUBPROCESS_FAILED'));
             else resolveCommand(stdout.trim());
           },
         );
@@ -117,7 +125,7 @@ async function command(executable, args, input, milliseconds = 20_000) {
     milliseconds + 1000,
   );
 }
-async function native(action, data = {}) {
+async function native(action, data = {}, milliseconds = 20_000) {
   const executable = join(env.ProgramFiles, 'PowerShell', '7', 'pwsh.exe');
   demand(existsSync(executable), 'RUNNER_POWERSHELL_REQUIRED');
   return JSON.parse(
@@ -130,6 +138,7 @@ async function native(action, data = {}) {
         join(ROOT, 'scripts/verify/windows-runtime-native.ps1'),
       ],
       JSON.stringify({ action, ...data }),
+      milliseconds,
     ),
   );
 }
@@ -160,8 +169,8 @@ async function regularFile(file) {
   );
   return info;
 }
-async function snapshot() {
-  const rows = await native('snapshot');
+async function snapshot(milliseconds = 20_000) {
+  const rows = await native('snapshot', {}, milliseconds);
   demand(Array.isArray(rows), 'PROCESS_SNAPSHOT_INVALID');
   owned = collectOwned(rows, owned);
   return rows;
@@ -181,7 +190,7 @@ async function trackRoot(child, expectedPath) {
 async function until(predicate, code, milliseconds = 30_000) {
   const end = Date.now() + remaining(milliseconds);
   while (Date.now() < end) {
-    const value = await predicate();
+    const value = await predicate(Math.max(1, end - Date.now()));
     if (value) return value;
     await sleep(Math.min(300, remaining()));
   }
@@ -278,10 +287,41 @@ async function currentSidecar() {
   return sidecar;
 }
 async function gone(identities, code) {
+  const observation = { step: cleaning ? 'cleanup' : currentStep, outcomes: [] };
+  report.exitObservations ??= [];
+  report.exitObservations.push(observation);
   await until(
-    async () => {
-      const rows = await snapshot();
-      return identities.every((identity) => !rows.some((row) => sameProcess(identity, row)));
+    async (timeout) => {
+      // Missing CIM rows can mean access/query failure, not exit. Query each tracked
+      // identity natively; only a signaled verified handle or kernel PID absence passes.
+      let values;
+      try {
+        values = await native('observe-owned', { processes: identities }, Math.min(timeout, 3000));
+      } catch {
+        observation.observation = 'unavailable';
+        throw new Error('OWNED_EXIT_OBSERVATION_UNAVAILABLE');
+      }
+      demand(
+        Array.isArray(values) && values.length === identities.length,
+        'EXIT_OBSERVATION_INVALID',
+      );
+      observation.outcomes = values.map((value, index) => ({
+        ordinal: owned.findIndex((entry) => sameProcess(entry, identities[index])) + 1,
+        role: ownedProcessRole(identities[index], paths, roots),
+        ...projectProcessOutcome(value),
+      }));
+      demand(
+        observation.outcomes.every(
+          (value) =>
+            confirmedProcessExit(value) ||
+            (value.result === 'matched' &&
+              value.identity === 'matched' &&
+              value.exitState === 'nonsignaled' &&
+              value.win32Error === 0),
+        ),
+        'OWNED_EXIT_OBSERVATION_UNAVAILABLE',
+      );
+      return observation.outcomes.every(confirmedProcessExit);
     },
     code,
     15_000,
@@ -324,27 +364,54 @@ async function launch() {
   });
   app = launched.root;
   // Official WebView2 CDP approach; use the real app-configured profile, never APPDATA spoofing.
-  const end = Date.now() + remaining(45_000);
-  while (Date.now() < end) {
+  const evidence = { ordinal: launches.filter((entry) => entry.role === 'app').length };
+  report.attachments ??= [];
+  report.attachments.push(evidence);
+  let attached;
+  try {
+    attached = await connectWebView({
+      evidence,
+      budgetMs: remaining(45_000),
+      discover: (timeout) => probeCdp(port, timeout),
+      connect: async (timeout) => {
+        const connected = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout });
+        cdpConnections.add(connected);
+        connected.once('disconnected', () => cdpConnections.delete(connected));
+        return connected;
+      },
+      checkAlive: async (timeout) => {
+        const status = projectProcessOutcome(
+          await native('verify-process', { process: app }, timeout),
+        );
+        evidence.liveness = status;
+        if (
+          status.result === 'matched' &&
+          status.identity === 'matched' &&
+          status.exitState === 'nonsignaled' &&
+          status.win32Error === 0
+        )
+          return true;
+        if (confirmedProcessExit(status)) return false;
+        throw new Error('OWNED_LIVENESS_UNAVAILABLE');
+      },
+    });
+  } finally {
+    // One bounded, sanitized observation, even when attachment failed. Never inspect titles,
+    // command lines, environment, browser profile contents or another application's windows.
     try {
-      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
-        timeout: remaining(2500),
-      });
-      page = browser.contexts()[0]?.pages()[0];
-      if (page) break;
-      await bounded(() => browser.close(), 3000);
-      browser = undefined;
+      const live = await snapshot(4000);
+      evidence.ownedProcesses = ownedProcessCounts(live, owned, paths, roots);
     } catch {
-      /* Retry only attachment, never app launch. */
+      evidence.ownedProcesses = { observation: 'unavailable' };
     }
-    const live = await snapshot();
-    demand(
-      live.some((row) => sameProcess(app, row)),
-      'INSTALLED_APP_EXITED_BEFORE_WINDOW',
-    );
-    await sleep(300);
+    try {
+      evidence.window = projectWindowCounts(await native('inspect-window', { process: app }, 4000));
+    } catch {
+      evidence.window = projectWindowCounts(null);
+    }
   }
-  if (!page) throw new Blocked('WEBVIEW2_CDP_OR_WINDOW_UNAVAILABLE');
+  if (!attached) throw new Blocked('WEBVIEW2_CDP_OR_WINDOW_UNAVAILABLE');
+  ({ browser, page } = attached);
   page.setDefaultTimeout(remaining(10_000));
   page.on('console', (message) => {
     if (message.type() === 'error') report.console.errors++;
@@ -703,8 +770,10 @@ try {
     });
     await step('force-exit-no-orphan', async () => {
       const sidecar = await currentSidecar();
+      const stopped = projectProcessOutcome(await native('stop', { process: app }));
+      report.forceExit = stopped;
       demand(
-        (await native('stop', { process: app })).result === 'stopped',
+        stopped.result === 'stopped' && confirmedProcessExit(stopped),
         'OWNED_FORCE_EXIT_FAILED',
       );
       // Do not kill the sidecar here: its natural exit is the condition under test.
@@ -761,20 +830,39 @@ try {
       bounded(() => completion, 2000),
     );
     if (owned.length === 0) return;
-    const live = await snapshot();
+    try {
+      await snapshot();
+    } catch {
+      cleanupFailures.push('process-snapshot');
+    }
     // Stop app/installer roots first, so pending IPC cannot recreate a credential during cleanup.
     const order = [
       ...roots,
       ...owned.filter((entry) => !roots.some((root) => sameProcess(root, entry))).reverse(),
     ];
+    report.cleanupProcesses = [];
     for (const identity of order) {
-      if (live.some((row) => sameProcess(identity, row))) {
-        try {
-          const stopped = await native('stop', { process: identity });
-          demand(['stopped', 'absent'].includes(stopped.result), 'OWNED_CLEANUP_IDENTITY_CHANGED');
-        } catch {
-          cleanupFailures.push('process-stop');
-        }
+      const outcome = {
+        ordinal: owned.findIndex((entry) => sameProcess(entry, identity)) + 1,
+        role: ownedProcessRole(identity, paths, roots),
+      };
+      report.cleanupProcesses.push(outcome);
+      try {
+        Object.assign(outcome, projectProcessOutcome(await native('stop', { process: identity })));
+        demand(confirmedProcessExit(outcome), 'OWNED_CLEANUP_EXIT_UNCONFIRMED');
+      } catch (error) {
+        if (!outcome.result)
+          Object.assign(
+            outcome,
+            projectProcessOutcome({
+              phase: ['SUBPROCESS_TIMEOUT', 'OPERATION_TIMEOUT', 'GLOBAL_TIMEOUT'].includes(
+                error.message,
+              )
+                ? 'timeout'
+                : 'bridge',
+            }),
+          );
+        cleanupFailures.push('process-stop');
       }
     }
     await gone(owned, 'OWNED_CLEANUP_ORPHAN');
@@ -788,7 +876,13 @@ try {
     );
   });
   await cleanupPhase('disconnect', 5_000, async () => {
-    await bounded(() => browser?.close().catch(() => {}), 3000);
+    for (const connection of new Set([...cdpConnections, ...(browser ? [browser] : [])])) {
+      try {
+        await bounded(() => connection.close(), 1000);
+      } catch {
+        cleanupFailures.push('cdp-disconnect');
+      }
+    }
   });
   recordCleanup(report, cleanupFailures, unverifiedLaunches);
   // Synthetic installation/profile is left for VM disposal, never recursively removed.

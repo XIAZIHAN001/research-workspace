@@ -140,6 +140,17 @@
 - 后续校验只对构建字节的副本执行固定版本的精确首次 UNK→NSS 变换，再比较完整预期与安装字节的 SHA-256；绝不归一化安装字节、忽略字节区间或允许原始相等回退。Node/launcher 仍须原样完整相等；不支持的 CLI 版本、缺标记或其他字节变化继续失败关闭。安装退出码、版本与各资源 build/expected/installed hash 在断言失败前保存。
 - 这是验收比较规则修正，不是放宽应用安全策略。新的精确提交仍须重新运行 Windows 安装与应用门禁。
 
+### `69ae3d46` 安装校验通过，WebView2 连接与清理仍阻塞
+
+[Actions 42216224997](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42216224997) 对应 HEAD `69ae3d4617a96a0567eeafeff8403097d37c2505`；测试合并提交 `e5d2e75d09701e04c4a74f34262a21992755cf5a` 的 tree 同为 `65a6a2c17148e8dc3b92324aa467d3a0c21629fc`。
+
+- Node 22.13/24、2308 项测试、真实 Chromium 22/22、Windows 52/52 Rust、release 和 NSIS 构建通过。原立即强杀/重新打开恢复场景继续通过。
+- 全新托管 Windows VM 的宿主检查、同次构建产物、静默安装与版本 0.13.2 校验通过。安装包 SHA-256 为 `11af85b4329ee69c2d3cf2e39e1829f41232bc999dbab055b07aaa8b7d5eb51f`，安装退出码为 0。
+- 主 EXE 的完整安装字节 SHA-256 `91cc672e5c0b465f90ca4fee0dc48792af31d772f2e722d2020fb86386909bdd` 与精确 NSIS 变换后的预期相同；Node 和 launcher 完整原始 hash 也均相同。资源比对阻断已在实际执行中解除。
+- 应用根进程启动后，45 秒内未获得 WebView2 调试页面，报告 `WEBVIEW2_CDP_OR_WINDOW_UNAVAILABLE`。Mock、假凭据、端点绑定、删除、重启和截图均未执行。清理另有 `process-stop` 未确认，最终状态为 **FAIL**、`cleanupIncomplete: true`，不能宣称没有残留进程。[实际报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42216224997/artifacts/13501931763) 保留这些结果。
+- 现有证据不能区分 CDP 发现、连接初始化和页面创建失败，也不能确定原生清理失败原因；尚不能断言产品故障或宿主不支持桌面。已确认脚本每次完整连接只等待 2.5 秒，页面尚未出现即断开；后续脚本 checkpoint 将增加有界页面等待和脱敏阶段诊断，以及同一进程句柄的退出证据，不放宽产品安全设置或把不确定清理改成通过。
+- 原任务要求的隔离 Windows PDF 导入/阅读、备份导出/恢复、强制退出、重启后数据持久化和无孤儿 sidecar，仍是必须完成或记录具体环境阻塞的门禁。窄运行脚本未覆盖这些流程，不代表它们不在任务范围内。
+
 ## 独立复审
 
 复审不仅检查本轮 diff，也复查了受影响的旧路径。独立故障注入复现并关闭：
@@ -156,9 +167,9 @@
 
 ## 当前环境限制
 
-- Chromium 本地启动在 `process_singleton_posix.cc` 报 `socket() failed: Operation not permitted (1)`；普通执行与获批提权执行结果一致。隔离浏览器脚本已准备，**0 项浏览器断言在本地执行**。新增 CI 将在具备 Chromium 的 runner 上执行该脚本，结果须单独核对。
+- Chromium 本地启动在 `process_singleton_posix.cc` 报 `socket() failed: Operation not permitted (1)`；普通执行与获批提权执行结果一致。**0 项浏览器断言在本地执行**。远程 Chromium 的实际执行结果按上方各精确提交分别记录，最新已核对的 `69ae3d46` 为 22/22。
 - Linux 完整 Tauri 测试缺少 `glib-2.0`。已在隔离临时目录补齐 Windows Rust target 与官方 Debian binutils，完整 Tauri Windows debug 和 release/all-targets 交叉编译实际通过；这仍不是 Windows 程序执行、MSVC 链接或 NSIS 安装验收。
-- 本轮未运行 Windows 图形桌面安装验收，不沿用此前 PR 的冒烟结论。
+- 全新托管 Windows VM 已实际执行 `69ae3d46` 的静默安装、版本和完整资源校验；应用根进程启动后 CDP/页面连接阻塞，后续交互与凭据测试未执行，清理未确认。不能沿用此前 PR 的冒烟结论。
 
 ## Windows 桌面人工门禁
 
@@ -202,7 +213,7 @@ Rust 拥有的密钥字符串、编码凭据及子进程 stdin 临时缓冲区�
 
 1. 远程 Actions 的准确提交结果必须另行检查；不能把工作流存在当作 CI 成功。
 2. 本地隔离 Chromium 启动受限；本地 22 项计划检查均未执行。
-3. Windows 实机运行、Credential Manager、NSIS 安装与完整桌面验收仍需执行；交叉编译不替代这些检查。
+3. `69ae3d46` 的 NSIS 静默安装、版本与资源校验已通过；Windows 交互、Credential Manager 和完整数据流程仍未执行，清理未确认。交叉编译或浏览器成功不替代这些检查。
 4. 一次仅允许一个升级后的可编辑窗口；旧应用版本必须先关闭。Web Locks 不可用会明确阻断启动。
 5. 孤立 PDF 仅处理恢复日志派生的候选，每次启动最多清理一个；未知或引用信息无法确认的文件保留，不做全盘盲删。
 6. macOS/Linux 系统凭据后端仍未实现，不阻塞 Windows 代码整改，但不宣称跨平台在线 AI 支持。

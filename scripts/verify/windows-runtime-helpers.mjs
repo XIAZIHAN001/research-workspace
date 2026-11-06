@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { get as httpGet } from 'node:http';
+import { setTimeout as delay } from 'node:timers/promises';
 import { win32 as path } from 'node:path';
 
 function requireValue(condition, code) {
@@ -381,4 +383,296 @@ export function runnerGuardCode(error) {
     'ABSOLUTE_RUNNER_PATH_REQUIRED',
   ]);
   return codes.has(error?.message) ? error.message : 'FRESH_GITHUB_HOSTED_WINDOWS_REQUIRED';
+}
+
+/** Classifications only: Playwright errors can contain URLs and protocol payloads. */
+export function classifyCdpError(error) {
+  if (error?.code === 'ECONNREFUSED' || /ECONNREFUSED/.test(error?.message ?? '')) return 'refused';
+  if (error?.name === 'TimeoutError' || error?.message === 'CDP_TIMEOUT') return 'timeout';
+  if (/^(?:browserType\.connectOverCDP: )?Protocol error\b/.test(error?.message ?? ''))
+    return 'protocol-error';
+  return 'unavailable';
+}
+
+/** Fixed loopback discovery only. No redirects, proxy, response retention or arbitrary URLs. */
+export async function probeCdp(port, timeoutMs) {
+  requireValue(Number.isInteger(port) && port > 0 && port < 65536, 'CDP_PORT_INVALID');
+  return new Promise((resolveProbe) => {
+    let settled = false;
+    let timer;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolveProbe(result);
+    };
+    const request = httpGet(
+      { hostname: '127.0.0.1', port, path: '/json/version/', agent: false },
+      (response) => {
+        const httpStatus = response.statusCode;
+        if (httpStatus !== 200) {
+          finish({ result: 'http-status', httpStatus });
+          response.destroy();
+          return;
+        }
+        const chunks = [];
+        let size = 0;
+        response.on('data', (chunk) => {
+          size += chunk.length;
+          if (size > 64 * 1024) {
+            finish({ result: 'oversize', httpStatus });
+            response.destroy();
+          } else chunks.push(chunk);
+        });
+        response.on('error', () => finish({ result: 'unavailable', httpStatus }));
+        response.on('end', () => {
+          try {
+            const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            if (typeof value?.webSocketDebuggerUrl !== 'string') {
+              finish({ result: 'missing-endpoint', httpStatus });
+              return;
+            }
+            const endpoint = new URL(value.webSocketDebuggerUrl);
+            const valid =
+              endpoint.protocol === 'ws:' &&
+              ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname) &&
+              endpoint.port === String(port) &&
+              !endpoint.username &&
+              !endpoint.password &&
+              endpoint.pathname.startsWith('/devtools/browser/');
+            finish({ result: valid ? 'ready' : 'unsafe-endpoint', httpStatus });
+          } catch {
+            finish({ result: 'invalid-response', httpStatus });
+          }
+        });
+      },
+    );
+    request.on('error', (error) => finish({ result: classifyCdpError(error) }));
+    timer = setTimeout(
+      () => {
+        finish({ result: 'timeout' });
+        request.destroy();
+      },
+      Math.max(1, timeoutMs),
+    );
+  });
+}
+
+/** One total deadline; retain an attached connection while its first page is created. */
+export async function connectWebView({ evidence, budgetMs, discover, connect, checkAlive }) {
+  const started = Date.now();
+  const end = started + budgetMs;
+  Object.assign(evidence, { attemptCount: 0, droppedAttempts: 0, attempts: [], elapsedMs: 0 });
+  const timeLeft = () => Math.max(0, end - Date.now());
+  // Also pass this timeout to each real API. The guard handles broken/late adapters without
+  // forgetting an eventually acquired connection. Late CDP successes are always disconnected.
+  const call = async (work, maximum, lateSuccess) => {
+    const timeout = Math.max(1, Math.min(timeLeft(), maximum));
+    let expired = false;
+    let timer;
+    const pending = Promise.resolve().then(() => work(timeout));
+    pending.then(
+      (value) => {
+        if (expired) lateSuccess?.(value);
+      },
+      () => {},
+    );
+    try {
+      return await Promise.race([
+        pending,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            expired = true;
+            reject(new Error('CDP_TIMEOUT'));
+          }, timeout);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const close = (browser) =>
+    Promise.resolve()
+      .then(() => browser?.close())
+      .catch(() => {});
+  try {
+    while (timeLeft() > 0) {
+      const attempt = {
+        ordinal: ++evidence.attemptCount,
+        discovery: { result: 'unavailable' },
+        attach: 'not-run',
+        page: 'not-run',
+      };
+      evidence.attempts.push(attempt);
+      if (evidence.attempts.length > 32) {
+        evidence.attempts.shift();
+        evidence.droppedAttempts++;
+      }
+      let browser;
+      let accepted = false;
+      try {
+        let discovery;
+        try {
+          discovery = await call(discover, 1500);
+        } catch (error) {
+          discovery = { result: classifyCdpError(error) };
+        }
+        const known = [
+          'ready',
+          'refused',
+          'timeout',
+          'http-status',
+          'oversize',
+          'missing-endpoint',
+          'unsafe-endpoint',
+          'invalid-response',
+          'unavailable',
+        ];
+        attempt.discovery = {
+          result: known.includes(discovery?.result) ? discovery.result : 'unavailable',
+        };
+        if (
+          Number.isInteger(discovery?.httpStatus) &&
+          discovery.httpStatus >= 100 &&
+          discovery.httpStatus <= 599
+        )
+          attempt.discovery.httpStatus = discovery.httpStatus;
+        if (attempt.discovery.result === 'ready' && timeLeft() > 0) {
+          try {
+            browser = await call(connect, 8000, close);
+            attempt.attach = 'connected';
+            const contexts = browser.contexts();
+            attempt.contextCount = contexts.length;
+            const context = contexts[0];
+            if (!context) attempt.page = 'no-context';
+            else {
+              attempt.pageCount = context.pages().length;
+              let page = context.pages()[0];
+              if (!page && timeLeft() > 0) {
+                try {
+                  page = await call((timeout) => context.waitForEvent('page', { timeout }), 8000);
+                } catch (error) {
+                  attempt.page = classifyCdpError(error);
+                }
+              }
+              if (page) {
+                attempt.page = 'ready';
+                attempt.pageCount = context.pages().length;
+                accepted = true;
+                return { browser, page };
+              }
+            }
+          } catch (error) {
+            attempt.attach = classifyCdpError(error);
+          }
+        }
+      } finally {
+        if (browser && !accepted) {
+          // Closing CDP disconnects the transport, not the application. The owned-process
+          // cleanup remains responsible for the application even if disconnect times out.
+          await call(() => close(browser), 1000).catch(() => {});
+        }
+      }
+      if (timeLeft() <= 0) break;
+      requireValue(await call(checkAlive, 3000), 'INSTALLED_APP_EXITED_BEFORE_WINDOW');
+      await delay(Math.min(300, timeLeft()));
+    }
+    return null;
+  } finally {
+    evidence.elapsedMs = Date.now() - started;
+  }
+}
+
+export function projectProcessOutcome(value) {
+  const select = (key, allowed, fallback) =>
+    allowed.includes(value?.[key]) ? value[key] : fallback;
+  return {
+    result: select(
+      'result',
+      ['matched', 'stopped', 'exited', 'absent', 'mismatch', 'failed', 'observed', 'unavailable'],
+      'unavailable',
+    ),
+    phase: select(
+      'phase',
+      [
+        'open',
+        'query-image',
+        'query-time',
+        'identity',
+        'wait-before',
+        'terminate',
+        'wait-after',
+        'enum-windows',
+        'window-process',
+        'window-rect',
+        'wait-window-after',
+        'complete',
+        'bridge',
+        'timeout',
+      ],
+      'bridge',
+    ),
+    win32Error:
+      Number.isInteger(value?.win32Error) && value.win32Error >= 0 && value.win32Error <= 0xffffffff
+        ? value.win32Error
+        : null,
+    identity: select('identity', ['matched', 'mismatch', 'unavailable'], 'unavailable'),
+    exitState: select(
+      'exitState',
+      ['signaled', 'nonsignaled', 'unavailable', 'absent'],
+      'unavailable',
+    ),
+  };
+}
+
+export function confirmedProcessExit(value) {
+  const outcome = projectProcessOutcome(value);
+  return (
+    (['stopped', 'exited'].includes(outcome.result) &&
+      outcome.identity === 'matched' &&
+      outcome.exitState === 'signaled' &&
+      Number.isInteger(outcome.win32Error) &&
+      (outcome.result !== 'stopped' || outcome.win32Error === 0)) ||
+    (outcome.result === 'absent' &&
+      outcome.phase === 'open' &&
+      outcome.win32Error === 87 &&
+      outcome.identity === 'unavailable' &&
+      outcome.exitState === 'absent')
+  );
+}
+
+export function projectWindowCounts(value) {
+  const projected = { ...projectProcessOutcome(value), windows: null };
+  const keys = ['total', 'visible', 'minimized', 'withArea'];
+  if (
+    projected.result === 'observed' &&
+    projected.identity === 'matched' &&
+    projected.exitState === 'nonsignaled' &&
+    keys.every(
+      (key) =>
+        Number.isInteger(value?.windows?.[key]) &&
+        value.windows[key] >= 0 &&
+        value.windows[key] <= 100000,
+    )
+  ) {
+    projected.windows = Object.fromEntries(keys.map((key) => [key, value.windows[key]]));
+  }
+  return projected;
+}
+
+export function ownedProcessRole(identity, paths, roots) {
+  if (paths?.exe && canonical(identity.path) === canonical(paths.exe)) return 'app';
+  if (paths?.sidecar && canonical(identity.path) === canonical(paths.sidecar)) return 'sidecar';
+  if (roots.some((root) => sameProcess(root, identity))) return 'installer';
+  if (path.basename(identity.path).toLowerCase() === 'msedgewebview2.exe') return 'webview2';
+  return 'otherOwned';
+}
+
+export function ownedProcessCounts(live, owned, paths, roots) {
+  const counts = { app: 0, installer: 0, sidecar: 0, webview2: 0, otherOwned: 0 };
+  for (const identity of owned) {
+    if (live.some((row) => sameProcess(identity, row)))
+      counts[ownedProcessRole(identity, paths, roots)]++;
+  }
+  return counts;
 }

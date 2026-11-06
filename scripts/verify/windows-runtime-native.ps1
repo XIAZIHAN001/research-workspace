@@ -29,7 +29,22 @@ public static class RuntimeAcceptanceNative {
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder path, ref int size);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr process, out long created, out long exited, out long kernel, out long user);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateProcess(IntPtr process, uint code);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+  [StructLayout(LayoutKind.Sequential)] struct WindowRect { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll", SetLastError=true)] static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+  [DllImport("user32.dll", SetLastError=true)] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+  [DllImport("user32.dll", SetLastError=true)] static extern bool GetWindowRect(IntPtr window, out WindowRect rectangle);
+  // Only fixed classifications and numeric API results may leave these process/window helpers.
+  public class ProcessOutcome {
+    public string result = "failed", phase = "open", identity = "unavailable", exitState = "unavailable";
+    public int win32Error = 0;
+  }
+  public class WindowCounts { public int total, visible, minimized, withArea; }
+  public class WindowOutcome : ProcessOutcome { public WindowCounts windows = null; }
   public static string KnownFolder(string id) {
     Guid guid = new Guid(id); IntPtr value;
     int result = SHGetKnownFolderPath(ref guid, 0, IntPtr.Zero, out value);
@@ -82,22 +97,121 @@ public static class RuntimeAcceptanceNative {
     if (!CredDeleteW(target, 1, 0)) throw new InvalidOperationException("CREDENTIAL_DELETE_FAILED");
     return "deleted";
   }
-  // Open once and verify/terminate through that same handle: a PID reuse cannot kill a stranger.
-  public static string CheckOrStopOwned(int pid, string expectedPath, string expectedStart, bool stop) {
-    IntPtr handle = OpenProcess(0x1001, false, pid);
+  // Open once and verify/observe/terminate through that handle: PID reuse cannot target a stranger.
+  static bool OpenOwned(int pid, string expectedPath, string expectedStart, bool stop, ProcessOutcome outcome, out IntPtr handle) {
+    // QUERY_LIMITED_INFORMATION + SYNCHRONIZE; read-only observation never requests TERMINATE.
+    handle = OpenProcess(0x00101000u | (stop ? 0x0001u : 0u), false, pid);
     if (handle == IntPtr.Zero) {
-      if (Marshal.GetLastWin32Error() == 87) return "absent";
-      throw new InvalidOperationException("PROCESS_HANDLE_UNAVAILABLE");
+      int error = Marshal.GetLastWin32Error();
+      outcome.win32Error = error;
+      if (error == 87) { outcome.result = "absent"; outcome.exitState = "absent"; }
+      return false;
     }
+    int length = 32768; var path = new StringBuilder(length);
+    outcome.phase = "query-image";
+    if (!QueryFullProcessImageName(handle, 0, path, ref length)) {
+      int error = Marshal.GetLastWin32Error();
+      outcome.win32Error = error;
+      return false;
+    }
+    long created, exited, kernel, user;
+    outcome.phase = "query-time";
+    if (!GetProcessTimes(handle, out created, out exited, out kernel, out user)) {
+      int error = Marshal.GetLastWin32Error();
+      outcome.win32Error = error;
+      return false;
+    }
+    outcome.phase = "identity";
+    if (!String.Equals(path.ToString(), expectedPath, StringComparison.OrdinalIgnoreCase) || DateTime.FromFileTimeUtc(created).ToString("o") != expectedStart) {
+      outcome.result = "mismatch"; outcome.identity = "mismatch";
+      return false;
+    }
+    outcome.identity = "matched";
+    return true;
+  }
+  static bool ObserveExit(IntPtr handle, ProcessOutcome outcome, string phase, uint milliseconds) {
+    outcome.phase = phase;
+    uint state = WaitForSingleObject(handle, milliseconds);
+    if (state == 0xFFFFFFFFu) {
+      int error = Marshal.GetLastWin32Error();
+      outcome.win32Error = error; outcome.exitState = "unavailable";
+      return false;
+    }
+    outcome.exitState = state == 0 ? "signaled" : state == 258 ? "nonsignaled" : "unavailable";
+    return outcome.exitState != "unavailable";
+  }
+  public static ProcessOutcome CheckOrStopOwned(int pid, string expectedPath, string expectedStart, bool stop) {
+    var outcome = new ProcessOutcome();
+    IntPtr handle = IntPtr.Zero;
     try {
-      int length = 32768; var path = new StringBuilder(length);
-      long created, exited, kernel, user;
-      if (!QueryFullProcessImageName(handle, 0, path, ref length) || !GetProcessTimes(handle, out created, out exited, out kernel, out user)) throw new InvalidOperationException("PROCESS_IDENTITY_UNAVAILABLE");
-      if (!String.Equals(path.ToString(), expectedPath, StringComparison.OrdinalIgnoreCase) || DateTime.FromFileTimeUtc(created).ToString("o") != expectedStart) return "mismatch";
-      if (!stop) return "matched";
-      if (!TerminateProcess(handle, 1)) throw new InvalidOperationException("PROCESS_STOP_FAILED");
-      return "stopped";
-    } finally { CloseHandle(handle); }
+      if (!OpenOwned(pid, expectedPath, expectedStart, stop, outcome, out handle)) return outcome;
+      if (!ObserveExit(handle, outcome, "wait-before", 0)) return outcome;
+      if (outcome.exitState == "signaled") { outcome.result = "exited"; return outcome; }
+      if (!stop) { outcome.result = "matched"; outcome.phase = "complete"; return outcome; }
+      if (!TerminateProcess(handle, 1)) {
+        int error = Marshal.GetLastWin32Error();
+        // Error 5 alone does not prove exit. Recheck this same verified handle, preserving the error.
+        ObserveExit(handle, outcome, "terminate", 0);
+        outcome.win32Error = error;
+        if (outcome.exitState == "signaled") outcome.result = "exited";
+        return outcome;
+      }
+      if (!ObserveExit(handle, outcome, "wait-after", 2000)) return outcome;
+      if (outcome.exitState == "signaled") outcome.result = "stopped";
+      return outcome;
+    } finally { if (handle != IntPtr.Zero) CloseHandle(handle); }
+  }
+  public static WindowOutcome InspectWindow(int pid, string expectedPath, string expectedStart) {
+    var outcome = new WindowOutcome();
+    outcome.result = "unavailable";
+    IntPtr handle = IntPtr.Zero;
+    try {
+      if (!OpenOwned(pid, expectedPath, expectedStart, false, outcome, out handle)) {
+        outcome.result = "unavailable";
+        return outcome;
+      }
+      if (!ObserveExit(handle, outcome, "wait-before", 0) || outcome.exitState != "nonsignaled") return outcome;
+      int total = 0, visible = 0, minimized = 0, area = 0;
+      bool callbackFailed = false;
+      EnumWindowsProc inspect = delegate(IntPtr window, IntPtr parameter) {
+        uint owner;
+        if (GetWindowThreadProcessId(window, out owner) == 0) {
+          int error = Marshal.GetLastWin32Error();
+          outcome.phase = "window-process"; outcome.win32Error = error; callbackFailed = true;
+          return false;
+        }
+        if (owner != (uint)pid) return true;
+        bool isVisible = IsWindowVisible(window), isMinimized = IsIconic(window);
+        WindowRect rectangle;
+        if (!GetWindowRect(window, out rectangle)) {
+          int error = Marshal.GetLastWin32Error();
+          outcome.phase = "window-rect"; outcome.win32Error = error; callbackFailed = true;
+          return false;
+        }
+        // Window handles can be reused too. Never count one that changed owner during observation.
+        if (GetWindowThreadProcessId(window, out owner) == 0) {
+          int error = Marshal.GetLastWin32Error();
+          outcome.phase = "window-process"; outcome.win32Error = error; callbackFailed = true;
+          return false;
+        }
+        if (owner != (uint)pid) { outcome.phase = "window-process"; callbackFailed = true; return false; }
+        total++;
+        if (isVisible) visible++;
+        if (isMinimized) minimized++;
+        if (rectangle.Right > rectangle.Left && rectangle.Bottom > rectangle.Top) area++;
+        return true;
+      };
+      if (!EnumWindows(inspect, IntPtr.Zero)) {
+        int error = Marshal.GetLastWin32Error();
+        if (!callbackFailed) { outcome.phase = "enum-windows"; outcome.win32Error = error; }
+        return outcome;
+      }
+      // Holding the verified process handle through enumeration prevents PID reuse; require it alive.
+      if (!ObserveExit(handle, outcome, "wait-window-after", 0) || outcome.exitState != "nonsignaled") return outcome;
+      outcome.result = "observed"; outcome.phase = "complete";
+      outcome.windows = new WindowCounts { total = total, visible = visible, minimized = minimized, withArea = area };
+      return outcome;
+    } finally { if (handle != IntPtr.Zero) CloseHandle(handle); }
   }
 }
 '@
@@ -152,7 +266,20 @@ public static class RuntimeAcceptanceNative {
     { $_ -in @('stop', 'verify-process') } {
       # ConvertFrom-Json may parse ISO timestamps to DateTime. Recreate the exact UTC round-trip form.
       $start = ([DateTime]$request.process.startedAt).ToUniversalTime().ToString('o')
-      @{ result = [RuntimeAcceptanceNative]::CheckOrStopOwned([int]$request.process.pid, $request.process.path, $start, ($request.action -eq 'stop')) } | ConvertTo-Json -Compress
+      [RuntimeAcceptanceNative]::CheckOrStopOwned([int]$request.process.pid, $request.process.path, $start, ($request.action -eq 'stop')) | ConvertTo-Json -Compress
+    }
+    'inspect-window' {
+      $start = ([DateTime]$request.process.startedAt).ToUniversalTime().ToString('o')
+      [RuntimeAcceptanceNative]::InspectWindow([int]$request.process.pid, $request.process.path, $start) | ConvertTo-Json -Compress
+    }
+    'observe-owned' {
+      $outcomes = @(
+        foreach ($ownedProcess in $request.processes) {
+          $start = ([DateTime]$ownedProcess.startedAt).ToUniversalTime().ToString('o')
+          [RuntimeAcceptanceNative]::CheckOrStopOwned([int]$ownedProcess.pid, $ownedProcess.path, $start, $false)
+        }
+      )
+      ConvertTo-Json -InputObject $outcomes -Compress
     }
     'credential' {
       @{ result = [RuntimeAcceptanceNative]::OwnedCredential($request.target, $request.expectedHash, [bool]$request.delete); remaining = [RuntimeAcceptanceNative]::AppTargets().Length } | ConvertTo-Json -Compress
