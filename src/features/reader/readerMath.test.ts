@@ -105,6 +105,38 @@ describe('page column layout', () => {
     expect(pageAtOffset(tops, 100_000)).toBe(3);
     expect(pageAtOffset([], 500)).toBe(1);
   });
+
+  it('finds a page in logarithmic work for a long document', () => {
+    let reads = 0;
+    const tops = new Proxy(pageTops(Array.from({ length: 65_536 }, () => 800)), {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) reads += 1;
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    expect(pageAtOffset(tops, 40_000 * (800 + PAGE_GAP) + PAGE_GUTTER)).toBe(40_001);
+    expect(reads).toBeLessThanOrEqual(17);
+  });
+
+  it('preserves mixed-height page boundaries and fractional scroll tolerance', () => {
+    const tops = pageTops(Array.from({ length: 1000 }, (_, index) => 200 + (index % 7) * 123.5));
+    const reference = (offset: number): number => {
+      let page = 1;
+      tops.forEach((top, index) => {
+        if (top <= offset + PAGE_GAP + 2) page = index + 1;
+      });
+      return page;
+    };
+    for (const top of tops) {
+      for (const delta of [-2.1, -2, -1.9, 0, 0.5]) {
+        const offset = top - PAGE_GAP + delta;
+        expect(pageAtOffset(tops, offset)).toBe(reference(offset));
+      }
+    }
+    for (const offset of [Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]) {
+      expect(pageAtOffset(tops, offset)).toBe(reference(offset));
+    }
+  });
 });
 
 describe('renderWindow', () => {
