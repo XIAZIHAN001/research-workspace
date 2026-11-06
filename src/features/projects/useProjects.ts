@@ -5,6 +5,7 @@ import type { GlossaryEdit, GlossaryEntry } from '../../domain/glossary';
 import {
   applyPaperEdit,
   createPaper,
+  createPaperIdentityIndex,
   resolvePaperIdentity,
   type AddPaperOutcome,
   type Paper,
@@ -89,22 +90,22 @@ export function useProjects(store: ProjectsStore) {
        * Adds a whole bibliography in one write.
        *
        * The per-entry action re-reads and re-serializes the workspace for every row, which a
-       * 500-entry import would do 500 times. This resolves the batch against a working copy
+       * 500-entry import would do 500 times. This resolves the batch against an identifier index
        * (so identifiers reused inside the file still collapse onto one record), then registers
        * the new papers with one dispatch.
        */
       addPapers(inputs: readonly PaperInput[]): AddPaperOutcome[] {
-        const working: Record<string, Paper> = { ...store.getSnapshot().state.papers };
+        const identities = createPaperIdentityIndex(store.getSnapshot().state.papers);
         const created: Paper[] = [];
         const now = Date.now();
         const outcomes = inputs.map((input): AddPaperOutcome => {
-          const identity = resolvePaperIdentity(working, input);
+          const identity = identities.resolve(input);
           if (identity.kind === 'conflict') return { status: 'conflict', papers: identity.papers };
           if (identity.kind === 'match') return { status: 'added', paper: identity.paper };
 
           const paper = createPaper(input, makeId, now);
           if (paper === null) return { status: 'invalid' };
-          working[paper.id] = paper;
+          identities.add(paper);
           created.push(paper);
           return { status: 'added', paper };
         });

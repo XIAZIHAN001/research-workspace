@@ -150,6 +150,25 @@ describe('useProjects: referencePaper', () => {
 });
 
 describe('useProjects: addPapers', () => {
+  it('reads existing identifiers once for the whole batch, including no-op matches', () => {
+    const { store, result } = setup();
+    const existing = registryOf(store)['paper-p1'];
+    let reads = 0;
+    Object.defineProperty(existing, 'doi', {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return '10.1000/existing';
+      },
+    });
+    const outcomes = result.current.actions.addPapers(
+      Array.from({ length: 40 }, () => ({ title: 'Alias', doi: '10.1000/EXISTING' })),
+    );
+    expect(outcomes).toHaveLength(40);
+    for (const outcome of outcomes) expect(outcome).toEqual({ status: 'added', paper: existing });
+    expect(reads).toBe(1);
+  });
+
   it('registers a whole bibliography in one write and reuses identifiers inside the batch', () => {
     const { store, result } = setup();
     let dispatches = 0;
@@ -171,6 +190,32 @@ describe('useProjects: addPapers', () => {
     expect(third.paper.id).toBe(first.paper.id);
     expect(Object.keys(registryOf(store))).toHaveLength(3);
     expect(dispatches).toBe(1);
+  });
+
+  it('indexes only created records and preserves aliases, invalid inputs and title-only duplicates', () => {
+    const { result } = setup();
+    const outcomes = result.current.actions.addPapers([
+      { title: 'Same title', doi: '10.1000/one', arxivId: '2401.12345' },
+      { title: '', arxivId: 'https://arxiv.org/pdf/2401.12345v2.pdf' },
+      { title: 'Alias', doi: '10.1000/one', arxivId: '2401.54321' },
+      // A reused record is not enriched with the alias's previously unknown identifier.
+      { title: 'Independent', arxivId: '2401.54321' },
+      { title: '', doi: '10.1000/invalid-title' },
+      { title: 'Valid later', doi: '10.1000/invalid-title' },
+      { title: 'Same title' },
+      { title: 'Conflict', doi: '10.1000/one', arxivId: '2401.54321' },
+    ]);
+    const first = outcomes[0];
+    const independent = outcomes[3];
+    if (first?.status !== 'added' || independent?.status !== 'added') throw new Error('not added');
+    expect(outcomes[1]).toEqual(first);
+    expect(outcomes[2]).toEqual(first);
+    expect(independent.paper.id).not.toBe(first.paper.id);
+    expect(outcomes[4]).toEqual({ status: 'invalid' });
+    expect(outcomes[5]?.status).toBe('added');
+    expect(outcomes[6]).not.toEqual(first);
+    expect(outcomes[6]?.status).toBe('added');
+    expect(outcomes[7]).toEqual({ status: 'conflict', papers: [first.paper, independent.paper] });
   });
 
   it('reports an identifier conflict inside the batch without adding a paper', () => {

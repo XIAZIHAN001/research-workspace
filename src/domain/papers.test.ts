@@ -3,6 +3,7 @@ import {
   applyPaperEdit,
   authorCredit,
   createPaper,
+  createPaperIdentityIndex,
   normalizeArxivId,
   normalizeDoi,
   resolvePaperIdentity,
@@ -523,5 +524,89 @@ describe('PaperSummary edits', () => {
       12,
     );
     expect(touched.ok && touched.paper.summary).toStrictEqual(card);
+  });
+});
+
+describe('createPaperIdentityIndex', () => {
+  it('reads the registry and its identifiers once, not once per batch input', () => {
+    let enumerations = 0;
+    let identifierReads = 0;
+    const registered = Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => {
+        const value = paper(`p-${i}`);
+        Object.defineProperty(value, 'doi', {
+          get: () => {
+            identifierReads += 1;
+            return `10.1000/${i}`;
+          },
+        });
+        return [value.id, value];
+      }),
+    );
+    const registry = new Proxy(registered, {
+      ownKeys(target) {
+        enumerations += 1;
+        return Reflect.ownKeys(target);
+      },
+    });
+    const index = createPaperIdentityIndex(registry);
+    for (let i = 0; i < 50; i += 1) {
+      expect(index.resolve({ doi: `10.1000/${i}` })).toEqual({
+        kind: 'match',
+        paper: registered[`p-${i}`],
+      });
+      const added = paper(`new-${i}`, {
+        doi: `10.2000/${i}`,
+        arxivId: `2401.${String(10000 + i)}`,
+      });
+      index.add(added);
+      expect(index.resolve({ arxivId: `${added.arxivId}v2` })).toEqual({
+        kind: 'match',
+        paper: added,
+      });
+    }
+    expect(enumerations).toBe(1);
+    expect(identifierReads).toBe(100);
+  });
+
+  it('matches the scan resolver on deterministic mixed fixtures before and after additions', () => {
+    const registry: Record<string, Paper> = Object.fromEntries([
+      ['__proto__', paper('__proto__', { doi: '10.1000/shared' })],
+      ['constructor', paper('constructor', { arxivId: '2401.12345' })],
+      ['duplicate', paper('other', { doi: '10.1000/shared', arxivId: '2401.12345' })],
+      ['same-id', paper('other', { doi: '10.1000/alias', arxivId: '2401.54321' })],
+      ['raw', paper('raw', { doi: '10.1000/UPPER', arxivId: '2401.99999v2' })],
+      ...Array.from({ length: 60 }, (_, i): [string, Paper] => [
+        String(i),
+        paper(`id-${i % 53}`, {
+          doi: `10.2000/${i % 17}`,
+          arxivId: `2402.${String(10000 + (i % 19))}`,
+        }),
+      ]),
+    ]);
+    const index = createPaperIdentityIndex(registry);
+    const queries = [
+      {},
+      { doi: 'invalid', arxivId: 'invalid' },
+      { doi: '10.1000/shared', arxivId: '2401.12345' },
+      { doi: '10.1000/alias', arxivId: '2401.12345' },
+      { doi: '10.1000/UPPER' },
+      { arxivId: '2401.99999v2' },
+      { doi: null, arxivId: null },
+      ...Array.from({ length: 150 }, (_, i) => ({
+        doi: `https://doi.org/10.2000/${i % 23}`,
+        arxivId: `arXiv:2402.${String(10000 + (i % 29))}v3`,
+      })),
+    ];
+    for (let round = 0; round < 5; round += 1) {
+      for (const ids of queries)
+        expect(index.resolve(ids)).toEqual(resolvePaperIdentity(registry, ids));
+      const added = paper(`added-${round}`, {
+        doi: `10.2000/${round + 17}`,
+        arxivId: `2402.${String(10019 + round)}`,
+      });
+      registry[added.id] = added;
+      index.add(added);
+    }
   });
 });
