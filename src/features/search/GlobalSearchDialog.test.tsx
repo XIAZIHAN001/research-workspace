@@ -61,3 +61,39 @@ describe('GlobalSearchDialog', () => {
     expect(onOpenPaper).toHaveBeenCalledWith('id-1', undefined);
   });
 });
+
+it('reuses the source index while typing and refreshes replaced source arrays', () => {
+  const data = source();
+  let reads = 0;
+  const first = data.papers[0]!;
+  const title = first.title;
+  Object.defineProperty(first, 'title', {
+    get() {
+      reads++;
+      return title;
+    },
+  });
+  const props = {
+    open: true,
+    source: data,
+    onClose: vi.fn(),
+    onOpenPaper: vi.fn(),
+    onOpenConcept: vi.fn(),
+  };
+  const { rerender } = render(<GlobalSearchDialog {...props} />);
+  const input = screen.getByRole('textbox', { name: '搜索工作区' });
+  const initialReads = reads;
+  fireEvent.change(input, { target: { value: 'attention' } });
+  expect(screen.getByRole('button', { name: /Attention Is All You Need/ })).toBeTruthy();
+  fireEvent.change(input, { target: { value: 'vaswani' } });
+  expect(reads).toBe(initialReads);
+  rerender(
+    <GlobalSearchDialog
+      {...props}
+      source={{ ...data, papers: [{ ...first, title: 'Replacement', authors: ['Someone else'] }] }}
+    />,
+  );
+  expect(screen.getByText('没有找到匹配的内容。')).toBeTruthy();
+  fireEvent.change(input, { target: { value: 'replacement' } });
+  expect(screen.getByRole('button', { name: /Replacement/ })).toBeTruthy();
+});

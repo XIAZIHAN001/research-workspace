@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as search from './searchWorkspace';
 import { createAnnotation } from '../../domain/annotation';
 import { createConcept, createEvidence } from '../../domain/knowledge';
 import { createPaper } from '../../domain/papers';
@@ -110,5 +111,113 @@ describe('searchWorkspace', () => {
     const groups = searchWorkspace(workspace(9), 'transformer', 3);
     expect(groups[0]?.total).toBe(9);
     expect(groups[0]?.results).toHaveLength(3);
+  });
+});
+
+describe('workspace search compatibility fixtures', () => {
+  it('preserves source ordering, phrase ranking, snippets and unusual limits', () => {
+    const base = workspace();
+    const paper = base.papers[0]!;
+    const note = base.annotations[0]!;
+    const concept = base.concepts[0]!;
+    const entry = base.evidence[0]!;
+    const texts = [
+      'body only',
+      'alpha beta',
+      'alpha\t beta',
+      `${'x'.repeat(91)} alpha beta`,
+      'İSTANBUL 中文 😀 alpha beta',
+      '  alpha\n beta  ',
+      'alpha beta again',
+      '   ',
+    ];
+    const fixture: WorkspaceSearchSource = {
+      papers: texts.map((title, i) => ({
+        ...paper,
+        id: `p${String(i)}`,
+        title,
+        authors: ['alpha beta'],
+      })),
+      annotations: texts.map((text, i) => ({
+        ...note,
+        id: `n${String(i)}`,
+        note: text,
+        quote: `${'前'.repeat(70)} İSTANBUL 中文 😀 alpha beta end`,
+        paperId: i === 0 ? 'missing' : 'p0',
+      })),
+      concepts: texts.map((name, i) => ({
+        ...concept,
+        id: `c${String(i)}`,
+        name,
+        aliases: ['alpha beta'],
+        summary: `${'x '.repeat(80)} 中文 alpha beta`,
+        projectIds: i === 0 ? [] : ['project'],
+      })),
+      evidence: texts.map((quote, i) => ({
+        ...entry,
+        id: `e${String(i)}`,
+        quote,
+        note: 'alpha beta 中文 İSTANBUL',
+        conceptId: 'missing',
+        paperId: 'p0',
+      })),
+    };
+    for (const query of ['alpha beta', ' BETA\tALPHA ', '中文', 'i̇', '😀', 'missing', '   ']) {
+      for (const limit of [undefined, 1, 2.9, 0, -5, NaN, Infinity]) {
+        expect(searchWorkspace(fixture, query, limit)).toMatchSnapshot(`${query}/${String(limit)}`);
+      }
+    }
+  });
+});
+
+describe('explicit immutable workspace index', () => {
+  it('normalizes source text once, rather than on each query', () => {
+    expect(search).toHaveProperty('createWorkspaceSearchIndex');
+    const data = workspace(50);
+    const index = search.createWorkspaceSearchIndex(data);
+    const lowercase = vi.spyOn(String.prototype, 'toLowerCase');
+    try {
+      const results = search.searchWorkspaceIndex(index, 'TRANSFORMER');
+      const calls = lowercase.mock.calls.length;
+      lowercase.mockRestore();
+      expect(results[0]?.total).toBe(50);
+      expect(results[0]?.results).toHaveLength(6);
+      expect(calls).toBe(1);
+    } finally {
+      lowercase.mockRestore();
+    }
+  });
+
+  it('snapshots mutable input explicitly while the compatibility wrapper remains fresh', () => {
+    expect(search).toHaveProperty('createWorkspaceSearchIndex');
+    const data = workspace();
+    const index = search.createWorkspaceSearchIndex(data);
+    data.papers[0]!.title = 'Replacement paper';
+    expect(search.searchWorkspaceIndex(index, 'attention')[0]?.results[0]?.title).toBe(
+      'Attention Is All You Need',
+    );
+    expect(searchWorkspace(data, 'replacement')[0]?.results[0]?.title).toBe('Replacement paper');
+    expect(
+      search.searchWorkspaceIndex(search.createWorkspaceSearchIndex(data), 'replacement')[0]
+        ?.results[0]?.title,
+    ).toBe('Replacement paper');
+  });
+
+  it('materializes snippets only for bounded selected matches', () => {
+    expect(search).toHaveProperty('createWorkspaceSearchIndex');
+    const data = workspace(200);
+    for (const note of data.annotations) note.quote = `Transformer ${'x'.repeat(200)}`;
+    const index = search.createWorkspaceSearchIndex(data);
+    const slice = vi.spyOn(String.prototype, 'slice');
+    try {
+      const groups = search.searchWorkspaceIndex(index, 'transformer', 2);
+      const calls = slice.mock.calls.length;
+      slice.mockRestore();
+      expect(groups[0]?.total).toBe(200);
+      expect(groups[0]?.results).toHaveLength(2);
+      expect(calls).toBe(2);
+    } finally {
+      slice.mockRestore();
+    }
   });
 });
