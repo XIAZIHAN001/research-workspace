@@ -42,12 +42,9 @@ jobs:
         run: npm run build
       - name: Prepare Chinese screenshot fonts
         if: matrix.node == '24'
+        timeout-minutes: 4
         shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fonts-noto-cjk fontconfig
-          fc-cache -f
-          fc-match -f '%{family}: %{file}\n' 'Noto Sans CJK SC:lang=zh-cn'
+        run: node scripts/verify/prepare-cjk-font.mjs
       - name: Isolated Chromium recovery acceptance
         if: matrix.node == '24'
         shell: bash
