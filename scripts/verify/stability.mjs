@@ -138,15 +138,47 @@ async function createProject(page, name = PROJECT) {
   await page.getByRole('button', { name: '创建项目', exact: true }).click();
   await page.getByRole('heading', { level: 1, name, exact: true }).waitFor();
 }
+/** Mount/reload intentionally starts at Home; persisted selection does not reopen a view. */
+async function selectProject(page, name = PROJECT) {
+  const expand = page.getByLabel('展开侧栏');
+  if (await expand.count()) await expand.click();
+  await page
+    .getByRole('complementary', { name: '项目导航', exact: true })
+    .getByRole('button', { name, exact: true })
+    .click();
+  await page.getByRole('heading', { level: 1, name, exact: true }).waitFor();
+}
+
+async function waitForPdfText(page, timeout = 12_000) {
+  try {
+    await page.locator('.pdf-page[data-page="1"] .textLayer span').first().waitFor({ timeout });
+  } catch (error) {
+    // Read only known visible error surfaces, with a separate short bound if the renderer is
+    // unresponsive. This diagnostic never substitutes for rendering the expected PDF text.
+    const messages = await Promise.race([
+      page
+        .locator(
+          '.reader-status[role="alert"], .pdf-page-error, [role="dialog"] .hint-error[role="alert"]',
+        )
+        .filter({ visible: true })
+        .allTextContents()
+        .then((items) => items.slice(0, 3).map((item) => item.trim().slice(0, 500)))
+        .catch(() => []),
+      sleep(1500).then(() => ['Visible error inspection timed out.']),
+    ]);
+    throw new Error(
+      `PDF text did not render. Visible errors: ${messages.join(' | ') || '(none)'}`,
+      { cause: error },
+    );
+  }
+}
+
 async function importPdf(page) {
   await page.getByRole('button', { name: '导入新论文' }).click();
   const dialog = page.getByRole('dialog', { name: '导入论文' });
   await dialog.locator('input[type="file"][data-autofocus]').setInputFiles(PDF);
   await dialog.getByRole('button', { name: '导入', exact: true }).click();
-  await page
-    .locator('.pdf-page[data-page="1"] .textLayer span')
-    .first()
-    .waitFor({ timeout: 30_000 });
+  await waitForPdfText(page, 30_000);
   assert.match(
     await page.locator('.pdf-page[data-page="1"] .textLayer').innerText(),
     /MARKER-PAGE-1/,
@@ -352,6 +384,7 @@ async function tabExclusion() {
       const first = await context.newPage();
       await first.goto(origin);
       await createProject(first);
+      const beforeHandoff = await workspaceState(first);
       const second = await context.newPage();
       await second.goto(origin);
       await blocked(second);
@@ -367,7 +400,8 @@ async function tabExclusion() {
       await first.close();
       await second.reload();
       await ready(second);
-      await second.getByRole('heading', { level: 1, name: PROJECT, exact: true }).waitFor();
+      assert.deepEqual(await workspaceState(second), beforeHandoff);
+      await selectProject(second);
       const telemetry = await second.evaluate(() => window.__stability);
       assert.ok(
         telemetry.reads
@@ -482,8 +516,9 @@ async function backupRoundtrip() {
       await dialog.getByRole('button', { name: '重新载入以查看恢复后的内容' }).click();
       await ready(page);
       assert.equal((await workspaceState(page)).projects, sourceState.projects);
+      await selectProject(page);
       await page.getByRole('button', { name: '阅读', exact: true }).first().click();
-      await page.locator('.pdf-page[data-page="1"] .textLayer span').first().waitFor();
+      await waitForPdfText(page);
       assert.match(
         await page.locator('.pdf-page[data-page="1"] .textLayer').innerText(),
         /MARKER-PAGE-1/,
@@ -522,7 +557,8 @@ async function backupRoundtrip() {
       assert.equal(await dbRecord(page, 'rw.restore', 'journal', 'current'), null);
       await page.reload();
       await ready(page);
-      await page.getByRole('heading', { level: 1, name: 'Original isolated project' }).waitFor();
+      assert.deepEqual(await workspaceState(page), before);
+      await selectProject(page, 'Original isolated project');
     } finally {
       await close(context);
     }
@@ -695,8 +731,9 @@ async function crashPersistence() {
       await page.goto(origin);
       await ready(page);
       assert.deepEqual(await workspaceState(page), before);
+      await selectProject(page);
       await page.getByRole('button', { name: '阅读', exact: true }).first().click();
-      await page.locator('.pdf-page[data-page="1"] .textLayer span').first().waitFor();
+      await waitForPdfText(page);
       assert.match(
         await page.locator('.pdf-page[data-page="1"] .textLayer').innerText(),
         /MARKER-PAGE-1/,
@@ -754,6 +791,7 @@ buildEvidence = {
 const mime = {
   '.html': 'text/html',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
