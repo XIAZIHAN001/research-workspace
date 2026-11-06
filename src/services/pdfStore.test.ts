@@ -34,6 +34,7 @@ function failingFactory(error: DOMException): IDBFactory {
     objectStoreNames: { contains: () => true },
     transaction: () => {
       const transaction = {
+        durability: 'strict',
         objectStore: () => ({
           put: erroringRequest,
           get: erroringRequest,
@@ -293,4 +294,44 @@ it('closes a late successful PDF open after the blocked request already failed',
   await expect(createPdfBlobStore(factory).has('a'.repeat(64))).rejects.toThrow();
   request.onsuccess?.call(request, new Event('success'));
   expect(close).toHaveBeenCalledOnce();
+});
+
+it('requires acknowledged strict durability before writing PDF bytes', async () => {
+  const factory = freshFactory();
+  const open = factory.open.bind(factory);
+  let requested: IDBTransactionOptions | undefined;
+  vi.spyOn(factory, 'open').mockImplementation((name, version) => {
+    const request = open(name, version);
+    request.addEventListener('success', () => {
+      const database = request.result;
+      const transaction = database.transaction.bind(database);
+      vi.spyOn(database, 'transaction').mockImplementation((stores, mode, options) => {
+        requested = options;
+        return transaction(stores, mode, options);
+      });
+    });
+    return request;
+  });
+  const store = createPdfBlobStore(factory);
+  await store.put('a'.repeat(64), bytesOf('durable'));
+  expect(requested?.durability).toBe('strict');
+});
+
+it('refuses PDF writes when the engine silently ignores strict durability', async () => {
+  const factory = freshFactory();
+  const open = factory.open.bind(factory);
+  vi.spyOn(factory, 'open').mockImplementation((name, version) => {
+    const request = open(name, version);
+    request.addEventListener('success', () => {
+      const database = request.result;
+      const transaction = database.transaction.bind(database);
+      vi.spyOn(database, 'transaction').mockImplementation((stores, mode) =>
+        transaction(stores, mode),
+      );
+    });
+    return request;
+  });
+  const store = createPdfBlobStore(factory);
+  await expect(store.put('a'.repeat(64), bytesOf('not durable'))).rejects.toThrow(/持久/);
+  expect(await store.has('a'.repeat(64))).toBe(false);
 });

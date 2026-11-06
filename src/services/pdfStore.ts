@@ -179,7 +179,15 @@ export function createPdfBlobStore(
     try {
       const db = await database();
       return await new Promise<T>((resolve, reject) => {
-        const transaction = db.transaction(storeName, mode);
+        const transaction =
+          mode === 'readwrite'
+            ? db.transaction(storeName, mode, { durability: 'strict' })
+            : db.transaction(storeName, mode);
+        if (mode === 'readwrite' && transaction.durability !== 'strict') {
+          transaction.abort();
+          reject(new PdfStoreError('unavailable', '当前环境无法确认 PDF 严格持久化，已停止写入。'));
+          return;
+        }
         const request = work(transaction.objectStore(storeName));
         let result!: T;
         let settled = false;

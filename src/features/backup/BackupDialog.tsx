@@ -103,7 +103,8 @@ export function BackupDialog({
   const journal = useMemo(() => createIndexedDbJournal(), []);
 
   const requiresReload =
-    result?.status === 'restored' || (result?.status === 'failed' && !result.rolledBack);
+    result?.status === 'restored' ||
+    (result?.status === 'failed' && (!result.rolledBack || result.reloadRequired === true));
 
   const handleClose = useCallback(() => {
     // A successful restore leaves the running React stores behind the persisted values. Closing
@@ -292,6 +293,7 @@ export function BackupDialog({
             type="file"
             accept=".rwbackup,application/octet-stream"
             aria-label="选择备份文件"
+            disabled={busy !== null || requiresReload}
             onChange={onFileChange}
           />
         </div>
@@ -543,14 +545,20 @@ function RestoreResultView({ result, onReload }: { result: RestoreResult; onRelo
           ))}
         </ul>
       )}
-      {!result.rolledBack && (
-        <div className="backup-actions">
-          <p>工作区写入已暂停；恢复日志和文件均已保留，请重新载入完成恢复检查。</p>
-          <button type="button" className="btn btn-primary" onClick={onReload}>
-            重新载入以重试恢复检查
-          </button>
-        </div>
+      {result.manualRecoveryRequired === true && (
+        <p>
+          当前窗口已暂停写入。请勿重新载入或关闭应用；保留现有数据与恢复记录，联系维护人员人工处理。
+        </p>
       )}
+      {result.manualRecoveryRequired !== true &&
+        (!result.rolledBack || result.reloadRequired === true) && (
+          <div className="backup-actions">
+            <p>工作区写入已暂停，请重新载入完成恢复检查。</p>
+            <button type="button" className="btn btn-primary" onClick={onReload}>
+              重新载入以重试恢复检查
+            </button>
+          </div>
+        )}
       {result.rolledBack && (
         <p className="backup-message is-info">
           本次恢复写入的内容已经撤销；原有项目、笔记与知识没有丢失。

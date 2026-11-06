@@ -55,6 +55,15 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+      - name: Retain isolated synthetic screenshots
+        if: always() && matrix.node == '24'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-browser-screenshots-${{ github.sha }}
+          path: .cache/stability/**/*.png
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
   windows:
     name: Rust and Windows NSIS

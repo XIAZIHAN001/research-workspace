@@ -1,4 +1,4 @@
-/* global window, IDBFactory, IDBObjectStore, indexedDB, PageTransitionEvent */
+/* global window, document, IDBFactory, IDBDatabase, IDBObjectStore, indexedDB, PageTransitionEvent */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -44,6 +44,7 @@ let origin;
 let browser;
 let sourceState;
 let exportReady = false;
+let processCrashEvidence = null;
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 async function test(name, work) {
@@ -648,7 +649,10 @@ async function recoveryFixtures() {
             'rw.paper': { previous: null, nextSha256: sha256('sepia') },
           },
         };
-        await seed(page, journal, { 'rw.theme': 'dark' });
+        await seed(page, journal, {
+          'rw.theme': 'dark',
+          ...(committed ? { 'rw.paper': 'sepia' } : {}),
+        });
         await page.goto(origin);
         await ready(page);
         assert.equal(
@@ -661,6 +665,174 @@ async function recoveryFixtures() {
       }
     });
   }
+  await test('incomplete committed legacy journal blocks and preserves raw data', async () => {
+    const context = await fresh();
+    try {
+      const page = await context.newPage();
+      const journal = {
+        id: 'synthetic-incomplete-legacy-commit',
+        startedAt: Date.now(),
+        committed: true,
+        keys: {
+          'rw.theme': { previous: 'light', nextSha256: sha256('dark') },
+          'rw.paper': { previous: null, nextSha256: sha256('sepia') },
+        },
+      };
+      await seed(page, journal, { 'rw.theme': 'dark' });
+      await page.goto(origin);
+      await blocked(page);
+      await assertNoStores(page);
+      assert.deepEqual(await dbRecord(page, 'rw.restore', 'journal', 'current'), journal);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          theme: window.localStorage.getItem('rw.theme'),
+          paper: window.localStorage.getItem('rw.paper'),
+        })),
+        { theme: 'dark', paper: null },
+      );
+    } finally {
+      await close(context);
+    }
+  });
+}
+
+async function checkpointRetirement() {
+  await test('retired checkpoint preserves later edits and blocks injected core-data loss', async () => {
+    const context = await fresh();
+    try {
+      await context.addInitScript(() => {
+        window.__checkpointCommits = [];
+        const original = IDBDatabase.prototype.transaction;
+        IDBDatabase.prototype.transaction = function (...args) {
+          const transaction = original.apply(this, args);
+          if (this.name === 'rw.restore' && transaction.mode === 'readwrite') {
+            transaction.addEventListener('complete', () => {
+              window.__checkpointCommits.push(transaction.durability);
+            });
+          }
+          return transaction;
+        };
+      });
+      const page = await context.newPage();
+      await page.goto(origin);
+      await createProject(page, 'Before synthetic checkpoint');
+      const previous = await workspaceState(page);
+      await createProject(page, 'Checkpoint restored project');
+      const expected = {
+        projects: (await workspaceState(page)).projects,
+        knowledge: JSON.stringify({
+          version: 2,
+          concepts: [],
+          evidence: [],
+          relations: [],
+          rejections: [],
+        }),
+      };
+      const checkpoint = {
+        id: 'synthetic-retirement-safety',
+        startedAt: Date.now(),
+        outcome: 'restored',
+        retired: false,
+        pdfsRequired: [],
+        pdfsToClean: [],
+        keys: {
+          ...Object.fromEntries(
+            Object.entries(expected).map(([key, next]) => [
+              `rw.${key}`,
+              { previous: previous[key], next, nextSha256: sha256(next) },
+            ]),
+          ),
+          'rw.review': { previous: null, next: null, nextSha256: sha256('') },
+          'rw.difficulties': { previous: null, next: null, nextSha256: sha256('') },
+        },
+      };
+      await page.goto(`${origin}/__fixture`);
+      await page.evaluate(async (checkpoint) => {
+        window.localStorage.removeItem('rw.projects');
+        window.localStorage.removeItem('rw.knowledge');
+        const db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open('rw.restore', 1);
+          request.onupgradeneeded = () => request.result.createObjectStore('journal');
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        try {
+          await new Promise((resolve, reject) => {
+            const transaction = db.transaction('journal', 'readwrite', { durability: 'strict' });
+            transaction.objectStore('journal').put(checkpoint, 'checkpoint');
+            transaction.oncomplete = resolve;
+            transaction.onabort = () => reject(transaction.error);
+          });
+        } finally {
+          db.close();
+        }
+      }, checkpoint);
+      await page.goto(origin);
+      await ready(page);
+      assert.deepEqual(await workspaceState(page), expected);
+      const retired = { ...checkpoint, retired: true };
+      assert.deepEqual(await dbRecord(page, 'rw.restore', 'journal', 'checkpoint'), retired);
+      assert.equal(await dbRecord(page, 'rw.restore', 'journal', 'current'), null);
+      const commits = await page.evaluate(() => window.__checkpointCommits);
+      assert.ok(commits.length > 0, 'recovery must commit checkpoint retirement before mounting');
+      assert.ok(commits.every((durability) => durability === 'strict'));
+
+      await createProject(page, 'Later checkpoint edit');
+      const edited = await workspaceState(page);
+      assert.notEqual(edited.projects, expected.projects);
+      await page.reload();
+      await ready(page);
+      assert.deepEqual(await workspaceState(page), edited);
+      assert.deepEqual(await dbRecord(page, 'rw.restore', 'journal', 'checkpoint'), retired);
+
+      // A deliberate valid revert can equal the old value. Retirement must prevent replay
+      // even in this case. These fixture mutations are injected, not process-crash evidence.
+      await page.goto(`${origin}/__fixture`);
+      await page.evaluate(
+        (projects) => window.localStorage.setItem('rw.projects', projects),
+        previous.projects,
+      );
+      await page.goto(origin);
+      await ready(page);
+      assert.deepEqual(await workspaceState(page), { ...expected, projects: previous.projects });
+      assert.deepEqual(await dbRecord(page, 'rw.restore', 'journal', 'checkpoint'), retired);
+
+      await page.goto(`${origin}/__fixture`);
+      await page.evaluate(() => window.localStorage.removeItem('rw.projects'));
+      await page.goto(origin);
+      await blocked(page);
+      const telemetry = await page.evaluate(() => window.__stability);
+      // Recovery must read core keys to detect loss; unlike corrupt-journal startup, a raw
+      // read is allowed here. Writes, editable UI and normal PDF store opening are not.
+      assert.ok(
+        telemetry.reads
+          .filter((entry) => ['rw.projects', 'rw.knowledge'].includes(entry.key))
+          .every((entry) => entry.locked),
+      );
+      assert.deepEqual(telemetry.writes, []);
+      assert.equal(
+        telemetry.opens.some((entry) => entry.name === 'rw.pdfs'),
+        false,
+      );
+      assert.equal(await page.getByLabel('新建项目', { exact: true }).count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.__checkpointCommits), []);
+      assert.deepEqual(await workspaceState(page), {
+        projects: null,
+        knowledge: expected.knowledge,
+      });
+      assert.deepEqual(await dbRecord(page, 'rw.restore', 'journal', 'checkpoint'), retired);
+      assert.equal(await dbRecord(page, 'rw.restore', 'journal', 'current'), null);
+      return {
+        loss: 'Injected deletion of rw.projects after retirement; not a real process crash',
+        replayedOnce: true,
+        retirementCommitDurabilities: commits,
+        laterEditAndRevertPreserved: true,
+        missingCoreBlockedWithoutWrites: true,
+      };
+    } finally {
+      await close(context);
+    }
+  });
 }
 
 async function launchPersistent(profile) {
@@ -712,24 +884,163 @@ async function killPersistent(instance) {
   await exited;
   await sleep(400);
 }
+async function processStorageSnapshot(page) {
+  let timer;
+  try {
+    return await Promise.race([
+      page.evaluate(async () => {
+        const snapshot = {
+          url: window.location.href,
+          origin: window.location.origin,
+          appScriptCount: document.querySelectorAll('script[src]').length,
+          workspace: {
+            projects: window.localStorage.getItem('rw.projects'),
+            knowledge: window.localStorage.getItem('rw.knowledge'),
+          },
+          localStorageKeys: Object.keys(window.localStorage).filter((key) => key.startsWith('rw.')),
+        };
+        const databases = await indexedDB.databases();
+        async function readExisting(name, stores) {
+          // Diagnostic reads must not create missing databases or perform an upgrade.
+          if (!databases.some((database) => database.name === name)) return { exists: false };
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open(name);
+            request.onupgradeneeded = () => request.transaction.abort();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+            request.onblocked = () => reject(new Error(`Diagnostic open blocked: ${name}`));
+          });
+          try {
+            const present = stores.filter((store) => db.objectStoreNames.contains(store));
+            const records = {};
+            if (present.length > 0) {
+              await new Promise((resolve, reject) => {
+                const transaction = db.transaction(present, 'readonly');
+                for (const store of present) {
+                  records[store] = [];
+                  const request = transaction.objectStore(store).openCursor();
+                  request.onsuccess = () => {
+                    const cursor = request.result;
+                    if (cursor === null) return;
+                    records[store].push({ key: cursor.key, value: cursor.value });
+                    cursor.continue();
+                  };
+                }
+                transaction.oncomplete = resolve;
+                transaction.onabort = () => reject(transaction.error);
+                transaction.onerror = () => reject(transaction.error);
+              });
+            }
+            return { exists: true, version: db.version, stores: records };
+          } finally {
+            db.close();
+          }
+        }
+        const readError = (error) => ({ error: String(error.message ?? error) });
+        snapshot.journal = await readExisting('rw.restore', ['journal']).catch(readError);
+        snapshot.pdfs = await readExisting('rw.pdfs', ['files', 'restore-gc']).catch(readError);
+        // Include both current and checkpoint records, but summarize duplicated workspace
+        // payloads. These profiles contain only this script's small synthetic backup.
+        for (const record of snapshot.journal.stores?.journal ?? []) {
+          if (record.value?.keys === undefined) continue;
+          record.value.keys = Object.fromEntries(
+            Object.entries(record.value.keys).map(([key, entry]) => [
+              key,
+              {
+                previousLength: entry.previous?.length ?? null,
+                nextLength: entry.next?.length ?? null,
+                nextSha256: entry.nextSha256,
+              },
+            ]),
+          );
+        }
+        for (const record of snapshot.pdfs.stores?.files ?? []) {
+          const { bytes, ...metadata } = record.value;
+          const digest = await crypto.subtle.digest('SHA-256', bytes);
+          record.value = {
+            ...metadata,
+            byteLength: bytes.byteLength,
+            actualSha256: Array.from(new Uint8Array(digest), (byte) =>
+              byte.toString(16).padStart(2, '0'),
+            ).join(''),
+          };
+        }
+        return snapshot;
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Storage diagnostic timed out')), 5000);
+      }),
+    ]);
+  } catch (error) {
+    return { error: String(error.message ?? error) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function crashScreenshot(page, filename, stage) {
+  const path = resolve(RUN, filename);
+  try {
+    await page.screenshot({ path, timeout: 3000 });
+    return { path: relative(ROOT, path), stage };
+  } catch (error) {
+    return { stage, error: String(error.message ?? error) };
+  }
+}
 async function crashPersistence() {
   await test('real Chromium process SIGKILL/reopen retains restored workspace and PDF', async () => {
     const profile = resolve(RUN, 'isolated-crash-profile');
+    processCrashEvidence = {
+      profile: relative(ROOT, profile),
+      origin,
+      launches: [],
+      screenshots: {},
+    };
     let instance = await launchPersistent(profile);
     try {
+      processCrashEvidence.launches.push({
+        pid: instance.child.pid,
+        profile: relative(ROOT, profile),
+        browserVersion: instance.connection.version(),
+      });
       let page = await instance.context.newPage();
       await page.goto(origin);
       await ready(page);
       const dialog = await inspectBackup(page);
+      // Capture before starting restore, never after success: a screenshot at the crash
+      // boundary would give buffered LocalStorage writes extra time to reach disk.
+      processCrashEvidence.screenshots.beforeRestore = await crashScreenshot(
+        page,
+        'before-process-crash-restore.png',
+        'Restore confirmation before Start Restore; not a post-success durability claim',
+      );
       await dialog.getByRole('button', { name: '开始恢复' }).click();
       await dialog.locator('.backup-message.is-success').waitFor();
       const before = await workspaceState(page);
       await killPersistent(instance);
+      processCrashEvidence.expectedWorkspace = before;
       instance = null;
       instance = await launchPersistent(profile);
+      processCrashEvidence.launches.push({
+        pid: instance.child.pid,
+        profile: relative(ROOT, profile),
+        browserVersion: instance.connection.version(),
+      });
       page = await instance.context.newPage();
+      await page.goto(`${origin}/__fixture`);
+      processCrashEvidence.beforeBootstrap = await processStorageSnapshot(page);
       await page.goto(origin);
-      await ready(page);
+      try {
+        await ready(page);
+      } finally {
+        // Keep failure evidence even if startup is blocked or the following exact assertion
+        // fails. The fixture above loaded no app, so its reads precede recovery/bootstrap.
+        processCrashEvidence.afterBootstrap = await processStorageSnapshot(page);
+        processCrashEvidence.screenshots.afterBootstrap = await crashScreenshot(
+          page,
+          'after-process-crash-startup.png',
+          'App after process restart, before exact persisted-state assertion',
+        );
+      }
       assert.deepEqual(await workspaceState(page), before);
       await selectProject(page);
       await page.getByRole('button', { name: '阅读', exact: true }).first().click();
@@ -771,6 +1082,7 @@ function makeReport(status) {
     externalRequests,
     aiRequests,
     pageErrors: errors,
+    processCrashEvidence,
     notExecuted: [
       'Windows installation and NSIS packaging',
       'Tauri credential lifecycle and fake-key endpoint binding',
@@ -862,6 +1174,7 @@ try {
   await backupRoundtrip();
   await interruptedPdfRestore();
   await recoveryFixtures();
+  await checkpointRetirement();
   await crashPersistence();
   await test('no online AI calls or external network requests', () => {
     assert.deepEqual(aiRequests, []);

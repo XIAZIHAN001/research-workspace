@@ -1,7 +1,13 @@
-import { IDBFactory, IDBObjectStore as FakeObjectStore } from 'fake-indexeddb';
+import {
+  IDBFactory,
+  IDBDatabase as FakeDatabase,
+  IDBObjectStore as FakeObjectStore,
+} from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertRestoreJournal,
+  assertRestoreCheckpoint,
+  type RestoreCheckpoint,
   createIndexedDbJournal,
   RestoreJournalError,
   type RestoreJournal,
@@ -9,6 +15,7 @@ import {
 
 const SHA_A = 'a'.repeat(64);
 const SHA_B = 'b'.repeat(64);
+const SHA_EMPTY = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
 function validJournal(): RestoreJournal {
   return {
@@ -130,6 +137,10 @@ const invalidJournals: { name: string; value: unknown }[] = [
   ...[null, undefined, 'true', 1].map((committed) => ({
     name: `an invalid committed value ${String(committed)}`,
     value: { ...validJournal(), committed },
+  })),
+  ...[false, null, undefined, 'true', 1, {}, []].map((conflicted) => ({
+    name: `an invalid conflicted value ${String(conflicted)}`,
+    value: { ...validJournal(), conflicted },
   })),
   ...['pdfsAdded', 'pdfsPending'].flatMap((field) =>
     [null, undefined, {}, [SHA_A, SHA_A], ['short'], [1], Array<string>(1)].map((value, index) => ({
@@ -486,5 +497,534 @@ describe('restore journal IndexedDB lifecycle', () => {
     } finally {
       database.close();
     }
+  });
+});
+
+function validCheckpoint(): RestoreCheckpoint {
+  return {
+    id: 'checkpoint-1',
+    startedAt: 1,
+    keys: {
+      'rw.projects': { previous: null, next: null, nextSha256: SHA_EMPTY },
+      'rw.knowledge': { previous: null, next: null, nextSha256: SHA_EMPTY },
+      'rw.review': { previous: null, next: null, nextSha256: SHA_EMPTY },
+      'rw.difficulties': { previous: null, next: null, nextSha256: SHA_EMPTY },
+    },
+    outcome: 'restored',
+    retired: false,
+    pdfsRequired: [SHA_A],
+    pdfsToClean: [SHA_B],
+  };
+}
+
+async function checkpointRaw(factory: IDBFactory, value: unknown): Promise<void> {
+  const database = await rawDatabase(factory);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction('journal', 'readwrite');
+      transaction.objectStore('journal').put(value, 'checkpoint');
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+describe('restore journal replay values', () => {
+  it.each(['new value', null])(
+    'accepts the optional exact next value %s alongside legacy entries',
+    async (next) => {
+      const store = createIndexedDbJournal(new IDBFactory());
+      const journal = {
+        ...validJournal(),
+        keys: {
+          'rw.projects': { previous: 'old', next, nextSha256: SHA_A },
+          'rw.knowledge': { previous: null, nextSha256: SHA_B },
+        },
+      };
+      await store.write(journal);
+      await expect(store.read()).resolves.toEqual(journal);
+    },
+  );
+
+  it.each([undefined, 1, {}, []])('rejects malformed explicit next value %j', async (next) => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    const journal = {
+      ...validJournal(),
+      keys: { 'rw.projects': { previous: null, next, nextSha256: SHA_A } },
+    };
+    await expect(store.write(journal as RestoreJournal)).rejects.toMatchObject({
+      reason: 'corrupt',
+    });
+  });
+
+  it('allows 16 MiB each of previous and next values but rejects either aggregate growing', () => {
+    const half = 'x'.repeat(4 * 1024 * 1024);
+    const journal = {
+      ...validJournal(),
+      keys: {
+        'rw.projects': { previous: half, next: half, nextSha256: SHA_A },
+        'rw.knowledge': { previous: half, next: half, nextSha256: SHA_B },
+      },
+    };
+    expect(() => assertRestoreJournal(journal)).not.toThrow();
+    journal.keys['rw.projects'].next += 'x';
+    expect(() => assertRestoreJournal(journal)).toThrow(RestoreJournalError);
+    journal.keys['rw.projects'].next = half;
+    journal.keys['rw.projects'].previous += 'x';
+    expect(() => assertRestoreJournal(journal)).toThrow(RestoreJournalError);
+  });
+});
+
+const invalidCheckpoints: { name: string; value: unknown }[] = [
+  { name: 'null', value: null },
+  { name: 'undefined', value: undefined },
+  { name: 'scalar', value: 'checkpoint' },
+  { name: 'array', value: [] },
+  ...['id', 'startedAt', 'keys', 'outcome', 'retired', 'pdfsRequired', 'pdfsToClean'].map(
+    (field) => {
+      const value = { ...validCheckpoint() } as Record<string, unknown>;
+      delete value[field];
+      return { name: `missing ${field}`, value };
+    },
+  ),
+  ...['', ' ', 'x'.repeat(129)].map((id) => ({
+    name: `invalid id ${id}`,
+    value: { ...validCheckpoint(), id },
+  })),
+  ...[0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1].map((startedAt) => ({
+    name: `invalid timestamp ${String(startedAt)}`,
+    value: { ...validCheckpoint(), startedAt },
+  })),
+  ...[undefined, null, 'pending', 1].map((outcome) => ({
+    name: `invalid outcome ${String(outcome)}`,
+    value: { ...validCheckpoint(), outcome },
+  })),
+  ...[undefined, null, 'true', 1].map((retired) => ({
+    name: `invalid retired ${String(retired)}`,
+    value: { ...validCheckpoint(), retired },
+  })),
+  { name: 'unknown root field', value: { ...validCheckpoint(), committed: true } },
+  { name: 'array keys', value: { ...validCheckpoint(), keys: [] } },
+  { name: 'empty keys', value: { ...validCheckpoint(), keys: {} } },
+  ...['rw.projects', 'rw.knowledge', 'rw.review', 'rw.difficulties'].map((key) => {
+    const value = validCheckpoint();
+    delete value.keys[key];
+    return { name: `missing core key ${key}`, value };
+  }),
+  {
+    name: 'unknown storage key',
+    value: {
+      ...validCheckpoint(),
+      keys: {
+        ...validCheckpoint().keys,
+        unsafe: { previous: null, next: null, nextSha256: SHA_A },
+      },
+    },
+  },
+  {
+    name: 'legacy entry without next',
+    value: { ...validCheckpoint(), keys: { ...validCheckpoint().keys, ...validJournal().keys } },
+  },
+  ...[undefined, 1, {}, []].map((next) => ({
+    name: `invalid next ${String(next)}`,
+    value: {
+      ...validCheckpoint(),
+      keys: {
+        ...validCheckpoint().keys,
+        'rw.projects': { previous: null, next, nextSha256: SHA_A },
+      },
+    },
+  })),
+  {
+    name: 'unknown entry field',
+    value: {
+      ...validCheckpoint(),
+      keys: {
+        ...validCheckpoint().keys,
+        'rw.projects': { previous: null, next: null, nextSha256: SHA_A, extra: true },
+      },
+    },
+  },
+  {
+    name: 'invalid digest',
+    value: {
+      ...validCheckpoint(),
+      keys: {
+        ...validCheckpoint().keys,
+        'rw.projects': { previous: null, next: null, nextSha256: 'bad' },
+      },
+    },
+  },
+  ...[undefined, null, {}, ['bad'], [SHA_A, SHA_A], Array<string>(1)].map(
+    (pdfsRequired, index) => ({
+      name: `invalid pdfsRequired ${String(index)}`,
+      value: { ...validCheckpoint(), pdfsRequired },
+    }),
+  ),
+];
+
+for (const [index, pdfsToClean] of [
+  undefined,
+  null,
+  {},
+  ['bad'],
+  [SHA_A, SHA_A],
+  Array<string>(1),
+].entries()) {
+  invalidCheckpoints.push({
+    name: `invalid pdfsToClean ${String(index)}`,
+    value: { ...validCheckpoint(), pdfsToClean },
+  });
+}
+
+describe('durable restore checkpoints', () => {
+  it('returns null only for an absent checkpoint', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await expect(store.readCheckpoint()).resolves.toBeNull();
+    await store.write(validJournal());
+    await expect(store.readCheckpoint()).resolves.toBeNull();
+    await expect(store.read()).resolves.toEqual(validJournal());
+  });
+
+  it.each(invalidCheckpoints)(
+    'rejects a stored $name checkpoint and preserves it',
+    async ({ value }) => {
+      const factory = new IDBFactory();
+      await checkpointRaw(factory, value);
+      const store = createIndexedDbJournal(factory);
+      await expect(store.readCheckpoint()).rejects.toMatchObject({ reason: 'corrupt' });
+      await expect(store.readCheckpoint()).rejects.toMatchObject({ reason: 'corrupt' });
+    },
+  );
+
+  it.each(invalidCheckpoints)(
+    'rejects publishing $name without altering prior state',
+    async ({ value }) => {
+      const store = createIndexedDbJournal(new IDBFactory());
+      await store.publishCheckpoint(validCheckpoint());
+      await store.write(validJournal());
+      await expect(store.publishCheckpoint(value as RestoreCheckpoint)).rejects.toMatchObject({
+        reason: 'corrupt',
+      });
+      await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+      await expect(store.read()).resolves.toEqual(validJournal());
+    },
+  );
+
+  it.each(['restored', 'rolled-back'] as const)(
+    'publishes a %s checkpoint and removes only the active journal',
+    async (outcome) => {
+      const store = createIndexedDbJournal(new IDBFactory());
+      await store.write(validJournal());
+      const checkpoint = { ...validCheckpoint(), outcome };
+      await store.publishCheckpoint(checkpoint);
+      await expect(store.read()).resolves.toBeNull();
+      await expect(store.readCheckpoint()).resolves.toEqual(checkpoint);
+      await store.write(validJournal());
+      await store.clear();
+      await expect(store.readCheckpoint()).resolves.toEqual(checkpoint);
+    },
+  );
+
+  it('round-trips null next values distinctly from the empty string', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    const checkpoint = {
+      ...validCheckpoint(),
+      keys: {
+        ...validCheckpoint().keys,
+        'rw.projects': { previous: null, next: null, nextSha256: SHA_A },
+        'rw.knowledge': { previous: '', next: '', nextSha256: SHA_B },
+      },
+    };
+    await store.publishCheckpoint(checkpoint);
+    await expect(store.readCheckpoint()).resolves.toEqual(checkpoint);
+  });
+
+  it('rejects non-plain checkpoints and accessors without invoking them', () => {
+    const accessor = vi.fn(() => 'checkpoint');
+    const checkpoint = validCheckpoint();
+    Object.defineProperty(checkpoint, 'id', { enumerable: true, get: accessor });
+    expect(() => assertRestoreCheckpoint(checkpoint)).toThrow(RestoreJournalError);
+    expect(accessor).not.toHaveBeenCalled();
+    expect(() =>
+      assertRestoreCheckpoint(
+        Object.assign(Object.create({ extra: true }) as object, validCheckpoint()),
+      ),
+    ).toThrow(RestoreJournalError);
+  });
+
+  it('bounds checkpoint values and required PDF hashes', () => {
+    const half = 'x'.repeat(4 * 1024 * 1024);
+    const checkpoint = {
+      ...validCheckpoint(),
+      keys: {
+        ...validCheckpoint().keys,
+        'rw.projects': { previous: half, next: half, nextSha256: SHA_A },
+        'rw.knowledge': { previous: half, next: half, nextSha256: SHA_B },
+      },
+      pdfsRequired: Array.from({ length: 10_000 }, (_, index) =>
+        index.toString(16).padStart(64, '0'),
+      ),
+    };
+    expect(() => assertRestoreCheckpoint(checkpoint)).not.toThrow();
+    checkpoint.keys['rw.projects'].next += 'x';
+    expect(() => assertRestoreCheckpoint(checkpoint)).toThrow(RestoreJournalError);
+    checkpoint.keys['rw.projects'].next = half;
+    checkpoint.pdfsRequired.push(SHA_A);
+    expect(() => assertRestoreCheckpoint(checkpoint)).toThrow(RestoreJournalError);
+  });
+
+  it('bounds cleanup obligations independently from required PDF hashes', () => {
+    const checkpoint = {
+      ...validCheckpoint(),
+      pdfsToClean: Array.from({ length: 10_000 }, (_, index) =>
+        index.toString(16).padStart(64, '0'),
+      ),
+    };
+    expect(() => assertRestoreCheckpoint(checkpoint)).not.toThrow();
+    checkpoint.pdfsToClean.push(SHA_A);
+    expect(() => assertRestoreCheckpoint(checkpoint)).toThrow(RestoreJournalError);
+  });
+
+  it('revalidates a checkpoint changed while its database opens', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    const checkpoint = validCheckpoint();
+    const publishing = store.publishCheckpoint(checkpoint);
+    checkpoint.id = '';
+    await expect(publishing).rejects.toMatchObject({ reason: 'corrupt' });
+    await expect(store.readCheckpoint()).resolves.toBeNull();
+  });
+
+  it('preserves the previous checkpoint and active journal if promotion aborts after both requests succeed', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    await store.write(validJournal());
+    const remove = FakeObjectStore.prototype.delete;
+    const abort = vi.spyOn(FakeObjectStore.prototype, 'delete').mockImplementation(function (
+      this: IDBObjectStore,
+      key,
+    ) {
+      const request = remove.call(this, key);
+      request.addEventListener('success', () => request.transaction?.abort());
+      return request;
+    });
+    await expect(
+      store.publishCheckpoint({ ...validCheckpoint(), id: 'replacement' }),
+    ).rejects.toMatchObject({ reason: 'write' });
+    abort.mockRestore();
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+    await expect(store.read()).resolves.toEqual(validJournal());
+  });
+
+  it('retires only a matching checkpoint without removing its replay data or the active journal', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    await store.write(validJournal());
+    await store.retireCheckpoint('checkpoint-1');
+    await expect(store.readCheckpoint()).resolves.toEqual({ ...validCheckpoint(), retired: true });
+    await expect(store.read()).resolves.toEqual(validJournal());
+    await store.retireCheckpoint('checkpoint-1');
+    await expect(store.readCheckpoint()).resolves.toMatchObject({ retired: true });
+  });
+
+  it('rejects retiring missing or mismatched checkpoints without creating or changing them', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await expect(store.retireCheckpoint('missing')).rejects.toMatchObject({ reason: 'write' });
+    await expect(store.readCheckpoint()).resolves.toBeNull();
+    await store.publishCheckpoint(validCheckpoint());
+    await expect(store.retireCheckpoint('wrong')).rejects.toMatchObject({ reason: 'write' });
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+  });
+
+  it('preserves a corrupt checkpoint when retirement cannot validate it', async () => {
+    const factory = new IDBFactory();
+    await checkpointRaw(factory, undefined);
+    const store = createIndexedDbJournal(factory);
+    await expect(store.retireCheckpoint('checkpoint-1')).rejects.toMatchObject({
+      reason: 'corrupt',
+    });
+    await expect(store.readCheckpoint()).rejects.toMatchObject({ reason: 'corrupt' });
+  });
+
+  it('preserves retirement state when its transaction aborts after the write request succeeds', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    const put = FakeObjectStore.prototype.put;
+    const abort = vi.spyOn(FakeObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value,
+      key,
+    ) {
+      const request = put.call(this, value, key);
+      request.addEventListener('success', () => request.transaction?.abort());
+      return request;
+    });
+    await expect(store.retireCheckpoint('checkpoint-1')).rejects.toMatchObject({ reason: 'write' });
+    abort.mockRestore();
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+  });
+});
+
+describe('restore journal strict transaction durability', () => {
+  it('requests and verifies strict durability on every mutation but not readonly transactions', async () => {
+    const transactions: {
+      mode: IDBTransactionMode;
+      requested?: IDBTransactionDurability;
+      accepted: IDBTransactionDurability;
+    }[] = [];
+    const original = FakeDatabase.prototype.transaction;
+    vi.spyOn(FakeDatabase.prototype, 'transaction').mockImplementation(function (
+      this: IDBDatabase,
+      names,
+      mode,
+      options,
+    ) {
+      const transaction = original.call(this, names, mode, options);
+      transactions.push({
+        mode: transaction.mode,
+        requested: options?.durability,
+        accepted: transaction.durability,
+      });
+      return transaction;
+    });
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.write(validJournal());
+    await store.read();
+    await store.markConflicted('crash');
+    await store.publishCheckpoint(validCheckpoint());
+    await store.readCheckpoint();
+    await store.retireCheckpoint('checkpoint-1');
+    await store.clear();
+    const writes = transactions.filter((transaction) => transaction.mode === 'readwrite');
+    expect(writes).toHaveLength(5);
+    expect(
+      writes.every(
+        (transaction) => transaction.requested === 'strict' && transaction.accepted === 'strict',
+      ),
+    ).toBe(true);
+    expect(
+      transactions
+        .filter((transaction) => transaction.mode === 'readonly')
+        .every((transaction) => transaction.requested === undefined),
+    ).toBe(true);
+  });
+
+  it.each(['ignored', 'unsupported'] as const)(
+    'fails closed when strict durability is %s',
+    async (behavior) => {
+      const store = createIndexedDbJournal(new IDBFactory());
+      await store.write(validJournal());
+      const original = FakeDatabase.prototype.transaction;
+      const substitute = vi
+        .spyOn(FakeDatabase.prototype, 'transaction')
+        .mockImplementation(function (this: IDBDatabase, names, mode, options) {
+          if (mode === 'readwrite') {
+            if (behavior === 'unsupported' && options?.durability === 'strict')
+              throw new TypeError('Strict durability unsupported');
+            return original.call(this, names, mode);
+          }
+          return original.call(this, names, mode, options);
+        });
+      await expect(store.write({ ...validJournal(), id: 'replacement' })).rejects.toMatchObject({
+        reason: 'write',
+      });
+      await expect(store.clear()).rejects.toMatchObject({ reason: 'write' });
+      await expect(store.markConflicted('crash')).rejects.toMatchObject({ reason: 'write' });
+      substitute.mockRestore();
+      await expect(store.read()).resolves.toEqual(validJournal());
+    },
+  );
+});
+
+describe('restore journal conflict evidence', () => {
+  it('round-trips the true-only conflict marker', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    const journal = { ...validJournal(), conflicted: true as const };
+    await store.write(journal);
+    await expect(store.read()).resolves.toEqual(journal);
+  });
+
+  it('marks only the matching active journal and preserves all recovery evidence', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    const journal: RestoreJournal = {
+      ...validJournal(),
+      keys: {
+        'rw.projects': { previous: 'before', next: 'after', nextSha256: SHA_A },
+        'rw.knowledge': { previous: null, next: null, nextSha256: SHA_EMPTY },
+      },
+      phase: 'data',
+      committed: false,
+      pdfsAdded: [SHA_A],
+      pdfsPending: [SHA_B],
+    };
+    await store.write(journal);
+    await store.markConflicted('crash');
+    await expect(store.read()).resolves.toEqual({ ...journal, conflicted: true });
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+    await store.markConflicted('crash');
+    await expect(store.read()).resolves.toEqual({ ...journal, conflicted: true });
+  });
+
+  it('rejects a missing active journal without creating one or changing the checkpoint', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    await expect(store.markConflicted('crash')).rejects.toMatchObject({ reason: 'write' });
+    await expect(store.read()).resolves.toBeNull();
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+  });
+
+  it('rejects a mismatched active journal without changing either record', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    await store.write(validJournal());
+    await expect(store.markConflicted('another-restore')).rejects.toMatchObject({
+      reason: 'write',
+    });
+    await expect(store.read()).resolves.toEqual(validJournal());
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+  });
+
+  it.each([undefined, null, { ...validJournal(), conflicted: false }])(
+    'preserves corrupt active evidence %j without marking it',
+    async (value) => {
+      const factory = new IDBFactory();
+      const store = createIndexedDbJournal(factory);
+      await store.publishCheckpoint(validCheckpoint());
+      await storeRaw(factory, value);
+      await expect(store.markConflicted('crash')).rejects.toMatchObject({ reason: 'corrupt' });
+      expect(await readRaw(factory)).toEqual(value);
+      await expect(store.read()).rejects.toMatchObject({ reason: 'corrupt' });
+      await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
+    },
+  );
+
+  it.each(['', ' ', 'x'.repeat(129)])('rejects an invalid conflict id %j', async (id) => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.write(validJournal());
+    await expect(store.markConflicted(id)).rejects.toMatchObject({ reason: 'corrupt' });
+    await expect(store.read()).resolves.toEqual(validJournal());
+  });
+
+  it('preserves the original active journal if marking aborts after its write succeeds', async () => {
+    const store = createIndexedDbJournal(new IDBFactory());
+    await store.publishCheckpoint(validCheckpoint());
+    await store.write(validJournal());
+    const put = FakeObjectStore.prototype.put;
+    const abort = vi.spyOn(FakeObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value,
+      key,
+    ) {
+      const request = put.call(this, value, key);
+      request.addEventListener('success', () => request.transaction?.abort());
+      return request;
+    });
+    await expect(store.markConflicted('crash')).rejects.toMatchObject({ reason: 'write' });
+    abort.mockRestore();
+    await expect(store.read()).resolves.toEqual(validJournal());
+    await expect(store.readCheckpoint()).resolves.toEqual(validCheckpoint());
   });
 });

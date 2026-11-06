@@ -16,11 +16,13 @@ const DB_NAME = 'rw.restore';
 const DB_VERSION = 1;
 const STORE = 'journal';
 const KEY = 'current';
+const CHECKPOINT_KEY = 'checkpoint';
 const OPEN_TIMEOUT_MS = 5_000;
-const MAX_KEYS = 64;
-const MAX_PDFS = 10_000;
-/** Bound the retained LocalStorage strings to 16 MiB of UTF-16 code units. */
-const MAX_PREVIOUS_BYTES = 16 * 1024 * 1024;
+export const MAX_RESTORE_KEYS = 64;
+export const MAX_RESTORE_PDFS = 10_000;
+/** Each side of the retained LocalStorage values is bounded to 16 MiB of UTF-16. */
+export const MAX_RESTORE_VALUE_BYTES = 16 * 1024 * 1024;
+export const MAX_RESTORE_TOTAL_BYTES = 2 * MAX_RESTORE_VALUE_BYTES;
 const SHA256 = /^[a-f0-9]{64}$/;
 
 // Only the keys restoreWorkspace actually writes may ever be used for automatic rollback.
@@ -50,6 +52,7 @@ const JOURNAL_FIELDS: ReadonlySet<string> = new Set([
   'startedAt',
   'keys',
   'committed',
+  'conflicted',
   'phase',
   'pdfsAdded',
   'pdfsPending',
@@ -57,6 +60,8 @@ const JOURNAL_FIELDS: ReadonlySet<string> = new Set([
 
 export interface RestoreJournalEntry {
   previous: string | null;
+  /** Exact replay value for new journals; absent in legacy digest-only journals. */
+  next?: string | null;
   nextSha256: string;
 }
 
@@ -71,6 +76,8 @@ export interface RestoreJournal {
    * treated as half-written: rolling it back would undo a restore the reader was told succeeded.
    */
   committed?: boolean;
+  /** Persistent conflict evidence forbids automatic replay of this active journal. */
+  conflicted?: true;
   /** Prepared journals have not started LocalStorage writes, even if all keys already match. */
   phase?: 'prepared' | 'data';
   /** Files confirmed to have been newly added by this restore, never pre-existing files. */
@@ -78,6 +85,28 @@ export interface RestoreJournal {
   /** Write-ahead intent for new files whose write outcome may still be unknown after a crash. */
   pdfsPending?: string[];
 }
+
+/** A retained IndexedDB copy of the outcome, independent of LocalStorage's buffered flush. */
+export interface RestoreCheckpoint {
+  id: string;
+  startedAt: number;
+  keys: Record<string, RestoreJournalEntry & { next: string | null }>;
+  outcome: 'restored' | 'rolled-back';
+  retired: boolean;
+  pdfsRequired: string[];
+  /** Restore-owned additions whose cleanup must survive active-journal promotion. */
+  pdfsToClean: string[];
+}
+
+const CHECKPOINT_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'startedAt',
+  'keys',
+  'outcome',
+  'retired',
+  'pdfsRequired',
+  'pdfsToClean',
+]);
 
 export type RestoreJournalFailure = 'corrupt' | 'unavailable' | 'read' | 'write' | 'blocked';
 
@@ -95,6 +124,12 @@ export interface RestoreJournalStore {
   read: () => Promise<RestoreJournal | null>;
   write: (journal: RestoreJournal) => Promise<void>;
   clear: () => Promise<void>;
+  /** Retains all active recovery evidence while durably recording an observed conflict. */
+  markConflicted: (id: string) => Promise<void>;
+  readCheckpoint: () => Promise<RestoreCheckpoint | null>;
+  /** Publishes the new retained outcome and removes only the active journal atomically. */
+  publishCheckpoint: (checkpoint: RestoreCheckpoint) => Promise<void>;
+  retireCheckpoint: (id: string) => Promise<void>;
 }
 
 function corrupt(): never {
@@ -124,7 +159,7 @@ function assertPlainRecord(
 function assertPdfHashes(value: unknown): asserts value is string[] {
   if (
     !Array.isArray(value) ||
-    value.length > MAX_PDFS ||
+    value.length > MAX_RESTORE_PDFS ||
     Object.getPrototypeOf(value) !== Array.prototype
   )
     corrupt();
@@ -141,10 +176,7 @@ function assertPdfHashes(value: unknown): asserts value is string[] {
   }
 }
 
-/** Validate both persisted journals and journal implementations supplied by callers. */
-export function assertRestoreJournal(value: unknown): asserts value is RestoreJournal {
-  assertPlainRecord(value, JOURNAL_FIELDS.size);
-  if (Object.keys(value).some((field) => !JOURNAL_FIELDS.has(field))) corrupt();
+function assertIdentity(value: Record<string, unknown>): void {
   if (typeof value.id !== 'string' || value.id.trim().length === 0 || value.id.length > 128)
     corrupt();
   if (
@@ -153,28 +185,68 @@ export function assertRestoreJournal(value: unknown): asserts value is RestoreJo
     value.startedAt <= 0
   )
     corrupt();
-  if (Object.hasOwn(value, 'committed') && typeof value.committed !== 'boolean') corrupt();
-  if (Object.hasOwn(value, 'phase') && value.phase !== 'prepared' && value.phase !== 'data')
-    corrupt();
-  for (const field of ['pdfsAdded', 'pdfsPending']) {
-    if (Object.hasOwn(value, field)) assertPdfHashes(value[field]);
-  }
-  assertPlainRecord(value.keys, MAX_KEYS);
-  const entries = Object.entries(value.keys);
+}
+
+function assertEntries(value: unknown, requireNext: boolean): void {
+  assertPlainRecord(value, MAX_RESTORE_KEYS);
   let previousBytes = 0;
-  for (const [key, entry] of entries) {
+  let nextBytes = 0;
+  for (const [key, entry] of Object.entries(value)) {
     if (!RESTORE_KEYS.has(key)) corrupt();
-    assertPlainRecord(entry, 2);
+    assertPlainRecord(entry, 3);
     if (
-      Object.keys(entry).length !== 2 ||
+      Object.keys(entry).some(
+        (field) => field !== 'previous' && field !== 'next' && field !== 'nextSha256',
+      ) ||
       !Object.hasOwn(entry, 'previous') ||
-      !Object.hasOwn(entry, 'nextSha256')
+      !Object.hasOwn(entry, 'nextSha256') ||
+      (requireNext && !Object.hasOwn(entry, 'next'))
     )
       corrupt();
     if (entry.previous !== null && typeof entry.previous !== 'string') corrupt();
     if (typeof entry.nextSha256 !== 'string' || !SHA256.test(entry.nextSha256)) corrupt();
     previousBytes += entry.previous === null ? 0 : entry.previous.length * 2;
-    if (previousBytes > MAX_PREVIOUS_BYTES) corrupt();
+    if (Object.hasOwn(entry, 'next')) {
+      if (entry.next !== null && typeof entry.next !== 'string') corrupt();
+      nextBytes += entry.next === null ? 0 : entry.next.length * 2;
+    }
+    if (
+      previousBytes > MAX_RESTORE_VALUE_BYTES ||
+      nextBytes > MAX_RESTORE_VALUE_BYTES ||
+      previousBytes + nextBytes > MAX_RESTORE_TOTAL_BYTES
+    )
+      corrupt();
+  }
+}
+
+/** Validate both persisted journals and journal implementations supplied by callers. */
+export function assertRestoreJournal(value: unknown): asserts value is RestoreJournal {
+  assertPlainRecord(value, JOURNAL_FIELDS.size);
+  if (Object.keys(value).some((field) => !JOURNAL_FIELDS.has(field))) corrupt();
+  assertIdentity(value);
+  if (Object.hasOwn(value, 'committed') && typeof value.committed !== 'boolean') corrupt();
+  if (Object.hasOwn(value, 'conflicted') && value.conflicted !== true) corrupt();
+  if (Object.hasOwn(value, 'phase') && value.phase !== 'prepared' && value.phase !== 'data')
+    corrupt();
+  for (const field of ['pdfsAdded', 'pdfsPending']) {
+    if (Object.hasOwn(value, field)) assertPdfHashes(value[field]);
+  }
+  assertEntries(value.keys, false);
+}
+
+/** Digests are structurally checked here; recovery verifies them against exact replay values. */
+export function assertRestoreCheckpoint(value: unknown): asserts value is RestoreCheckpoint {
+  assertPlainRecord(value, CHECKPOINT_FIELDS.size);
+  if (Object.keys(value).some((field) => !CHECKPOINT_FIELDS.has(field))) corrupt();
+  assertIdentity(value);
+  if (value.outcome !== 'restored' && value.outcome !== 'rolled-back') corrupt();
+  if (typeof value.retired !== 'boolean') corrupt();
+  assertPdfHashes(value.pdfsRequired);
+  assertPdfHashes(value.pdfsToClean);
+  assertEntries(value.keys, true);
+  // A checkpoint must retain the entire core workspace, including explicitly absent values.
+  for (const key of ['rw.projects', 'rw.knowledge', 'rw.review', 'rw.difficulties']) {
+    if (!Object.hasOwn(value.keys as object, key)) corrupt();
   }
 }
 
@@ -235,7 +307,7 @@ function open(factory: IDBFactory, onClosed: () => void): Promise<IDBDatabase> {
 function run<T>(
   database: IDBDatabase,
   mode: IDBTransactionMode,
-  work: (store: IDBObjectStore) => IDBRequest<T>,
+  work: (store: IDBObjectStore, abort: (error: unknown) => void) => IDBRequest<T>,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     let transaction: IDBTransaction | undefined;
@@ -245,15 +317,28 @@ function run<T>(
       if (settled) return;
       settled = true;
       reject(
-        new RestoreJournalError(
-          mode === 'readonly' ? 'read' : 'write',
-          '恢复日志读写失败。',
-          error,
-        ),
+        error instanceof RestoreJournalError
+          ? error
+          : new RestoreJournalError(
+              mode === 'readonly' ? 'read' : 'write',
+              '恢复日志读写失败。',
+              error,
+            ),
       );
     };
+    const abort = (error: unknown): void => {
+      try {
+        transaction?.abort();
+      } catch {
+        /* Preserve the original failure. */
+      }
+      fail(error);
+    };
     try {
-      transaction = database.transaction(STORE, mode);
+      transaction =
+        mode === 'readwrite'
+          ? database.transaction(STORE, mode, { durability: 'strict' })
+          : database.transaction(STORE, mode);
       // The journal is what makes a restore recoverable. Resolve only after the transaction,
       // not its request, succeeds so callers cannot change workspace data before durability.
       transaction.oncomplete = () => {
@@ -263,20 +348,37 @@ function run<T>(
       };
       transaction.onerror = () => fail(transaction?.error);
       transaction.onabort = () => fail(transaction?.error);
-      const request = work(transaction.objectStore(STORE));
+      if (mode === 'readwrite' && transaction.durability !== 'strict') {
+        throw new RestoreJournalError(
+          'write',
+          '浏览器未提供严格持久化事务，已保留恢复数据并停止写入。',
+        );
+      }
+      const request = work(transaction.objectStore(STORE), abort);
       request.onsuccess = () => {
         result = request.result;
       };
       request.onerror = () => fail(request.error);
     } catch (error) {
-      try {
-        transaction?.abort();
-      } catch {
-        // The transaction may already have finished; preserve the original failure.
-      }
-      fail(error);
+      abort(error);
     }
   });
+}
+
+/** Presence and value share a transaction: a stored undefined is corruption, not absence. */
+async function readRecord(
+  database: IDBDatabase,
+  key: string,
+): Promise<{ exists: boolean; value: unknown }> {
+  let exists = false;
+  const value = await run<unknown>(database, 'readonly', (store) => {
+    const presence = store.getKey(key);
+    presence.onsuccess = () => {
+      exists = presence.result !== undefined;
+    };
+    return store.get(key);
+  });
+  return { exists, value };
 }
 
 /** Reading `indexedDB` can throw (sandboxed frames, a blocked-storage context); this cannot. */
@@ -310,16 +412,7 @@ export function createIndexedDbJournal(
   return {
     async read() {
       const db = await database();
-      let exists = false;
-      const value = await run<unknown>(db, 'readonly', (store) => {
-        // get() returns undefined for both a missing key and a stored undefined value. Read
-        // presence in the same transaction, so only true absence can bypass validation.
-        const key = store.getKey(KEY);
-        key.onsuccess = () => {
-          exists = key.result !== undefined;
-        };
-        return store.get(KEY);
-      });
+      const { exists, value } = await readRecord(db, KEY);
       if (!exists) return null;
       assertRestoreJournal(value);
       return value;
@@ -334,6 +427,73 @@ export function createIndexedDbJournal(
     async clear() {
       const db = await database();
       await run(db, 'readwrite', (store) => store.delete(KEY));
+    },
+    async markConflicted(id) {
+      if (typeof id !== 'string' || id.trim().length === 0 || id.length > 128) corrupt();
+      const db = await database();
+      await run(db, 'readwrite', (store, abort) => {
+        let exists = false;
+        const presence = store.getKey(KEY);
+        presence.onsuccess = () => {
+          exists = presence.result !== undefined;
+        };
+        const request = store.get(KEY);
+        request.addEventListener('success', () => {
+          try {
+            if (!exists) throw new RestoreJournalError('write', '恢复日志不存在，不能标记冲突。');
+            const journal: unknown = request.result;
+            assertRestoreJournal(journal);
+            if (journal.id !== id)
+              throw new RestoreJournalError('write', '恢复日志已变更，不能标记冲突。');
+            store.put({ ...journal, conflicted: true }, KEY);
+          } catch (error) {
+            abort(error);
+          }
+        });
+        return request;
+      });
+    },
+    async readCheckpoint() {
+      const db = await database();
+      const { exists, value } = await readRecord(db, CHECKPOINT_KEY);
+      if (!exists) return null;
+      assertRestoreCheckpoint(value);
+      return value;
+    },
+    async publishCheckpoint(checkpoint) {
+      assertRestoreCheckpoint(checkpoint);
+      const db = await database();
+      assertRestoreCheckpoint(checkpoint);
+      await run(db, 'readwrite', (store) => {
+        store.put(checkpoint, CHECKPOINT_KEY);
+        return store.delete(KEY);
+      });
+    },
+    async retireCheckpoint(id) {
+      if (typeof id !== 'string' || id.trim().length === 0 || id.length > 128) corrupt();
+      const db = await database();
+      await run(db, 'readwrite', (store, abort) => {
+        let exists = false;
+        const presence = store.getKey(CHECKPOINT_KEY);
+        presence.onsuccess = () => {
+          exists = presence.result !== undefined;
+        };
+        const request = store.get(CHECKPOINT_KEY);
+        request.addEventListener('success', () => {
+          try {
+            if (!exists)
+              throw new RestoreJournalError('write', '恢复检查点不存在，不能标记为已确认。');
+            const checkpoint: unknown = request.result;
+            assertRestoreCheckpoint(checkpoint);
+            if (checkpoint.id !== id)
+              throw new RestoreJournalError('write', '恢复检查点已变更，不能标记为已确认。');
+            store.put({ ...checkpoint, retired: true }, CHECKPOINT_KEY);
+          } catch (error) {
+            abort(error);
+          }
+        });
+        return request;
+      });
     },
   };
 }

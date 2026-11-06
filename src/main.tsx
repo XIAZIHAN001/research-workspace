@@ -41,6 +41,8 @@ if (container === null) throw new Error('Missing #root element');
 async function bootstrap(): Promise<void> {
   const root = createRoot(container as HTMLElement);
   let diagnostic = '';
+  // Presentation for this live window only. Only acknowledged IndexedDB writes are durable.
+  let manualRecovery = '';
   const blobs = createPdfBlobStore();
   workspaceAccess.bindLifecycle(window, () => {
     window.location.reload();
@@ -65,11 +67,15 @@ async function bootstrap(): Promise<void> {
     },
     {
       access: workspaceAccess,
+      retainLeaseOnBlock: () => manualRecovery !== '',
       maintain: () => collectStartupPdfGarbage(blobs, readPdfReferences),
       recover: () =>
         recoverInterruptedRestore({
           journal: createIndexedDbJournal(),
           blobs,
+          onManualRecovery: (detail) => {
+            manualRecovery = detail;
+          },
           onProblem: (detail) => {
             diagnostic = detail;
           },
@@ -83,19 +89,25 @@ async function bootstrap(): Promise<void> {
         <p>无法安全确认工作区恢复状态，未启动工作区，也未允许正常数据写入。</p>
         <p>{diagnostic || status.detail}</p>
         <p>
-          请先关闭其他工作区窗口，检查浏览器存储权限后重试。不要清除网站数据、恢复日志或重新安装覆盖数据。
+          {manualRecovery === ''
+            ? '请先关闭其他工作区窗口，检查浏览器存储权限后重试。'
+            : '请关闭其他工作区窗口并保持当前页面，等待人工核对恢复记录。'}
+          不要清除网站数据、恢复日志或重新安装覆盖数据。
         </p>
         <p>
           若仍失败，请保留当前浏览器配置目录，并将此诊断交给维护人员；确认副本可恢复后再进行人工恢复。
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            window.location.reload();
-          }}
-        >
-          重新检查
-        </button>
+        {manualRecovery !== '' && <p>{manualRecovery}</p>}
+        {manualRecovery === '' && (
+          <button
+            type="button"
+            onClick={() => {
+              window.location.reload();
+            }}
+          >
+            重新检查
+          </button>
+        )}
       </main>,
     );
   }

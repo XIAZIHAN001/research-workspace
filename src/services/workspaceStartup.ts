@@ -7,6 +7,8 @@ export async function initializeWorkspace(
     access: typeof workspaceAccess;
     recover: () => Promise<RestoreRecovery>;
     maintain?: () => Promise<void>;
+    /** Runtime-only diagnostic protection; pagehide still releases the browser-owned lease. */
+    retainLeaseOnBlock?: () => boolean;
   },
 ): Promise<{ status: 'ready' | 'blocked'; detail?: string }> {
   try {
@@ -19,7 +21,7 @@ export async function initializeWorkspace(
     return { status: 'ready' };
   } catch (error) {
     deps.access.block();
-    await deps.access.release();
+    if (deps.retainLeaseOnBlock?.() !== true) await deps.access.release();
     return {
       status: 'blocked',
       detail: error instanceof Error ? error.message : '恢复状态检查失败。',

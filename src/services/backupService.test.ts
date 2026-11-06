@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { workspaceAccess } from './workspaceAccess';
 import type { KnowledgeState } from '../domain/knowledge';
 import type { Paper } from '../domain/papers';
@@ -22,7 +22,7 @@ import {
   type BackupSource,
 } from './backupService';
 import { sha256Hex } from './backupFormat';
-import type { RestoreJournal, RestoreJournalStore } from './restoreJournal';
+import type { RestoreCheckpoint, RestoreJournal, RestoreJournalStore } from './restoreJournal';
 import {
   EMPTY_PREFERENCES,
   DEFAULT_RESTORE_CHOICE,
@@ -90,8 +90,12 @@ function blobStore(initial: Record<string, PdfBytes> = {}): PdfBlobStore & {
   return store;
 }
 
-function memoryJournal(): RestoreJournalStore & { peek: () => RestoreJournal | null } {
+function memoryJournal(): RestoreJournalStore & {
+  peek: () => RestoreJournal | null;
+  checkpoint: () => RestoreCheckpoint | null;
+} {
   let journal: RestoreJournal | null = null;
+  let checkpoint: RestoreCheckpoint | null = null;
   return {
     read: () => Promise.resolve(journal),
     write: (next) => {
@@ -102,6 +106,20 @@ function memoryJournal(): RestoreJournalStore & { peek: () => RestoreJournal | n
       journal = null;
       return Promise.resolve();
     },
+    markConflicted: async (id: string) => {
+      if (journal === null || journal.id !== id) throw new Error('journal changed');
+      journal = { ...journal, conflicted: true };
+    },
+    readCheckpoint: async () => checkpoint,
+    publishCheckpoint: async (next) => {
+      checkpoint = structuredClone(next);
+      journal = null;
+    },
+    retireCheckpoint: async (id) => {
+      if (checkpoint === null || checkpoint.id !== id) throw new Error('checkpoint changed');
+      checkpoint = { ...checkpoint, retired: true };
+    },
+    checkpoint: () => checkpoint,
     peek: () => journal,
   };
 }
@@ -521,7 +539,8 @@ describe('restoring a backup', () => {
       now: NOW.getTime(),
     });
     const projectsAfterFirst = storage.getItem(PROJECTS_STORAGE_KEY);
-    // A completed restore freezes the old live stores; the second import is after reload.
+    // A completed restore freezes the old live stores; reload retires replay authority.
+    expect(await recoverInterruptedRestore({ storage, blobs, journal })).toBe('completed');
     workspaceAccess.allowWrites();
 
     const second = await inspectBackupFile(file, {
@@ -710,6 +729,7 @@ describe('restoring a backup', () => {
       storage,
       blobs: blobStore(),
       journal: {
+        ...memoryJournal(),
         read: () => Promise.resolve(null),
         write: () => Promise.reject(new Error('journal unavailable')),
         clear: () => Promise.resolve(),
@@ -727,6 +747,7 @@ describe('recovering an interrupted restore', () => {
   it('blocks startup if the journal cannot be read, preserving every key', async () => {
     const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'dark' });
     const journal: RestoreJournalStore = {
+      ...memoryJournal(),
       read: async () => {
         throw new Error('blocked IndexedDB');
       },
@@ -762,7 +783,7 @@ describe('recovering an interrupted restore', () => {
       },
     };
     await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('blocked');
-    expect(journal.peek()).not.toBeNull();
+    expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
   });
 
   async function journalFor(entries: Record<string, { previous: string | null; next: string }>) {
@@ -784,17 +805,17 @@ describe('recovering an interrupted restore', () => {
     expect(storage.getItem(THEME_STORAGE_KEY)).toBe('dark');
   });
 
-  it('never rolls back a journal that was marked committed', async () => {
+  it('preserves and blocks a legacy committed journal with unknown later values', async () => {
     const journal = memoryJournal();
     await journal.write({
       ...(await journalFor({ [THEME_STORAGE_KEY]: { previous: 'light', next: 'dark' } })),
       committed: true,
     });
-    // A later edit changed a key after the verified restore; the committed marker must win.
+    // Legacy hashes cannot reconstruct the result or safely classify a later edit.
     const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'edited-after-restore' });
-    await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('completed');
+    await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('blocked');
     expect(storage.getItem(THEME_STORAGE_KEY)).toBe('edited-after-restore');
-    expect(journal.peek()).toBeNull();
+    expect(journal.peek()?.committed).toBe(true);
   });
 
   it('recognises a restore that never wrote', async () => {
@@ -833,7 +854,7 @@ describe('recovering an interrupted restore', () => {
     const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'dark' });
     storage.failOn.add(THEME_STORAGE_KEY);
     await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('blocked');
-    expect(journal.peek()).not.toBeNull();
+    expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
   });
 
   it('is a no-op when there is no journal', async () => {
@@ -966,7 +987,7 @@ describe('restore PDF write-ahead tracking and rollback', () => {
     const put = blobs.put;
     let sawIntent = false;
     blobs.put = async (hash, data) => {
-      sawIntent = journal.peek()?.pdfsPending?.includes(hash) === true;
+      if (!blobs.files.has(hash)) sawIntent = journal.peek()?.pdfsPending?.includes(hash) === true;
       await put(hash, data);
     };
     const result = await executeRestore({ ...fixture, blobs, journal, storage: new MemoryStore() });
@@ -988,7 +1009,7 @@ describe('restore PDF write-ahead tracking and rollback', () => {
     const blobs = blobStore({ [SHA_A]: PDF_BYTES });
     expect(await recoverInterruptedRestore({ storage, journal, blobs })).toBe('blocked');
     expect(blobs.files.has(SHA_A)).toBe(true);
-    expect(journal.peek()).not.toBeNull();
+    expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
   });
 
   it('recovers a crash after PDF bytes were saved but before addition was acknowledged', async () => {
@@ -1105,7 +1126,7 @@ it('preserves edits from an uncoordinated older tab instead of rolling them back
   const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'newer-external-edit' });
   expect(await recoverInterruptedRestore({ journal, storage })).toBe('blocked');
   expect(storage.getItem(THEME_STORAGE_KEY)).toBe('newer-external-edit');
-  expect(journal.peek()).not.toBeNull();
+  expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
 });
 
 it('does not promote matching metadata to committed when an added referenced PDF is missing', async () => {
@@ -1143,7 +1164,7 @@ it('retains recovery evidence when a rollback write silently fails its readback'
     removeItem: () => undefined,
   };
   expect(await recoverInterruptedRestore({ journal, storage })).toBe('blocked');
-  expect(journal.peek()).not.toBeNull();
+  expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
 });
 
 it('does not interpret a LocalStorage read failure as a new empty workspace', async () => {
@@ -1178,13 +1199,13 @@ describe('restore commit and cleanup faults', () => {
     };
   }
 
-  it('rolls back metadata and only newly added PDFs when the commit marker fails', async () => {
+  it('rolls back metadata and only newly added PDFs when final checkpoint publication fails', async () => {
     const input = await request();
     const journal = memoryJournal();
-    const write = journal.write;
-    journal.write = async (value) => {
-      if (value.committed) throw new Error('commit failed');
-      await write(value);
+    const publish = journal.publishCheckpoint;
+    journal.publishCheckpoint = async (value) => {
+      if (value.outcome === 'restored') throw new Error('commit failed');
+      await publish(value);
     };
     const result = await executeRestore({ ...input, journal });
     expect(result).toMatchObject({ status: 'failed', stage: 'verify', rolledBack: true });
@@ -1193,21 +1214,183 @@ describe('restore commit and cleanup faults', () => {
     expect(journal.peek()).toBeNull();
   });
 
-  it('keeps a committed marker if cleanup fails and never rolls back later edits', async () => {
+  it('preserves an older-tab edit during PDF copy before the first metadata write', async () => {
     const input = await request();
     const journal = memoryJournal();
-    journal.clear = async () => {
-      throw new Error('cleanup failed');
+    const external = serializeProjects({
+      ...EMPTY_STATE,
+      papers: { external: paper('external', 'newer work') },
+    });
+    const put = input.blobs.put;
+    input.blobs.put = async (hash, value) => {
+      await put(hash, value);
+      input.storage.setItem(PROJECTS_STORAGE_KEY, external);
+    };
+    expect(await executeRestore({ ...input, journal })).toMatchObject({
+      status: 'failed',
+      rolledBack: false,
+      reloadRequired: true,
+    });
+    expect(input.storage.items).toEqual(new Map([[PROJECTS_STORAGE_KEY, external]]));
+    expect(journal.peek()).not.toBeNull();
+    expect(input.blobs.files.has(SHA_A)).toBe(true);
+    expect(workspaceAccess.canWrite()).toBe(false);
+  });
+
+  it('rejects a changed raw baseline before journal creation without capturing it as confirmed', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    const external = serializeProjects({
+      ...EMPTY_STATE,
+      papers: { external: paper('external', 'newer work') },
+    });
+    const result = await executeRestore({
+      ...input,
+      journal,
+      onStage: (stage) => {
+        if (stage === 'journal') input.storage.setItem(PROJECTS_STORAGE_KEY, external);
+      },
+    });
+    expect(result).toMatchObject({ status: 'failed', rolledBack: true, reloadRequired: true });
+    expect(workspaceAccess.canWrite()).toBe(false);
+    expect(input.storage.items).toEqual(new Map([[PROJECTS_STORAGE_KEY, external]]));
+    expect(journal.peek()).toBeNull();
+    expect(input.blobs.files.size).toBe(0);
+  });
+
+  it('durably stops active recovery after an external edit exactly equals the intended next value', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    const put = input.blobs.put;
+    input.blobs.put = async (hash, value) => {
+      await put(hash, value);
+      input.storage.setItem(THEME_STORAGE_KEY, journal.peek()!.keys[THEME_STORAGE_KEY]!.next!);
+    };
+    expect(await executeRestore({ ...input, journal })).toMatchObject({
+      status: 'failed',
+      manualRecoveryRequired: true,
+    });
+    expect(journal.peek()?.conflicted).toBe(true);
+    const before = new Map(input.storage.items);
+    expect(await recoverInterruptedRestore({ ...input, journal })).toBe('blocked');
+    expect(input.storage.items).toEqual(before);
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+  });
+
+  it('requires manual recovery when active conflict invalidation cannot persist', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    journal.markConflicted = async () => {
+      throw new Error('disk unavailable');
+    };
+    const result = await executeRestore({
+      ...input,
+      journal,
+      onStage: (stage) => {
+        if (stage === 'data') input.storage.setItem(THEME_STORAGE_KEY, 'dark');
+      },
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      manualRecoveryRequired: true,
+      reloadRequired: true,
+    });
+    expect(journal.peek()?.conflicted).not.toBe(true);
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+    expect(workspaceAccess.canWrite()).toBe(false);
+  });
+
+  it('does not report success when an uncoordinated tab edits during final PDF sealing', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    const put = input.blobs.put;
+    let puts = 0;
+    input.blobs.put = async (hash, value) => {
+      await put(hash, value);
+      if (++puts === 2) input.storage.setItem(THEME_STORAGE_KEY, 'older-tab-edit');
+    };
+    expect(await executeRestore({ ...input, journal })).toMatchObject({
+      status: 'failed',
+      reloadRequired: true,
+    });
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('older-tab-edit');
+    expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
+  });
+
+  it('never rolls back a published restore when a tab changes a key during final publication', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    const publish = journal.publishCheckpoint;
+    journal.publishCheckpoint = async (checkpoint) => {
+      await publish(checkpoint);
+      input.storage.removeItem(PROJECTS_STORAGE_KEY);
+    };
+    expect(await executeRestore({ ...input, journal })).toMatchObject({
+      status: 'failed',
+      reloadRequired: true,
+    });
+    expect(input.storage.getItem(PROJECTS_STORAGE_KEY)).toBeNull();
+    expect(input.storage.getItem(KNOWLEDGE_STORAGE_KEY)).toContain('KZG commitment');
+    expect(journal.checkpoint()).toMatchObject({ outcome: 'restored', retired: true });
+    expect(input.blobs.files.has(SHA_A)).toBe(true);
+  });
+
+  it('does not announce success after a concurrent edit during deferred cleanup', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    const external = serializeProjects({
+      ...EMPTY_STATE,
+      papers: { external: paper('external', 'newer work') },
+    });
+    const blobs: PdfBlobStore = {
+      ...input.blobs,
+      queueCleanup: async () => {
+        input.storage.setItem(PROJECTS_STORAGE_KEY, external);
+      },
+    };
+    expect(await executeRestore({ ...input, journal, blobs })).toMatchObject({
+      status: 'failed',
+      reloadRequired: true,
+    });
+    expect(input.storage.getItem(PROJECTS_STORAGE_KEY)).toBe(external);
+    expect(journal.checkpoint()).toMatchObject({ outcome: 'restored', retired: true });
+    expect(workspaceAccess.canWrite()).toBe(false);
+  });
+
+  it('keeps final evidence if retirement fails and never overwrites unknown later edits', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    journal.retireCheckpoint = async () => {
+      throw new Error('retirement failed');
     };
     const result = await executeRestore({ ...input, journal });
     expect(result.status).toBe('restored');
-    expect(journal.peek()?.committed).toBe(true);
+    expect(journal.checkpoint()?.retired).toBe(false);
+    expect(await recoverInterruptedRestore({ ...input, journal })).toBe('blocked');
     input.storage.setItem(THEME_STORAGE_KEY, 'later-edit');
     expect(
       await recoverInterruptedRestore({ storage: input.storage, journal, blobs: input.blobs }),
-    ).toBe('completed');
+    ).toBe('blocked');
     expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('later-edit');
     expect(input.blobs.files.has(SHA_A)).toBe(true);
+  });
+
+  it('does not claim verified rollback after a concurrent edit during rollback cleanup', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    input.storage.failOn.add(KNOWLEDGE_STORAGE_KEY);
+    const remove = input.blobs.remove;
+    input.blobs.remove = async (hash) => {
+      await remove(hash);
+      input.storage.setItem(THEME_STORAGE_KEY, 'concurrent-rollback-edit');
+    };
+    expect(await executeRestore({ ...input, journal })).toMatchObject({
+      status: 'failed',
+      rolledBack: false,
+      reloadRequired: true,
+    });
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('concurrent-rollback-edit');
+    expect(journal.checkpoint()).toMatchObject({ outcome: 'rolled-back', retired: true });
   });
 
   it('retains failed PDF cleanup for the next startup instead of discarding its journal', async () => {
@@ -1220,12 +1403,12 @@ describe('restore commit and cleanup faults', () => {
     };
     const result = await executeRestore({ ...input, journal });
     expect(result).toMatchObject({ status: 'failed', rolledBack: false });
-    expect(journal.peek()).not.toBeNull();
+    expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
     expect(input.blobs.files.has(SHA_A)).toBe(true);
     input.blobs.remove = remove;
     expect(
       await recoverInterruptedRestore({ storage: input.storage, journal, blobs: input.blobs }),
-    ).toBe('clean');
+    ).toBe('rolled-back');
     expect(input.blobs.files.has(SHA_A)).toBe(false);
     expect(journal.peek()).toBeNull();
   });
@@ -1243,7 +1426,7 @@ describe('restore commit and cleanup faults', () => {
     expect(await recoverInterruptedRestore({ storage: new MemoryStore(), journal, blobs })).toBe(
       'blocked',
     );
-    expect(journal.peek()).not.toBeNull();
+    expect(journal.peek() ?? journal.checkpoint()).not.toBeNull();
   });
 
   it('keeps PDF origins recorded only by a summary or a malformed optional binding', () => {
@@ -1266,5 +1449,274 @@ describe('restore commit and cleanup faults', () => {
     const hashes = readPdfReferences(new MemoryStore({ [PROJECTS_STORAGE_KEY]: raw }));
     expect(hashes?.has(SHA_A)).toBe(true);
     expect(hashes?.has('a'.repeat(64))).toBe(true);
+  });
+});
+
+describe('durable final-state checkpoints', () => {
+  async function restored() {
+    const { file } = await backupFile(sampleSource());
+    const inspection = await inspectBackupFile(file, {
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      presentPdfHashes: new Set(),
+      availableBytes: null,
+    });
+    const storage = new MemoryStore();
+    const journal = memoryJournal();
+    const blobs = blobStore();
+    const input = {
+      file,
+      inspection,
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      choice: DEFAULT_RESTORE_CHOICE,
+      storage,
+      journal,
+      blobs,
+      now: NOW.getTime(),
+    };
+    return { input, result: await executeRestore(input) };
+  }
+
+  it('retains exact durable redo bytes after success and repairs browser-process loss before mounting', async () => {
+    const { input, result } = await restored();
+    expect(result.status).toBe('restored');
+    const expected = new Map(input.storage.items);
+    expect(input.journal.checkpoint()).not.toBeNull();
+    expect(input.journal.checkpoint()?.retired).toBe(false);
+    input.storage.items.clear(); // Simulate SIGKILL losing LocalStorage's unflushed batch.
+    expect(await recoverInterruptedRestore(input)).toBe('completed');
+    expect(input.storage.items).toEqual(expected);
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+    expect(input.journal.peek()).toBeNull();
+  });
+
+  it('never replays a retired checkpoint over later deliberate edits or reverts', async () => {
+    const { input } = await restored();
+    await recoverInterruptedRestore(input);
+    input.storage.setItem(THEME_STORAGE_KEY, 'light');
+    const changed = { ...sampleSource().projects, papers: {} };
+    const raw = serializeProjects({ ...changed, projects: [], annotations: [] });
+    input.storage.setItem(PROJECTS_STORAGE_KEY, raw);
+    expect(await recoverInterruptedRestore(input)).not.toBe('blocked');
+    expect(input.storage.getItem(PROJECTS_STORAGE_KEY)).toBe(raw);
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('light');
+  });
+
+  it('fails closed with retained evidence if a second crash loses data after editable resumption', async () => {
+    const { input } = await restored();
+    await recoverInterruptedRestore(input);
+    input.storage.items.clear();
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.items.size).toBe(0);
+    expect(input.journal.checkpoint()?.keys[PROJECTS_STORAGE_KEY]?.next).toContain('一篇论文');
+  });
+
+  it('preflights every value before repairing any checkpoint key', async () => {
+    const { input } = await restored();
+    input.storage.items.clear();
+    input.storage.setItem(KNOWLEDGE_STORAGE_KEY, 'unknown writer payload');
+    const original = new Map(input.storage.items);
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.items).toEqual(original);
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+  });
+
+  it('rejects corrupted redo bytes without touching LocalStorage', async () => {
+    const { input } = await restored();
+    const checkpoint = input.journal.checkpoint();
+    expect(checkpoint).not.toBeNull();
+    if (checkpoint === null) return;
+    checkpoint.keys[PROJECTS_STORAGE_KEY]!.next = 'tampered';
+    input.storage.items.clear();
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.items.size).toBe(0);
+  });
+  it.each(['prior', 'mixed'])(
+    'replays a fully preflighted checkpoint from %s disk values',
+    async (state) => {
+      const { input } = await restored();
+      const checkpoint = input.journal.checkpoint()!;
+      const expected = new Map(input.storage.items);
+      let index = 0;
+      for (const [key, entry] of Object.entries(checkpoint.keys)) {
+        if (state === 'mixed' && index++ % 2 === 0) continue;
+        if (entry.previous === null) input.storage.removeItem(key);
+        else input.storage.setItem(key, entry.previous);
+      }
+      expect(await recoverInterruptedRestore(input)).toBe('completed');
+      expect(input.storage.items).toEqual(expected);
+    },
+  );
+
+  it('does not repair any metadata when a required PDF is missing or corrupt', async () => {
+    const { input } = await restored();
+    input.storage.items.clear();
+    input.blobs.files.delete(SHA_A);
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.items.size).toBe(0);
+    input.blobs.files.set(SHA_A, bytes('corrupted'));
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.items.size).toBe(0);
+    expect(input.journal.checkpoint()?.retired).toBe(false);
+  });
+
+  it('keeps a replayable checkpoint after partial recovery and retries idempotently', async () => {
+    const { input } = await restored();
+    const expected = new Map(input.storage.items);
+    input.storage.items.clear();
+    input.storage.failOn.add(KNOWLEDGE_STORAGE_KEY);
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.journal.checkpoint()?.retired).toBe(false);
+    input.storage.failOn.clear();
+    expect(await recoverInterruptedRestore(input)).toBe('completed');
+    expect(input.storage.items).toEqual(expected);
+  });
+
+  it('detects an older tab editing during asynchronous PDF preflight before any repair', async () => {
+    const { input } = await restored();
+    input.storage.items.clear();
+    const get = input.blobs.get;
+    input.blobs.get = async (hash) => {
+      input.storage.setItem(THEME_STORAGE_KEY, 'uncoordinated-tab');
+      return get(hash);
+    };
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.items).toEqual(new Map([[THEME_STORAGE_KEY, 'uncoordinated-tab']]));
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+  });
+
+  it('blocks writes until strict retirement succeeds, without clearing the recovery copy', async () => {
+    const { input } = await restored();
+    const retire = input.journal.retireCheckpoint;
+    input.journal.retireCheckpoint = async () => {
+      throw new Error('strict commit aborted');
+    };
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(workspaceAccess.canWrite()).toBe(false);
+    expect(input.journal.checkpoint()?.retired).toBe(false);
+    input.journal.retireCheckpoint = retire;
+    expect(await recoverInterruptedRestore(input)).toBe('completed');
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+  });
+
+  it('retains unchanged core data during a no-op merge, not only changed preferences', async () => {
+    const { input } = await restored();
+    expect(await recoverInterruptedRestore(input)).toBe('completed');
+    workspaceAccess.allowWrites();
+    const current = sampleSource();
+    const preferences = readBackupPreferences(input.storage);
+    const inspection = await inspectBackupFile(input.file, {
+      current,
+      currentPreferences: preferences,
+      presentPdfHashes: new Set([SHA_A]),
+      availableBytes: null,
+    });
+    expect(
+      (await executeRestore({ ...input, inspection, current, currentPreferences: preferences }))
+        .status,
+    ).toBe('restored');
+    expect(input.journal.checkpoint()?.keys[PROJECTS_STORAGE_KEY]?.next).toBe(
+      input.storage.getItem(PROJECTS_STORAGE_KEY),
+    );
+    const expected = new Map(input.storage.items);
+    input.storage.items.clear();
+    expect(await recoverInterruptedRestore(input)).toBe('completed');
+    expect(input.storage.items).toEqual(expected);
+  });
+
+  it('keeps successful rollback replayable through process loss and requires reload', async () => {
+    const { file } = await backupFile(sampleSource());
+    const storage = new MemoryStore({
+      [PROJECTS_STORAGE_KEY]: serializeProjects(EMPTY_STATE),
+      [KNOWLEDGE_STORAGE_KEY]: JSON.stringify(EMPTY_SOURCE.knowledge),
+    });
+    const previous = new Map(storage.items);
+    const inspection = await inspectBackupFile(file, {
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      presentPdfHashes: new Set(),
+      availableBytes: null,
+    });
+    const journal = memoryJournal();
+    const publish = journal.publishCheckpoint;
+    journal.publishCheckpoint = async (checkpoint) => {
+      if (checkpoint.outcome === 'restored') throw new Error('commit failed');
+      return publish(checkpoint);
+    };
+    const input = {
+      file,
+      inspection,
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      choice: DEFAULT_RESTORE_CHOICE,
+      storage,
+      journal,
+      blobs: blobStore(),
+      now: NOW.getTime(),
+    };
+    const result = await executeRestore(input);
+    expect(result).toMatchObject({ status: 'failed', rolledBack: true, reloadRequired: true });
+    expect(workspaceAccess.canWrite()).toBe(false);
+    expect(journal.checkpoint()).toMatchObject({ outcome: 'rolled-back', retired: false });
+    storage.items.clear();
+    expect(await recoverInterruptedRestore(input)).toBe('rolled-back');
+    expect(storage.items).toEqual(previous);
+    expect(journal.checkpoint()?.retired).toBe(true);
+  });
+  it('retires replay authority without mounting after a concurrent cleanup edit', async () => {
+    const { input } = await restored();
+    const blobs: PdfBlobStore = {
+      ...input.blobs,
+      queueCleanup: async () => {
+        input.storage.setItem(THEME_STORAGE_KEY, 'external-cleanup-edit');
+      },
+    };
+    expect(await recoverInterruptedRestore({ ...input, blobs })).toBe('blocked');
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('external-cleanup-edit');
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+  });
+
+  it('blocks after a concurrent loss during strict retirement without replaying again', async () => {
+    const { input } = await restored();
+    const retire = input.journal.retireCheckpoint;
+    input.journal.retireCheckpoint = async (id) => {
+      await retire(id);
+      input.storage.removeItem(PROJECTS_STORAGE_KEY);
+    };
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.getItem(PROJECTS_STORAGE_KEY)).toBeNull();
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+    expect(await recoverInterruptedRestore(input)).toBe('blocked');
+    expect(input.storage.getItem(PROJECTS_STORAGE_KEY)).toBeNull();
+  });
+  it('preserves an exact prior value after a detected post-commit conflict and reload', async () => {
+    const { input } = await restored();
+    const blobs: PdfBlobStore = {
+      ...input.blobs,
+      queueCleanup: async () => input.storage.removeItem(THEME_STORAGE_KEY),
+    };
+    expect(await recoverInterruptedRestore({ ...input, blobs })).toBe('blocked');
+    expect(input.journal.checkpoint()?.retired).toBe(true);
+    expect(await recoverInterruptedRestore(input)).toBe('none');
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  it('signals manual-only recovery if a detected checkpoint conflict cannot be durably retired', async () => {
+    const { input } = await restored();
+    const manual = vi.fn();
+    input.journal.retireCheckpoint = async () => {
+      throw new Error('disk unavailable');
+    };
+    const blobs: PdfBlobStore = {
+      ...input.blobs,
+      queueCleanup: async () => input.storage.removeItem(THEME_STORAGE_KEY),
+    };
+    expect(await recoverInterruptedRestore({ ...input, blobs, onManualRecovery: manual })).toBe(
+      'blocked',
+    );
+    expect(manual).toHaveBeenCalled();
+    expect(input.journal.checkpoint()?.retired).toBe(false);
+    expect(workspaceAccess.canWrite()).toBe(false);
   });
 });
