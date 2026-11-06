@@ -1,6 +1,6 @@
 # Execution Efficiency Implementation Plan
 
-> **For agentic workers:** Use the subagent-driven development workflow. Implement each stage with a measured baseline, regression tests, independent review, and a separately reversible commit.
+> **Execution:** Implement each stage with a measured baseline, regression tests, independent review, and a separately reversible commit.
 
 **Goal:** Reduce repeated computation and allocation in existing research workflows without changing data, citation, durability, or authorization semantics.
 
@@ -28,29 +28,29 @@
 
 ## Stage 1: Reproducible baseline
 
-- [ ] Confirm local HEAD, remote PR HEAD, clean worktree and available environment.
-- [ ] Run the unchanged aggregate checks; retain full logs outside tracked source.
-- [ ] Add a repeatable synthetic benchmark harness for workspace search, batched identity resolution and PDF search. Compare the same workloads against the pinned baseline and candidate.
-- [ ] Report correctness checksums, cold construction and warm queries separately, latency distributions and the limits of heap measurements.
+- [x] Confirm local HEAD, remote PR HEAD, clean worktree and available environment.
+- [x] Run the unchanged aggregate checks; retain full logs outside tracked source.
+- [x] Add a repeatable synthetic benchmark harness for workspace search, batched identity resolution and PDF search. Compare the same workloads against the pinned baseline and candidate.
+- [x] Report correctness checksums, cold construction and warm queries separately, latency distributions and the limits of heap measurements.
 
 ## Stage 2: Workspace search and BibTeX identity indexing
 
 **Files:** `src/features/search/searchWorkspace.ts`, `GlobalSearchDialog.tsx`, related tests; `src/domain/papers.ts`, `src/features/projects/useProjects.ts`, BibTeX preview and related tests.
 
-- [ ] Add failing regression/operation-count tests before production changes.
-- [ ] Precompute immutable-source search fields and display-name lookup data. Bound result materialization while preserving total counts and stable ranking.
-- [ ] Index normalized DOI/arXiv identifiers for batch lookup and update the index as new papers are created. Preserve all conflict outcomes.
-- [ ] Run focused tests, benchmark before/after, aggregate checks and independent spec/code review.
-- [ ] Commit each independent change separately.
+- [x] Add failing regression/operation-count tests before production changes.
+- [x] Precompute immutable-source search fields and display-name lookup data. Bound result materialization while preserving total counts and stable ranking.
+- [x] Index normalized DOI/arXiv identifiers for batch lookup and update the index as new papers are created. Preserve all conflict outcomes.
+- [x] Run focused tests, benchmark before/after, aggregate checks and independent spec/code review.
+- [x] Commit each independent change separately.
 
 ## Stage 3: PDF search and shared text extraction
 
 **Files:** `src/features/reader/findText.ts`, `usePdfSearch.ts`, `useDocumentText.ts`, `paperRetrieval.ts`, `useKnowledgeAnalysis.ts`, a focused shared extraction module and tests.
 
-- [ ] Add tests for reused folded text/offset maps, one extraction across simultaneous consumers, bounded cache, failed extraction retry and document changes.
-- [ ] Cache normalized find text once per indexed page and preserve the raw-text mapping.
-- [ ] Share document-scoped in-flight extraction while keeping AI/search normalization distinct. Retain bounded work, cancellation and stale-result guards.
-- [ ] Compare extraction count and synthetic search performance, run aggregate checks and independent review, then commit.
+- [x] Add tests for reused folded text/offset maps, one extraction across simultaneous consumers, bounded cache, failed extraction retry and document changes.
+- [x] Cache normalized find text once per indexed page and preserve the raw-text mapping.
+- [x] Share document-scoped in-flight extraction while keeping AI/search normalization distinct. Retain bounded work, cancellation and stale-result guards.
+- [x] Compare extraction count and synthetic search performance, run aggregate checks and independent review, then commit.
 
 ## Stage 4: Long PDF rendering
 
@@ -68,3 +68,7 @@
 - [ ] Obtain whole-branch independent review; fix important findings with regression tests.
 - [ ] Re-run check/build and benchmark on final content, inspect current remote HEAD, then fast-forward the authorized PR branch without force only if still safe.
 - [ ] Update PR #3 with actual commits, measurements and explicit Windows/browser limitations. Preserve its no-merge status.
+
+## Checkpoint outcome
+
+Stages 1–3 are implemented and verified. Stage 4 delivered the separately tested logarithmic scroll lookup only; full DOM windowing remains deferred. Persistence is unchanged. The measurements, tradeoffs, exact completed checks and remaining acceptance are recorded in [the checkpoint report](../../performance/checkpoint-2026-11-06.md).
