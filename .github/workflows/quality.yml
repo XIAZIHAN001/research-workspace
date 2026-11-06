@@ -76,6 +76,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -85,6 +87,12 @@ jobs:
           components: rustfmt
       - name: Install locked dependencies
         run: npm ci
+      - name: Probe ordinary-permission Windows driver
+        id: windows_ordinary_probe
+        timeout-minutes: 3
+        env:
+          RW_WINDOWS_FRESH_RUNNER: 'yes'
+        run: node scripts/verify/windows-bootstrap.mjs --probe
       - name: Prepare frontend and Windows sidecar resources
         run: |
           npm run build
@@ -104,10 +112,31 @@ jobs:
       - name: Build Windows Tauri NSIS installer
         run: npm run desktop:build -- --bundles nsis
       - name: Installed Windows runtime acceptance
-        timeout-minutes: 10
+        id: windows_runtime
+        timeout-minutes: 11
         env:
           RW_WINDOWS_FRESH_RUNNER: 'yes'
-        run: node scripts/verify/windows-runtime.mjs
+        run: node scripts/verify/windows-bootstrap.mjs --runtime
+      - name: Retain ordinary-permission probe evidence
+        if: always() && steps.windows_ordinary_probe.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-windows-probe-${{ github.sha }}
+          path: |
+            .cache/windows-bootstrap-probe/**/report.json
+            .cache/windows-bootstrap-probe/**/child-report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain Windows bootstrap containment report
+        if: always() && steps.windows_runtime.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-windows-bootstrap-${{ github.sha }}
+          path: .cache/windows-bootstrap-runtime/**/report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain Windows build marker diagnostics
         if: always() && steps.windows_build_marker.outcome != 'skipped'
         uses: actions/upload-artifact@v4
@@ -118,7 +147,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Retain sanitized Windows runtime report
-        if: always()
+        if: always() && steps.windows_runtime.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: research-workspace-windows-runtime-${{ github.sha }}
@@ -127,7 +156,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Retain synthetic Windows screenshots
-        if: always()
+        if: always() && steps.windows_runtime.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: research-workspace-windows-runtime-screenshots-${{ github.sha }}
@@ -149,6 +178,9 @@ jobs:
         run: |
           @'
           ## Remaining Windows release acceptance
+          Read the probe, bootstrap and exact-commit installed-runtime reports;
+          a probe PASS proves ordinary-context launch only, never app/installer acceptance.
+          A missing/incomplete runtime report, forced wrapper cleanup or unverified credentials is not PASS.
           Read the exact-commit installed-runtime report; a built installer or defined gate is not a runtime PASS.
           The fresh-hosted gate covers installed startup, Mock, synthetic credentials, endpoint binding,
           key deletion, restart persistence and normal/forced sidecar cleanup when its report says PASS.

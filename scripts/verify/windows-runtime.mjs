@@ -9,6 +9,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { requiredRuntimeChecks } from './windows-bootstrap-helpers.mjs';
+import { ordinaryContext } from './windows-bootstrap-context.mjs';
 import {
   assertHostedRunner,
   runnerGuardCode,
@@ -35,6 +37,12 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const env = process.env;
+const reportOnly =
+  env.RW_WINDOWS_BOOTSTRAP_MODE === 'runtime' &&
+  /^[a-f0-9]{32}$/.test(env.RW_WINDOWS_BOOTSTRAP_ID ?? '');
+const log = (value) => {
+  if (!reportOnly) process.stdout.write(value);
+};
 const reportDirectory = join(
   ROOT,
   '.cache',
@@ -43,25 +51,16 @@ const reportDirectory = join(
     : env.RW_WINDOWS_FRESH_RUNNER === 'yes'
       ? 'windows-runtime'
       : 'windows-runtime-refused',
-  new Date().toISOString().replace(/[:.]/g, '-'),
+  !process.argv.includes('--record-build-start') &&
+    /^[a-f0-9]{32}$/.test(env.RW_WINDOWS_BOOTSTRAP_ID ?? '')
+    ? env.RW_WINDOWS_BOOTSTRAP_ID
+    : new Date().toISOString().replace(/[:.]/g, '-'),
 );
-const names = [
-  'hosted-preflight',
-  'same-build-installer',
-  'install-and-resources',
-  'installed-ipc-mock',
-  'authentication-and-offline-response',
-  'home-and-ai-screenshots',
-  'fake-key-save-status',
-  'normal-close-no-orphan',
-  'credential-restart-persistence',
-  'endpoint-binding-rejection',
-  'active-key-delete-replaces-sidecar',
-  'force-exit-no-orphan',
-  'restart-no-resurrection',
-  'owned-cleanup',
-];
+const names = requiredRuntimeChecks;
 const report = makeReport(names);
+report.complete = false;
+report.cleanupIncomplete = false;
+report.syntheticCredentialCleanup = 'not-exercised';
 report.stage = process.argv.includes('--record-build-start') ? 'build-marker' : 'runtime';
 const deadline = Date.now() + 8 * 60_000;
 let cleaning = false;
@@ -203,7 +202,7 @@ async function step(name, work) {
   try {
     await work();
     item.status = 'PASS';
-    process.stdout.write(`PASS ${name}\n`);
+    log(`PASS ${name}\n`);
   } catch (error) {
     item.status = error instanceof Blocked ? 'NOT RUN' : 'FAIL';
     throw error;
@@ -368,6 +367,14 @@ async function launch() {
   const evidence = { ordinal: launches.filter((entry) => entry.role === 'app').length };
   report.attachments ??= [];
   report.attachments.push(evidence);
+  const token = await native('inspect-token', { process: app }, 3000);
+  evidence.ordinaryApp =
+    token?.result === 'observed' &&
+    token.identity === 'matched' &&
+    token.exitState === 'nonsignaled' &&
+    token.elevation === false &&
+    token.integrity === 'medium';
+  demand(evidence.ordinaryApp, 'INSTALLED_APP_ORDINARY_CONTEXT_UNVERIFIED');
   let attached;
   try {
     attached = await connectWebView({
@@ -489,6 +496,13 @@ try {
     report.terminalError = 'BUILD_START_RECORDED_RUNTIME_NOT_RUN';
   } else {
     demand(process.argv.length === 2, 'UNKNOWN_ARGUMENT');
+    if (/^[a-f0-9]{32}$/.test(env.RW_WINDOWS_BOOTSTRAP_ID ?? ''))
+      report.bootstrapId = env.RW_WINDOWS_BOOTSTRAP_ID;
+    await step('ordinary-driver-context', async () => {
+      report.ordinaryContext = await ordinaryContext(ROOT, 'runtime');
+      demand(report.ordinaryContext.status === 'PASS', 'ORDINARY_CONTEXT_UNVERIFIED');
+      report.bootstrapId = env.RW_WINDOWS_BOOTSTRAP_ID;
+    });
     await step('hosted-preflight', async () => {
       const preflight = await native('preflight');
       demand(
@@ -703,6 +717,7 @@ try {
       );
       const key = `rw-ci-fake-${randomBytes(32).toString('hex')}`;
       // Hash proves this exact fake atomic record belongs to the test, even after an IPC timeout.
+      report.syntheticCredentialCleanup = 'unverified';
       credential = {
         target: `ResearchWorkspace/Provider/${settings.provider}`,
         provider: settings.provider,
@@ -904,6 +919,7 @@ try {
       ['deleted', 'absent'].includes(removed.result) && removed.remaining === 0,
       'SYNTHETIC_CREDENTIAL_CLEANUP_REFUSED',
     );
+    report.syntheticCredentialCleanup = 'verified';
   });
   await cleanupPhase('disconnect', 5_000, async () => {
     for (const connection of new Set([...cdpConnections, ...(browser ? [browser] : [])])) {
@@ -917,11 +933,12 @@ try {
   recordCleanup(report, cleanupFailures, unverifiedLaunches);
   // Synthetic installation/profile is left for VM disposal, never recursively removed.
   const final = finishReport(report, runtime);
+  final.complete = true;
   await mkdir(reportDirectory, { recursive: true });
   await writeFile(join(reportDirectory, 'report.json'), `${JSON.stringify(final, null, 2)}\n`);
-  process.stdout.write(`${final.status}: ${reportDirectory}\n`);
+  log(`${final.status}: ${reportDirectory}\n`);
   if (final.terminalError)
-    process.stdout.write(`TERMINAL ${final.terminalStep ?? final.stage}: ${final.terminalError}\n`);
+    log(`TERMINAL ${final.terminalStep ?? final.stage}: ${final.terminalError}\n`);
   const exitCode =
     report.terminalError === 'BUILD_START_RECORDED_RUNTIME_NOT_RUN'
       ? 0

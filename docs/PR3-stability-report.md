@@ -37,13 +37,13 @@
 - Rust stable 1.99.1 与 rustfmt 安装到隔离临时目录，未改用户工具链配置。
 - Linux Tauri `cargo test`：依赖编译到系统库发现阶段被缺少 `glib-2.0` 阻塞；不是测试通过。
 
-## 最终门禁
+## 上一阶段已执行门禁（`7b1f8654`）
 
 历史 PR 中的 1811 项 Vitest、37 项 Rust 和桌面冒烟数字不代表本轮验收。
 
-- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **116 个文件 / 2308 项 Vitest，0 失败、0 跳过**。
+- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **117 个文件 / 2335 项 Vitest，0 失败、0 跳过**。
 - `npm run build`：通过；保留 Vite 既有的大于 500 kB chunk 提示，未通过提高阈值隐藏。
-- 本轮新增 **497 项 JS/TS 回归**（首轮生产整改 245、崩溃验收脚本 9、持久化与冲突边界 190、Windows 验收脚本 36、中文视觉/时序验收脚本 17）和 **15 项 Rust 回归**。
+- 相比本轮施工基线净增 **524 项 JS/TS 回归**和 **15 项 Rust 回归**。后续 checkpoint 必须重新执行门禁，不能沿用此数目或结果。
 - `cargo fmt --check`：通过。
 - Windows GNU 目标完整 Tauri `cargo check --release --all-targets`：通过（包含测试代码类型检查）。
 - 从当前源码构造的隔离 Rust 逻辑 harness：49/49 通过；不含 Windows Credential Manager 的实际调用验收。
@@ -162,6 +162,27 @@
 - [Microsoft 当前安全指南](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags)说明 High Integrity 宿主忽略 `WEBVIEW2_*` 环境覆盖；[GitHub 托管 runner 说明](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#administrative-privileges)说明 Windows 默认管理员运行。尚未实测本次应用的 token/integrity 与实际调试参数，只能列为优先假设。后续 checkpoint 仅采集身份验证后的只读分类证据，不更改安全策略或产品设置。
 - Mock、假凭据、截图、后续重启、PDF 与备份桌面流程仍未执行。独立修正字体准备的下载上限和可信文件校验，不跳过中文视觉前置条件；Windows 诊断与字体准备分别保留可回滚提交。
 
+### `7b1f8654` 中文视觉恢复，Windows 提升权限阻塞已实测
+
+[Actions 42225263617](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42225263617) 对应 HEAD `7b1f86541403d31dbde65f575efb5c88b5c9c2a0`；测试合并提交 `227e3a3f73c42e12433cab2728528c8450216edb` 与该 HEAD 的 tree 同为 `33bae585b8eb7c14b643f14a491bdbcf21ec401f`。Node22/24 两条通过，Windows job 失败，整条 CI 不是全绿。
+
+- 冻结后的本地与远程均通过 117 文件 / 2335 项测试、类型检查、lint、格式与生产构建。Windows Rust 52/52、release、NSIS、75 项原生合成自测、静默安装、版本及三项整文件资源 hash 通过。
+- 固定官方来源和 SHA-256 的中文字体准备约 2.6 秒完成。真实 Chromium 22/22 通过，原恢复成功后立即 SIGKILL 场景未插入等待；严格 checkpoint 与 PDF 保留，重启前 LocalStorage 确实为空，应用重放后恢复精确内容并退役 checkpoint。
+- 独立实际查看 6 张截图，中文可读，1440×950 下恢复、重新检查、重新载入操作可见，无阻断性重叠或裁切。浏览器报告无外部/AI 请求或页面错误。这不是 Windows UI 验收。
+- Windows 实际报告为 **FAIL / CDP_TIMEOUT / blocked=false**。存活应用 token 实测 elevation=true、high integrity；所属 WebView browser-candidate 无调试端口/地址参数。34 次发现尝试中保留的最后 32 次均拒绝连接，未进入 Playwright 页面或 IPC/Mock 断言。
+- Microsoft 说明提升权限的 WebView 宿主会忽略环境覆盖；该证据支持当前环境与环境变量调试方案不兼容，但尚未做普通权限对照，不能排除全部其他因素。应用窗口、sidecar 和 WebView 确实已启动。
+- 最终清理对 10 个已跟踪身份正向确认退出或不存在并 PASS。原映像查询 error31 保留，只有同句柄 signaled 与精确创建时间匹配才能使用退出专用证明；该分支不能授权终止进程。此结果不替代独立正常关闭或强退产品验收。
+- [浏览器报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42225263617/artifacts/13506455375)、[真实截图](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42225263617/artifacts/13506355635)、[Windows 报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42225263617/artifacts/13506252556)和[NSIS 安装包](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42225263617/artifacts/13506536631)保留至 2026-11-20。安装包 SHA-256：`84b784efc7bce2400e3405c9d395431c02eb81c197ba584eccedc66fc368c527`。
+
+当前继续独立 checkpoint，优先验证只降低本次测试进程权限的普通用户启动，再补 Windows 数据流程；不修改账户、UAC、ACL、策略或持久访问，不启用 WebView 安全覆盖。未执行的新流程仍为 NOT RUN，具体启动约束见 [Windows 运行验收范围](windows-runtime-acceptance.md)。
+
+### 普通权限入口 checkpoint：提交前门禁
+
+- 只增加受限的固定 probe/runtime 入口、验收辅助测试、CI 和文档；应用、服务、Rust 与依赖生产代码未改变。
+- 最终冻结后 `npm run check` 通过：**118 文件 / 2347 项测试**，TypeScript、ESLint、Prettier 通过；`npm run build` 通过，既有大 chunk 提示保留。
+- 独立原生设计和调用/报告复审通过，63 项定向辅助测试通过。缺失证明、矛盾退出码、不完整检查列表和未确认凭据清理均不能记为 PASS。
+- Windows 原生编译、令牌、作业、普通桌面访问与实际应用流程尚未执行。新 CI 必须先通过无害探针，再构建与运行；失败时保留具体阶段和错误，不回退为提升权限运行，也不修补系统权限。
+
 ## 独立复审
 
 复审不仅检查本轮 diff，也复查了受影响的旧路径。独立故障注入复现并关闭：
@@ -178,9 +199,9 @@
 
 ## 当前环境限制
 
-- Chromium 本地启动在 `process_singleton_posix.cc` 报 `socket() failed: Operation not permitted (1)`；普通执行与获批提权执行结果一致。**0 项浏览器断言在本地执行**。远程 Chromium 的实际执行结果按上方各精确提交分别记录，最新已完成的 `69ae3d46` 为 22/22；`5f10bf3b` 因字体下载超时未执行浏览器验收。
+- Chromium 本地启动在 `process_singleton_posix.cc` 报 `socket() failed: Operation not permitted (1)`；普通执行与获批提权执行结果一致。**0 项浏览器断言在本地执行**。远程 Chromium 的实际执行结果按上方各精确提交分别记录，最新已完成的 `7b1f8654` 为 22/22。
 - Linux 完整 Tauri 测试缺少 `glib-2.0`。已在隔离临时目录补齐 Windows Rust target 与官方 Debian binutils，完整 Tauri Windows debug 和 release/all-targets 交叉编译实际通过；这仍不是 Windows 程序执行、MSVC 链接或 NSIS 安装验收。
-- 全新托管 Windows VM 已实际执行 `5f10bf3b` 的静默安装、版本和完整资源校验；应用窗口存在但 CDP 端口连接被拒绝，后续交互与凭据测试未执行，一个所属 WebView 的退出未确认。不能沿用此前 PR 的冒烟结论。
+- 全新托管 Windows VM 已实际执行 `7b1f8654` 的静默安装、版本和完整资源校验；应用以提升权限运行且 CDP 端口连接被拒绝，后续交互与凭据测试未执行。10 个已跟踪身份的最终清理已正向确认；独立正常/强退验收未运行。不能沿用此前 PR 的冒烟结论。
 
 ## Windows 桌面人工门禁
 
@@ -224,7 +245,7 @@ Rust 拥有的密钥字符串、编码凭据及子进程 stdin 临时缓冲区�
 
 1. 远程 Actions 的准确提交结果必须另行检查；不能把工作流存在当作 CI 成功。
 2. 本地隔离 Chromium 启动受限；本地 22 项计划检查均未执行。
-3. `5f10bf3b` 的 NSIS 静默安装、版本与资源校验已通过；Windows 交互、Credential Manager 和完整数据流程仍未执行，清理未确认。交叉编译或浏览器成功不替代这些检查。
+3. `7b1f8654` 的 NSIS 静默安装、版本、资源校验及已跟踪身份的最终清理通过；Windows 交互、Credential Manager、独立生命周期与完整数据流程仍未执行。交叉编译或浏览器成功不替代这些检查。
 4. 一次仅允许一个升级后的可编辑窗口；旧应用版本必须先关闭。Web Locks 不可用会明确阻断启动。
 5. 孤立 PDF 仅处理恢复日志派生的候选，每次启动最多清理一个；未知或引用信息无法确认的文件保留，不做全盘盲删。
 6. macOS/Linux 系统凭据后端仍未实现，不阻塞 Windows 代码整改，但不宣称跨平台在线 AI 支持。
