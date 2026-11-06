@@ -45,6 +45,7 @@ let browser;
 let sourceState;
 let exportReady = false;
 let processCrashEvidence = null;
+let visualEnvironment = { status: 'not-run' };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 async function test(name, work) {
@@ -277,6 +278,163 @@ async function assertNoStores(page) {
   );
   assert.equal(await page.getByLabel('新建项目', { exact: true }).count(), 0);
   return telemetry;
+}
+
+async function inspectChinesePlatformFonts(page, timeoutMs = 5000) {
+  const evidence = {
+    status: 'checking',
+    selector: 'main.backup-result > h1',
+    expectedText: '工作区已暂停',
+    fonts: [],
+    coverage: [],
+  };
+  let session;
+  let timer;
+  let expired = false;
+  let detached = false;
+  const deadline = performance.now() + timeoutMs;
+  const remainingMs = () => {
+    const remaining = deadline - performance.now();
+    if (expired || remaining <= 0)
+      throw new Error(`Font inspection timed out after ${timeoutMs} ms`);
+    return Math.max(1, Math.ceil(remaining));
+  };
+  const detach = () => {
+    if (session !== undefined && !detached) {
+      detached = true;
+      void session.detach().catch(() => {});
+    }
+  };
+  try {
+    await Promise.race([
+      (async () => {
+        const element = await page.locator(evidence.selector).evaluate((element) => ({
+          text: element.textContent.trim(),
+          cssFontFamily: window.getComputedStyle(element).fontFamily,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+        }));
+        if (expired) throw new Error('Font inspection expired');
+        Object.assign(evidence, element);
+        if (evidence.text !== evidence.expectedText)
+          throw new Error('Chinese probe heading differs');
+        session = await page.context().newCDPSession(page);
+        if (expired) {
+          detach();
+          throw new Error('Font inspection expired');
+        }
+        const send = async (method, params) => {
+          if (expired) throw new Error('Font inspection expired');
+          const result = await session.send(method, params);
+          if (expired) throw new Error('Font inspection expired');
+          return result;
+        };
+        await send('DOM.enable');
+        await send('CSS.enable');
+        const { root } = await send('DOM.getDocument');
+        const { nodeId } = await send('DOM.querySelector', {
+          nodeId: root.nodeId,
+          selector: evidence.selector,
+        });
+        if (!Number.isInteger(nodeId) || nodeId <= 0)
+          throw new Error('Chinese heading node missing');
+        const { fonts } = await send('CSS.getPlatformFontsForNode', { nodeId });
+        evidence.fonts = fonts;
+        if (
+          !Array.isArray(fonts) ||
+          fonts.length === 0 ||
+          fonts.some(
+            (font) =>
+              font.familyName !== 'Noto Sans CJK SC' ||
+              font.isCustomFont !== false ||
+              !Number.isInteger(font.glyphCount) ||
+              font.glyphCount <= 0,
+          ) ||
+          fonts.reduce((sum, font) => sum + font.glyphCount, 0) !== Array.from(evidence.text).length
+        ) {
+          throw new Error('Chinese heading is not fully rendered with installed Noto Sans CJK SC');
+        }
+        for (const font of fonts) {
+          // FontFaceSet.check() does not prove glyph coverage. Check the exact local face
+          // reported by Chromium against Fontconfig's encoded-character ranges instead.
+          const commandBudget = Math.min(2000, remainingMs());
+          const output = execFileSync(
+            'fc-match',
+            [
+              '-f',
+              '%{family}\n%{postscriptname}\n%{file}\n%{index}\n%{charset}\n',
+              `${font.familyName}:postscriptname=${font.postScriptName}`,
+            ],
+            { encoding: 'utf8', timeout: commandBudget, maxBuffer: 1024 * 1024 },
+          );
+          // A synchronous command prevents the timer callback from running. Check elapsed
+          // monotonic time explicitly so a late return can never become a visual PASS.
+          remainingMs();
+          const [family, postScriptName, file, index, charset] = output.split('\n');
+          if (family !== font.familyName || postScriptName !== font.postScriptName || !charset) {
+            throw new Error('Fontconfig could not verify the actual Chromium font face');
+          }
+          const ranges = charset
+            .trim()
+            .split(/\s+/)
+            .map((range) => {
+              if (!/^[a-f\d]+(?:-[a-f\d]+)?$/i.test(range)) throw new Error('Invalid font charset');
+              return range.split('-').map((part) => Number.parseInt(part, 16));
+            });
+          const missing = Array.from(evidence.text).filter((character) => {
+            const code = character.codePointAt(0);
+            return !ranges.some(([start, end = start]) => code >= start && code <= end);
+          });
+          evidence.coverage.push({ family, postScriptName, file, index, missing });
+          if (missing.length > 0)
+            throw new Error(`Font face lacks Chinese glyphs: ${missing.join('')}`);
+        }
+      })(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Font inspection timed out after ${timeoutMs} ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+    remainingMs();
+    evidence.status = 'passed';
+  } catch (error) {
+    evidence.status = 'failed';
+    evidence.error = `Visual environment gap: ${String(error.message ?? error)}`;
+  } finally {
+    expired = true;
+    clearTimeout(timer);
+    detach();
+  }
+  return evidence;
+}
+
+async function visualEnvironmentProbe() {
+  await test('visual environment: actual Chinese UI has local CJK glyph coverage', async () => {
+    const context = await fresh();
+    try {
+      // This independent page renders the real production recovery UI. It never shares the
+      // process-crash profile, modifies app styles, or delays restore success before SIGKILL.
+      await context.addInitScript(() =>
+        Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined }),
+      );
+      const page = await context.newPage();
+      await page.goto(origin);
+      await blocked(page);
+      visualEnvironment = await inspectChinesePlatformFonts(page);
+      assert.equal(visualEnvironment.status, 'passed', visualEnvironment.error);
+      return visualEnvironment;
+    } catch (error) {
+      visualEnvironment = {
+        ...visualEnvironment,
+        status: 'failed',
+        error: `Visual environment gap: ${String(error.message ?? error)}`,
+      };
+      throw new Error(visualEnvironment.error, { cause: error });
+    } finally {
+      await close(context);
+    }
+  });
 }
 
 async function startupFaults() {
@@ -1003,6 +1161,7 @@ async function crashPersistence() {
         browserVersion: instance.connection.version(),
       });
       let page = await instance.context.newPage();
+      await page.setViewportSize({ width: 1440, height: 950 });
       await page.goto(origin);
       await ready(page);
       const dialog = await inspectBackup(page);
@@ -1026,6 +1185,7 @@ async function crashPersistence() {
         browserVersion: instance.connection.version(),
       });
       page = await instance.context.newPage();
+      await page.setViewportSize({ width: 1440, height: 950 });
       await page.goto(`${origin}/__fixture`);
       processCrashEvidence.beforeBootstrap = await processStorageSnapshot(page);
       await page.goto(origin);
@@ -1083,6 +1243,7 @@ function makeReport(status) {
     aiRequests,
     pageErrors: errors,
     processCrashEvidence,
+    visualEnvironment,
     notExecuted: [
       'Windows installation and NSIS packaging',
       'Tauri credential lifecycle and fake-key endpoint binding',
@@ -1169,6 +1330,7 @@ try {
   });
   trackChromium(browserServer.process());
   browser = await chromium.connect(browserServer.wsEndpoint());
+  await visualEnvironmentProbe();
   await startupFaults();
   await tabExclusion();
   await backupRoundtrip();

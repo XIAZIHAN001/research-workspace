@@ -171,8 +171,9 @@ OpenAI 兼容协议发送请求，不携带 DeepSeek 专有字段。设置页还
 
 ### 发布验收
 
-GitHub Actions 对 Node.js 22.13/24 执行前端与服务门禁，并在 Windows 上执行 Rust 检查与 NSIS 构建。
-CI 构建成功不能替代隔离 Windows 桌面验收；最新整改范围、执行结果和未验证项见
+GitHub Actions 对 Node.js 22.13/24 执行前端与服务门禁，并在 Windows 上执行 Rust 检查、NSIS 构建与
+[全新托管 VM 中的安装后运行检查](docs/windows-runtime-acceptance.md)。检查脚本存在或构建成功不等于运行验收通过；
+消费者 Windows 安装前置条件、升级/卸载和完整 PDF/备份桌面流程仍需单独验证。最新整改范围、执行结果和未验证项见
 [PR #3 稳定性整改与验收记录](docs/PR3-stability-report.md)。
 
 ## 目录结构

@@ -40,6 +40,14 @@ jobs:
         run: npm test
       - name: Vite production build
         run: npm run build
+      - name: Prepare Chinese screenshot fonts
+        if: matrix.node == '24'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk fontconfig
+          fc-cache -f
+          fc-match -f '%{family}: %{file}\n' 'Noto Sans CJK SC:lang=zh-cn'
       - name: Isolated Chromium recovery acceptance
         if: matrix.node == '24'
         shell: bash
@@ -91,9 +99,37 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Rust release check
         run: cargo check --manifest-path src-tauri/Cargo.toml --release --locked
+      - name: Record exact Windows build start
+        env:
+          RW_WINDOWS_FRESH_RUNNER: 'yes'
+        run: node scripts/verify/windows-runtime.mjs --record-build-start
       - name: Build Windows Tauri NSIS installer
         run: npm run desktop:build -- --bundles nsis
+      - name: Installed Windows runtime acceptance
+        timeout-minutes: 10
+        env:
+          RW_WINDOWS_FRESH_RUNNER: 'yes'
+        run: node scripts/verify/windows-runtime.mjs
+      - name: Retain sanitized Windows runtime report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-windows-runtime-${{ github.sha }}
+          path: .cache/windows-runtime/**/report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain synthetic Windows screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-windows-runtime-screenshots-${{ github.sha }}
+          path: .cache/windows-runtime/**/*.png
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
       - name: Retain installer for isolated manual acceptance
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: research-workspace-windows-nsis-${{ github.sha }}
@@ -101,14 +137,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Record remaining manual release gate
+        if: always()
         shell: pwsh
         run: |
           @'
-          ## Manual desktop acceptance is still required
-          Building an installer is not an interactive desktop test and is not release approval.
-          On this exact commit, use an isolated Windows account or clean data directory and synthetic credentials only.
-          Verify installation/startup, Mock requests, fake-key save and endpoint binding, key deletion then Mock mode,
-          sidecar stop/restart, PDF import/reading, backup export/restore, forced app exit, restart persistence,
-          and absence of orphan sidecar processes. Record each result and evidence in the PR.
-          Unexecuted checks remain NOT RUN. Do not touch real workspaces or real API keys.
+          ## Remaining Windows release acceptance
+          Read the exact-commit installed-runtime report; a built installer or defined gate is not a runtime PASS.
+          The fresh-hosted gate covers installed startup, Mock, synthetic credentials, endpoint binding,
+          key deletion, restart persistence and normal/forced sidecar cleanup when its report says PASS.
+          Consumer Windows 10/11 prerequisites, upgrade/uninstall and installer-dialog UX remain NOT RUN.
+          PDF import/reading, notes, backup export/restore and forced-exit data recovery still need Windows UI acceptance.
+          Use an isolated Windows account or fresh VM, never merely redirected APPDATA/LOCALAPPDATA,
+          because Credential Manager and Known Folders are account scoped. Do not touch real workspaces or keys.
+          This gate is not release approval; retain failures and blocked/unexecuted results accurately.
           '@ >> $env:GITHUB_STEP_SUMMARY

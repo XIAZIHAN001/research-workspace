@@ -1,0 +1,84 @@
+# Installed Windows runtime acceptance checkpoint
+
+Status: **integrated, Windows execution pending / NOT RUN**. The preceding production checkpoint `e14684af52ddc42a51b8327c4618d4287c27a55e` passed all CI, including the original Chromium SIGKILL recovery regression. This separate checkpoint adds acceptance scripts and workflow steps, with no application-code changes. Execution results must be checked for its exact commit before claiming a runtime pass.
+
+## Safety and scope
+
+This gate is exclusively for a **fresh GitHub-hosted `windows-latest` job**, with no real workspace, real API key, or parallel Research Workspace test. It rejects non-Windows, self-hosted, missing runner metadata/explicit opt-in, existing application directories, uninstall registrations, application/sidecar processes, or any Credential Manager target beginning `ResearchWorkspace`. Metadata is a workflow guard, not cryptographic proof against someone deliberately spoofing the environment. Do not opt in on a user machine.
+
+Windows Known Folders are read with `SHGetKnownFolderPath`, including both Roaming and Local AppData. Redirecting `APPDATA`/`LOCALAPPDATA` is not an isolation boundary. Credential Manager is scoped to the OS account. The test uses the fresh VM's actual empty profile and current provider target `ResearchWorkspace/Provider/{provider}`.
+
+Missing WebView2, a usable desktop, or CDP/window attachment is BLOCKED / **NOT RUN**, with a nonzero exit. The harness does not install/downgrade WebView2, bypass execution policy, disable security settings, use development executables, call a real model endpoint, or delete unexpected data. The already-installed runtime must be present before silent installation; consumer prerequisite installation remains untested.
+
+Covered runtime checks:
+
+- Match source version, HEAD, tree, GitHub run and attempt to a pre-build marker; require clean source and exactly one fresh x64 NSIS installer. Record SHA-256, version and source identity.
+- Install that artifact silently under a unique explicit `RUNNER_TEMP` directory. Require exit code 0, real installed EXE/sidecar/launcher, installed version and matching build-resource hashes. No fallback.
+- Launch the installed EXE with an allowlisted environment and Windows-only PATH. Attach Playwright to its real WebView2 using CDP and wait on `ai_service_info`, not an obsolete badge.
+- Verify Mock mode, the owned installed sidecar, authenticated health and a synthetic offline answer, plus unauthenticated rejection.
+- Capture actual Home and 设置 → AI 服务 screenshots with the current 离线模拟 control. No key is present when screenshots are taken.
+- Generate a fake key in memory; prove its exact atomic credential record hash; check status, normal-close cleanup, restart persistence and saved endpoint. Switch online against the reserved `windows-smoke.invalid` hostname without issuing a model request. Reject changing the active saved-key endpoint; delete the active key, require a replacement Mock sidecar and old-sidecar exit; force-exit the shell, verify natural sidecar exit, restart and confirm no key resurrection.
+- Perform independently bounded process, synthetic-credential and CDP cleanup, then write the final report. Observed-process termination checks PID, executable path and exact creation time through one open OS handle. Each app/installer launch retains its `ChildProcess` immediately, before the first fallible snapshot. If observation fails, Windows-only cleanup can stop that root through its retained native child handle, never by a fresh PID lookup; unverified descendants still force `owned-cleanup: FAIL` and `cleanupIncomplete: true`, even when root termination succeeds. Native identity JSON round-trip is checked before installation. No global process-name kill exists. Credential cleanup deletes only the current provider record if its complete blob hash matches this test's generated fake record. Synthetic installation/profile directories are left for VM disposal.
+
+**Explicitly NOT RUN/out of scope:** clean consumer Windows 10/11 prerequisites, upgrade/uninstall, installer-dialog UX, PDF import/reading UI, backup export/restore UI, all real or paid upstream calls. Passing this narrow gate is not release approval. Screenshot capture is evidence, not a claim of human visual review.
+
+## Workflow integration
+
+Do not run these commands locally. Do not reuse `desktop-isolated.mjs` or `desktop-phase11.mjs` for this gate.
+
+This checkpoint follows the green P1 checkpoint. Keep `runs-on: windows-latest`, set a job timeout, and retain the existing locked dependency install, frontend/sidecar preparation and Rust checks. On the **same fresh job**, add a build-start marker immediately before the existing NSIS build, then run the new gate immediately after a successful build. Do not download an unrelated installer or reuse cached installers/markers. Do not run jobs in parallel in the same OS account.
+
+The existing Windows workflow uses the following same-job sequence:
+
+```yaml
+# Both these steps belong in the existing fresh windows-latest job.
+- name: Record exact Windows build start
+  env:
+    RW_WINDOWS_FRESH_RUNNER: 'yes'
+  run: node scripts/verify/windows-runtime.mjs --record-build-start
+- name: Build Windows Tauri NSIS installer
+  run: npm run desktop:build -- --bundles nsis
+- name: Installed Windows runtime acceptance
+  timeout-minutes: 10
+  env:
+    RW_WINDOWS_FRESH_RUNNER: 'yes'
+  run: node scripts/verify/windows-runtime.mjs
+- name: Retain sanitized Windows runtime report
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: research-workspace-windows-runtime-${{ github.sha }}
+    path: .cache/windows-runtime/**/report.json
+    include-hidden-files: true
+    if-no-files-found: error
+    retention-days: 14
+- name: Retain synthetic Windows screenshots
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: research-workspace-windows-runtime-screenshots-${{ github.sha }}
+    path: .cache/windows-runtime/**/*.png
+    include-hidden-files: true
+    if-no-files-found: warn
+    retention-days: 14
+```
+
+The marker records commit/tree/version/run/attempt/start time under `RUNNER_TEMP/rw-windows-build-start.json`, refuses to overwrite an existing marker and refuses old installers. A marker-only NOT RUN report is separate under `.cache/windows-runtime-build/`; it is not runtime evidence. Missing-opt-in refusal probes from portable tests report separately under `.cache/windows-runtime-refused/`, so they cannot be confused with the opted-in acceptance artifact. The gate rejects a stale (>1 hour) or source-mismatched marker, mismatched version, older artifact, ambiguous artifact, changed source, or unexpected location.
+
+The runtime has an 8-minute work budget and separately reserved cleanup phases totaling at most about 40 seconds. IPC/attachment/process operations are bounded. An initial NOT RUN report is written before testing, and the final report is written in `finally`; final process exit prevents leaked child/CDP handles from hanging the job. A CI cancellation, host crash or I/O failure can still interrupt finalization: the initial incomplete report is never PASS. Do not use `continue-on-error`, tolerate exit 2 as success, or infer success from a screenshot alone.
+
+Runtime exit codes: **0 PASS**, **1 FAIL**, **2 NOT RUN/BLOCKED**. Build-marker mode exits 0 only to authorize the subsequent build, never to claim a runtime pass. Required checks must all be PASS; excluded checks remain explicitly NOT RUN. Review the exact reported commit/tree/installer hash and both screenshots before promoting the checkpoint. If a run fails after installation, rerun on a new hosted VM, never delete preexisting directories/credentials to make the same VM pass.
+
+Upload only the report and listed synthetic screenshots. Do not upload raw profiles, environment/argv dumps, credential contents, Playwright traces/HAR, crash dumps, or arbitrary application logs. Console evidence contains counts only. Driver debug channels (`DEBUG`, `PWDEBUG`, `NODE_DEBUG`, `NODE_OPTIONS`) are rejected before credential work. Inspect `cleanupIncomplete`/`cleanupFailures` on failures; never broaden cleanup to other PIDs or credentials.
+
+## Portable preparation checks
+
+```sh
+npx vitest run scripts/verify/windows-runtime-helpers.test.mjs
+npm run check
+node --check scripts/verify/windows-runtime.mjs
+```
+
+Portable tests exercise runner denial, same-job artifact identity/freshness, installed-only resource paths, process identity/PID reuse and descendant ownership, malformed snapshots, injected first-observation failures/timeouts/missing roots for both launch paths, and fail-closed sanitized report/cleanup status. They **do not** validate PowerShell/PInvoke on Windows, NSIS command handling, the actual WebView2 session, Windows Credential Manager, UI screenshots or runtime process behavior. Those remain NOT RUN until the proposed gate executes on the designated runner.
+
+References: [Playwright WebView2 CDP](https://playwright.dev/docs/webview2), [NSIS installer command line](https://nsis.sourceforge.io/Docs/Chapter3.html). NSIS `/S` is case-sensitive; `/D=<absolute path>` is last and unquoted even when the directory contains spaces. No `/NCRC` flag is used. The Windows-only retained-handle fallback follows [libuv Windows `uv_process_kill`](https://raw.githubusercontent.com/libuv/libuv/v1.x/src/win/process.c); it never calls PID-based `process.kill`.

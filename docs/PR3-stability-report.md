@@ -41,13 +41,13 @@
 
 历史 PR 中的 1811 项 Vitest、37 项 Rust 和桌面冒烟数字不代表本轮验收。
 
-- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **114 个文件 / 2255 项 Vitest，0 失败、0 跳过**。
+- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **116 个文件 / 2295 项 Vitest，0 失败、0 跳过**。
 - `npm run build`：通过；保留 Vite 既有的大于 500 kB chunk 提示，未通过提高阈值隐藏。
-- 本轮新增 **444 项 JS/TS 回归**（首轮生产整改 245、验收脚本 9、持久化与冲突边界 190）和 **15 项 Rust 回归**。
+- 本轮新增 **484 项 JS/TS 回归**（首轮生产整改 245、崩溃验收脚本 9、持久化与冲突边界 190、Windows 验收脚本 23、中文视觉/时序验收脚本 17）和 **15 项 Rust 回归**。
 - `cargo fmt --check`：通过。
 - Windows GNU 目标完整 Tauri `cargo check --release --all-targets`：通过（包含测试代码类型检查）。
 - 从当前源码构造的隔离 Rust 逻辑 harness：49/49 通过；不含 Windows Credential Manager 的实际调用验收。
-- 浏览器脚本：`scripts/verify/stability.mjs`，包含 21 个计划检查；本地受环境阻塞，没有执行任何浏览器断言。
+- 浏览器脚本：`scripts/verify/stability.mjs`，包含 22 个计划检查（21 项功能 + 1 项中文视觉环境）；本地受环境阻塞，没有执行任何浏览器断言。
 - GitHub Actions：包含 Node.js 22.13/24 全量门禁、Node24 隔离 Chromium 验收、Windows Rust fmt/test/release、Tauri/NSIS 与产物保存。远程结果以当前提交的 Checks 为准，定义工作流不代表执行通过。
 
 ## 首轮远程门禁与验收脚本收口
@@ -92,7 +92,33 @@
 - 独立复审另复现了 PDF 异步复制期间旧窗口改数据被覆盖的情况。现在由同一份严格读取的原始快照生成指纹、合并依据和 journal.previous，并在写日志前与首次写 LocalStorage 前重新核对，改变则阻断保留证据。
 - 浏览器新增完整旧日志/不完整旧日志分开验收，以及严格退役、后来编辑/回退保留、注入核心数据丢失后阻断的场景。原成功后立即 SIGKILL 的断言没有放宽；共 21 个真实浏览器计划场景。
 
-限制：这不是把所有普通同步 LocalStorage 写入改成磁盘事务。检查点取消自动重放权限后，新的进程丢失事件可能需要人工恢复，不能冒险把旧副本自动写回。本地冻结后的 npm run check 已通过 114 文件 / 2255 项测试，生产构建通过；独立复审的 8 项边界反例与原覆盖复现通过。补丁是否关闭真实强杀问题，仍须由最新提交的 Chromium 实际执行确认。
+限制：这不是把所有普通同步 LocalStorage 写入改成磁盘事务。检查点取消自动重放权限后，新的进程丢失事件可能需要人工恢复，不能冒险把旧副本自动写回。本地冻结后的 npm run check 已通过 114 文件 / 2255 项测试，生产构建通过；独立复审的 8 项边界反例与原覆盖复现通过。真实强杀回归的实际执行见下一节，不外推成所有断电或普通编辑的持久性保证。
+
+## 第四轮真实强杀回归：21/21 通过
+
+[Actions 42207760728](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42207760728) 对应分支 HEAD `e14684af52ddc42a51b8327c4618d4287c27a55e`。测试合并提交 `2aa2e55603cc3308ce8b57e6f93f2336faaedb9b` 与该 HEAD 的 tree 均为 `7a47ed5bc1f2c6b708f120fe8209a6eeda309bc7`。Node 22.13/24 全量门禁和真实 Chromium **21/21** 通过。
+
+- Windows 同一运行的 **52/52 MSVC Rust 测试**、release check 和 NSIS 构建均通过，安装包 28.74 MiB；[安装包 artifact](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42207760728/artifacts/13498630678) 已保存。这仍不是安装后应用运行的验收。
+- Chromium `156.0.8078.79` 的原始测试序列仍为成功恢复后立即强杀整个隔离进程，再用同一 profile/origin 重开；未插入等待、flush 或放宽断言。
+- 重启后、应用启动前的只读诊断真实观察到 `rw.projects` / `rw.knowledge` 均为 null、LocalStorage 为空；严格持久化的完整 checkpoint 与所需 PDF 仍在。应用启动后重放得到完全一致的数据，PDF 字节 SHA-256 相同，检查点被严格退役。此前失败的 P1 在相同场景通过。
+- 21 项同时包括真实 PDF 导入/阅读/导出/恢复、失败回滚、renderer 崩溃、整进程崩溃、原生锁竞争、损坏/不可读日志失败关闭、旧 committed 日志缺数据阻断。后续编辑/刻意回退保留与核心数据丢失阻断是注入场景，不冒充另一次真实进程崩溃。
+- 报告中外部请求、AI 请求、页面异常均为零。浏览器 BFCache 仅注入生命周期事件，未声称真实 BFCache 导航通过。
+- [原始 JSON 报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42207760728/artifacts/13497057844)及[12 张合成数据截图](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42207760728/artifacts/13497511712)已保存，保留期 14 天。
+- 实际打开截图确认重启后项目及 PDF 页可见，但 Linux runner 中文字体缺失，汉字呈方框；中文视觉验收尚未通过。后续仅补测试环境字体和统一桌面视口，不据此修改应用字体或扩大产品功能。
+
+这是隔离 Linux Chromium 对生产 Vite 构建的验收，不是 Windows/Tauri 安装后运行证明。最新提交仍须单独核对全部 CI，Windows 交互、凭据和进程生命周期检查不以网页成功代替。
+
+## 后续独立 checkpoint：补齐真实平台验收证据
+
+该 checkpoint 不改应用或服务生产代码，仅增加验收脚本、CI 与说明，以上一个全绿 `e14684af` 为回滚点。
+
+- Ubuntu Node24 job 安装官方 `fonts-noto-cjk` / `fontconfig`。独立页面通过实际中文恢复标题、Chromium CDP 渲染字体与 Fontconfig 字符覆盖验证环境；单独记为第 22 项检查，不能替代其余 21 项功能检查。同步字体查询也受单调时钟截止时间约束，超时不能误报成功。
+- 持久进程的两次页面都在导航前设为 1440×950；成功恢复 → 精确状态读取 → SIGKILL 的序列保持不变。最终中文截图必须重新打开检查，目前不宣称已通过。
+- Windows 使用同一全新 GitHub 托管 job 的构建标记与精确 NSIS 产物，在安装后应用上检查 Mock、合成假凭据、端点绑定、删除与退出/重启；详情见 [Windows 运行验收范围](windows-runtime-acceptance.md)。未执行前保持 NOT RUN，缺环境、超时或断言失败会让门禁失败。
+- 独立复审修复了新验收脚本自身的清理误报：若启动进程后所有权观察失败，保留子进程句柄并标记后代清理未确认，不能将清理记为 PASS。只清理本测试证明拥有的进程/假凭据，不删除不明状态；该问题未进入已发布产品代码。
+- 报告与截图分别保存，缺少必需报告直接失败。Windows 消费者安装前置条件、升级/卸载和完整 PDF/备份桌面操作仍是另行验收项。
+- 冻结实现后的本地 aggregate check：**116 文件 / 2295 项测试通过**；生产构建通过，原有大 chunk 提示保留。独立复审通过 23 项 Windows helper 测试、6 个实际清理函数故障注入，以及 17 项视觉/时序测试和 9 项崩溃 helper 测试。
+- 此处记录的是提交前准备与本地测试，不是 Windows 运行成功记录；必须阅读该 checkpoint 精确提交的 CI 报告和实际截图。
 
 ## 独立复审
 
@@ -155,7 +181,7 @@ Rust 拥有的密钥字符串、编码凭据及子进程 stdin 临时缓冲区�
 ## 尚未验证与合并建议
 
 1. 远程 Actions 的准确提交结果必须另行检查；不能把工作流存在当作 CI 成功。
-2. 本地隔离 Chromium 启动受限；本地 21 项计划检查均未执行。
+2. 本地隔离 Chromium 启动受限；本地 22 项计划检查均未执行。
 3. Windows 实机运行、Credential Manager、NSIS 安装与完整桌面验收仍需执行；交叉编译不替代这些检查。
 4. 一次仅允许一个升级后的可编辑窗口；旧应用版本必须先关闭。Web Locks 不可用会明确阻断启动。
 5. 孤立 PDF 仅处理恢复日志派生的候选，每次启动最多清理一个；未知或引用信息无法确认的文件保留，不做全盘盲删。
