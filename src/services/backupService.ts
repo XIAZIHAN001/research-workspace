@@ -15,7 +15,7 @@
  */
 
 import type { Paper } from '../domain/papers';
-import type { ProjectsState } from '../domain/projectsState';
+import { EMPTY_STATE, type ProjectsState } from '../domain/projectsState';
 import type { KnowledgeState } from '../domain/knowledge';
 import { EMPTY_REVIEW_STATE, parseReviewState, type ReviewState } from '../domain/review';
 import {
@@ -29,7 +29,7 @@ import {
   type RestorePlan,
   type RestoreSource,
 } from '../domain/backupPlan';
-import { parseKnowledgeState } from '../domain/knowledge';
+import { EMPTY_KNOWLEDGE, parseKnowledgeState } from '../domain/knowledge';
 import { migrateStoredPayload, SCHEMA_VERSION, serializeProjects } from '../domain/migrate';
 import type { DifficultyPrefs, DifficultyState } from '../domain/difficulty';
 import {
@@ -58,7 +58,12 @@ import {
   type BackupHeader,
 } from './backupFormat';
 import type { PdfBlobStore } from './pdfStore';
-import type { RestoreJournal, RestoreJournalStore } from './restoreJournal';
+import {
+  assertRestoreJournal,
+  type RestoreJournal,
+  type RestoreJournalStore,
+} from './restoreJournal';
+import { workspaceAccess, type WorkspaceWritePermit } from './workspaceAccess';
 
 const PREF_THEMES: ReadonlySet<string> = new Set(['system', 'light', 'dark']);
 const PREF_PAPER: ReadonlySet<string> = new Set(['auto', 'original', 'warm', 'dark']);
@@ -257,6 +262,8 @@ export async function buildBackup(input: {
  * ------------------------------------------------------------------ */
 
 export interface BackupInspection {
+  /** Binds preview/confirmation to the exact workspace snapshot the reader inspected. */
+  sourceSha256: string;
   fileName: string;
   fileSize: number;
   problems: string[];
@@ -315,6 +322,7 @@ export async function inspectBackupFile(
   },
 ): Promise<BackupInspection> {
   const base: BackupInspection = {
+    sourceSha256: await sourceFingerprint(input.current, input.currentPreferences),
     fileName: file.name,
     fileSize: file.size,
     problems: [],
@@ -451,6 +459,105 @@ function removeStrict(store: KeyValueStore | null, key: string): boolean {
   }
 }
 
+/** Recovery must distinguish unavailable storage from a truly absent key. */
+function readStrict(store: KeyValueStore | null, key: string): string | null {
+  if (store === null) throw new Error('LocalStorage 不可用，已暂停恢复。');
+  return store.getItem(key);
+}
+
+/** Unknown/corrupt/newer metadata is never treated as an empty reference set. */
+export function readPdfReferences(
+  storage: KeyValueStore | null = defaultStore(),
+): ReadonlySet<string> | null {
+  try {
+    const raw = readStrict(storage, PROJECTS_STORAGE_KEY);
+    if (raw === null) {
+      // Without a registry, a surviving knowledge graph could still hold PDF references.
+      const knowledgeRaw = readStrict(storage, KNOWLEDGE_STORAGE_KEY);
+      if (knowledgeRaw === null) return new Set();
+      const knowledge = parseKnowledgeState(JSON.parse(knowledgeRaw) as unknown);
+      return knowledge === null
+        ? null
+        : new Set(
+            [
+              ...knowledge.evidence,
+              ...knowledge.rejections.flatMap((rejection) => rejection.evidence),
+            ].map((evidence) => evidence.pdfSha256),
+          );
+    }
+    const parsed = migrateStoredPayload(raw);
+    if (!parsed.ok) return null;
+    const hashes = new Set(
+      Object.values(parsed.state.papers).flatMap((paper) =>
+        paper.pdf === undefined ? [] : [paper.pdf.sha256],
+      ),
+    );
+    // The normal loader tolerates and drops malformed optional PDF metadata. GC cannot:
+    // even a binding with a missing filename can still be the only reference to these bytes.
+    const original = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof original.papers === 'object' && original.papers !== null) {
+      for (const paper of Object.values(original.papers)) {
+        if (typeof paper !== 'object' || paper === null) return null;
+        const pdf: unknown = (paper as Record<string, unknown>).pdf;
+        if (pdf === undefined) continue;
+        if (typeof pdf !== 'object' || pdf === null) return null;
+        const hash: unknown = (pdf as Record<string, unknown>).sha256;
+        if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) return null;
+        hashes.add(hash);
+      }
+    }
+    for (const note of parsed.state.annotations) hashes.add(note.pdfSha256);
+    for (const paper of Object.values(parsed.state.papers)) {
+      if (paper.summary?.pdfSha256 !== undefined) hashes.add(paper.summary.pdfSha256);
+    }
+    const knowledgeRaw = readStrict(storage, KNOWLEDGE_STORAGE_KEY);
+    if (knowledgeRaw !== null) {
+      const knowledge = parseKnowledgeState(JSON.parse(knowledgeRaw) as unknown);
+      if (knowledge === null) return null;
+      for (const evidence of knowledge.evidence) hashes.add(evidence.pdfSha256);
+      for (const rejection of knowledge.rejections) {
+        for (const evidence of rejection.evidence) hashes.add(evidence.pdfSha256);
+      }
+    }
+    return hashes;
+  } catch {
+    return null;
+  }
+}
+
+/** Only restore-owned additions are eligible. Recheck references after every async read. */
+async function cleanRestorePdfs(
+  journal: RestoreJournal,
+  storage: KeyValueStore | null,
+  blobs: PdfBlobStore | undefined,
+  permit: WorkspaceWritePermit,
+  defer = false,
+): Promise<boolean> {
+  const candidates = [...new Set([...(journal.pdfsAdded ?? []), ...(journal.pdfsPending ?? [])])];
+  if (candidates.length === 0) return true;
+  if (blobs === undefined || !blobs.durable) return false;
+  try {
+    const references = readPdfReferences(storage);
+    if (references === null) return false;
+    const orphans = candidates.filter((hash) => !references.has(hash));
+    if (blobs.queueCleanup !== undefined) {
+      await blobs.queueCleanup(orphans, permit);
+      if (defer) return true;
+    }
+    for (const hash of orphans) {
+      const bytes = await blobs.get(hash);
+      if (bytes === null) continue;
+      if ((await sha256Hex(bytes)) !== hash) return false;
+      const latest = readPdfReferences(storage);
+      if (latest === null) return false;
+      if (!latest.has(hash)) await blobs.remove(hash, permit);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Puts every written key back to its previous value. Returns false if any write failed. */
 function rollback(
   store: KeyValueStore | null,
@@ -460,9 +567,20 @@ function rollback(
   let ok = true;
   for (const key of written) {
     const value = previous.get(key) ?? null;
+    try {
+      if (readStrict(store, key) === value) continue;
+    } catch {
+      ok = false;
+      continue;
+    }
     if (value === null) {
       if (!removeStrict(store, key)) ok = false;
     } else if (writeStrict(store, key, value) !== 'ok') {
+      ok = false;
+    }
+    try {
+      if (readStrict(store, key) !== value) ok = false;
+    } catch {
       ok = false;
     }
   }
@@ -482,6 +600,47 @@ function preferenceWrites(
   return writes;
 }
 
+/** Stable key ordering: loader reconstruction must not create false stale-snapshot errors. */
+function sourceFingerprint(source: RestoreSource, preferences: BackupPreferences): Promise<string> {
+  return sha256Hex(
+    JSON.stringify({ source, preferences }, (_key, value: unknown) => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+      return Object.fromEntries(
+        Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+      );
+    }),
+  );
+}
+
+/** Read only. Never invoke migration/quarantine writers while establishing the restore base. */
+function persistedRestoreSource(storage: KeyValueStore | null): RestoreSource {
+  const projectsRaw = readStrict(storage, PROJECTS_STORAGE_KEY);
+  const migrated = projectsRaw === null ? null : migrateStoredPayload(projectsRaw);
+  if (migrated !== null && !migrated.ok)
+    throw new Error('现有项目数据无法完整读取，已保留原始数据。');
+  const knowledgeRaw = readStrict(storage, KNOWLEDGE_STORAGE_KEY);
+  const knowledge =
+    knowledgeRaw === null
+      ? EMPTY_KNOWLEDGE
+      : parseKnowledgeState(JSON.parse(knowledgeRaw) as unknown);
+  if (knowledge === null) throw new Error('现有知识数据损坏或来自更新版本，已保留原始数据。');
+  for (const key of [
+    REVIEW_STORAGE_KEY,
+    DIFFICULTY_STORAGE_KEY,
+    THEME_STORAGE_KEY,
+    PAPER_STORAGE_KEY,
+    AVATAR_STORAGE_KEY,
+    DIFFICULTY_PREFS_KEY,
+  ])
+    readStrict(storage, key);
+  return {
+    projects: migrated?.ok === true ? migrated.state : EMPTY_STATE,
+    knowledge,
+    difficulties: loadDifficulties(storage),
+    review: readReview(storage),
+  };
+}
+
 /**
  * Restores a backup that has already been inspected and confirmed.
  *
@@ -489,7 +648,7 @@ function preferenceWrites(
  * about same-id objects whose content differs, and whether to restore papers whose PDF is
  * missing. Everything else was decided during inspection.
  */
-export async function executeRestore(input: {
+interface RestoreInput {
   file: File;
   inspection: BackupInspection;
   choice: RestoreChoice;
@@ -500,7 +659,29 @@ export async function executeRestore(input: {
   journal: RestoreJournalStore;
   now: number;
   onStage?: (stage: RestoreStage, detail?: string) => void;
-}): Promise<RestoreResult> {
+}
+
+export async function executeRestore(input: RestoreInput): Promise<RestoreResult> {
+  workspaceAccess.assertWritable();
+  return workspaceAccess.exclusive(async (permit) => {
+    try {
+      const outstanding = await input.journal.read();
+      if (outstanding !== null) throw new Error('尚有未清理的恢复日志，请先重新载入完成恢复检查。');
+      const result = await executeRestoreLocked(input, permit);
+      if (result.status === 'restored' || (result.status === 'failed' && !result.rolledBack))
+        workspaceAccess.block();
+      return result;
+    } catch (error) {
+      workspaceAccess.block();
+      throw error;
+    }
+  });
+}
+
+async function executeRestoreLocked(
+  input: RestoreInput,
+  permit: WorkspaceWritePermit,
+): Promise<RestoreResult> {
   const { inspection, choice, storage, blobs } = input;
   const contents = inspection.contents;
   const plan = inspection.plan;
@@ -535,6 +716,27 @@ export async function executeRestore(input: {
     };
   }
 
+  // The preview is a confirmation of a particular source, not permission to overwrite
+  // changes made afterwards. Re-read under the lease, after draining all in-flight writes.
+  const captured = await sourceFingerprint(input.current, input.currentPreferences);
+  let persisted: string;
+  try {
+    persisted = await sourceFingerprint(
+      persistedRestoreSource(storage),
+      readBackupPreferences(storage),
+    );
+  } catch (error) {
+    return { status: 'refused', reason: describe(error), problems: [] };
+  }
+  if (captured !== inspection.sourceSha256 || captured !== persisted) {
+    return {
+      status: 'refused',
+      reason:
+        '工作区在备份预览后发生变化，或仍有未保存内容。请重新选择备份以检查最新冲突，再确认恢复。',
+      problems: [],
+    };
+  }
+
   const merged = mergeRestore(input.current, contents, choice, input.currentPreferences, input.now);
   const reviewBlocked = reviewIsBlocked(storage);
   const reviewWarning = reviewBlocked
@@ -544,7 +746,7 @@ export async function executeRestore(input: {
   /* Build the exact set of LocalStorage writes. Identical values are left alone. */
   const writes: { key: string; value: string; label: string }[] = [];
   const addDataWrite = (key: string, value: string): void => {
-    if (readItem(key, storage) === value) return;
+    if (readStrict(storage, key) === value) return;
     writes.push({ key, value, label: labelOf(key) });
   };
   addDataWrite(PROJECTS_STORAGE_KEY, serializeProjects(merged.projects));
@@ -561,12 +763,12 @@ export async function executeRestore(input: {
   /* Recovery copies never overwrite one already on this machine. */
   const recoveryWarnings: string[] = [];
   for (const [key, value] of Object.entries(contents.recovery)) {
-    if (readItem(key, storage) === value) continue;
+    if (readStrict(storage, key) === value) continue;
     let target = key;
-    for (let slot = 0; slot < 3 && readItem(target, storage) !== null; slot += 1) {
+    for (let slot = 0; slot < 3 && readStrict(storage, target) !== null; slot += 1) {
       target = `${key}.restored${slot === 0 ? '' : `.${String(slot)}`}`;
     }
-    if (readItem(target, storage) !== null) {
+    if (readStrict(storage, target) !== null) {
       recoveryWarnings.push(`本机已经有多份「${key}」的副本，这一份没有写入。`);
       continue;
     }
@@ -578,10 +780,10 @@ export async function executeRestore(input: {
     normalized.push({ ...write, sha256: await sha256Hex(write.value) });
   }
   const previous = new Map<string, string | null>();
-  for (const write of normalized) previous.set(write.key, readItem(write.key, storage));
+  for (const write of normalized) previous.set(write.key, readStrict(storage, write.key));
 
   input.onStage?.('journal');
-  const journal: RestoreJournal = {
+  let journal: RestoreJournal = {
     id: crypto.randomUUID(),
     startedAt: input.now,
     keys: Object.fromEntries(
@@ -591,6 +793,9 @@ export async function executeRestore(input: {
       ]),
     ),
     committed: false,
+    phase: 'prepared',
+    pdfsAdded: [],
+    pdfsPending: [],
   };
   try {
     await input.journal.write(journal);
@@ -605,29 +810,62 @@ export async function executeRestore(input: {
     };
   }
 
+  const finishRollback = async (dataRestored: boolean): Promise<boolean> => {
+    if (!dataRestored || !(await cleanRestorePdfs(journal, storage, blobs, permit))) return false;
+    try {
+      await input.journal.clear();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   /* 1. PDFs: additive and content-addressed, so they cannot damage anything already here. */
   input.onStage?.('pdfs');
   let pdfsCopied = 0;
   for (const hash of plan.pdfsToCopy) {
     try {
+      // Recheck under the native lease: inspection may be old, and an existing blob must
+      // never be recorded as newly added or removed by rollback.
+      if (await blobs.has(hash)) continue;
       const bytes = await readBackupFile(input.file, header, payloadOffset, hash);
       if (bytes === null) throw new Error('备份里找不到这个文件。');
       if ((await sha256Hex(bytes)) !== hash) {
         throw new Error('备份文件在检查之后发生了变化，已停止恢复。');
       }
-      await blobs.put(hash, bytes);
+      journal = { ...journal, pdfsPending: [hash] };
+      await input.journal.write(journal);
+      await blobs.put(hash, bytes, permit);
       pdfsCopied += 1;
+      journal = { ...journal, pdfsPending: [], pdfsAdded: [...(journal.pdfsAdded ?? []), hash] };
+      await input.journal.write(journal);
     } catch (error) {
-      await input.journal.clear().catch(() => undefined);
+      const rolledBack = await finishRollback(true);
       return {
         status: 'failed',
         stage: 'pdfs',
         message: `写入 PDF 时失败，项目与知识没有改动：${describe(error)}`,
-        rolledBack: true,
+        rolledBack,
         problems: [],
         pdfsCopied,
       };
     }
+  }
+
+  // Persist the phase boundary before the first LocalStorage write. A PDF-only crash is
+  // therefore distinguishable even when no LocalStorage value needed changing.
+  journal = { ...journal, phase: 'data' };
+  try {
+    await input.journal.write(journal);
+  } catch (error) {
+    return {
+      status: 'failed',
+      stage: 'journal',
+      message: describe(error),
+      rolledBack: await finishRollback(true),
+      problems: [],
+      pdfsCopied,
+    };
   }
 
   /* 2. LocalStorage, one key at a time, with the journal already on disk. */
@@ -636,8 +874,7 @@ export async function executeRestore(input: {
   for (const write of normalized) {
     const outcome = writeStrict(storage, write.key, write.value);
     if (outcome !== 'ok') {
-      const rolledBack = rollback(storage, previous, written);
-      if (rolledBack) await input.journal.clear().catch(() => undefined);
+      const rolledBack = await finishRollback(rollback(storage, previous, [...written, write.key]));
       return {
         status: 'failed',
         stage: 'data',
@@ -657,12 +894,12 @@ export async function executeRestore(input: {
   input.onStage?.('verify');
   const problems: string[] = [];
   for (const write of normalized) {
-    const current = readItem(write.key, storage);
+    const current = readStrict(storage, write.key);
     if (current === null || (await sha256Hex(current)) !== write.sha256) {
       problems.push(`「${write.label}」没有按预期写入。`);
     }
   }
-  const projectsRaw = readItem(PROJECTS_STORAGE_KEY, storage);
+  const projectsRaw = readStrict(storage, PROJECTS_STORAGE_KEY);
   const migrated = projectsRaw === null ? null : migrateStoredPayload(projectsRaw);
   if (migrated === null || !migrated.ok) {
     problems.push('恢复后的项目数据无法读回。');
@@ -683,7 +920,7 @@ export async function executeRestore(input: {
       problems.push('恢复后的书签数量与计划不一致。');
     }
   }
-  const reviewRaw = readItem(REVIEW_STORAGE_KEY, storage);
+  const reviewRaw = readStrict(storage, REVIEW_STORAGE_KEY);
   let reviewNow: ReviewState | null = null;
   if (reviewRaw !== null) {
     try {
@@ -699,7 +936,7 @@ export async function executeRestore(input: {
   ) {
     problems.push('恢复后的复习进度无法读回，或数量与计划不一致。');
   }
-  const knowledgeRaw = readItem(KNOWLEDGE_STORAGE_KEY, storage);
+  const knowledgeRaw = readStrict(storage, KNOWLEDGE_STORAGE_KEY);
   let knowledgeNow: KnowledgeState | null = null;
   if (knowledgeRaw !== null) {
     try {
@@ -720,14 +957,16 @@ export async function executeRestore(input: {
   // Only the files this restore was supposed to copy are required afterwards. A paper whose
   // PDF was acknowledged as missing is restored as a record, and its absent file is not a
   // verification failure — the result already says the file is missing.
-  const expectedFiles = new Set(plan.pdfsToCopy);
+  const expectedFiles = new Set([...plan.pdfsToCopy, ...plan.pdfsPresent]);
   for (const hash of expectedFiles) {
-    if (!(await blobs.has(hash))) problems.push('有论文的 PDF 没有成功写入本地文件库。');
+    const stored = await blobs.get(hash);
+    if (stored === null || (await sha256Hex(stored)) !== hash) {
+      problems.push('有论文的 PDF 没有成功写入本地文件库，或内容校验失败。');
+    }
   }
 
   if (problems.length > 0) {
-    const rolledBack = rollback(storage, previous, written);
-    if (rolledBack) await input.journal.clear().catch(() => undefined);
+    const rolledBack = await finishRollback(rollback(storage, previous, written));
     return {
       status: 'failed',
       stage: 'verify',
@@ -745,9 +984,9 @@ export async function executeRestore(input: {
   // must not roll it back.
   try {
     await input.journal.write({ ...journal, committed: true });
+    journal = { ...journal, committed: true };
   } catch (error) {
-    const rolledBack = rollback(storage, previous, written);
-    if (rolledBack) await input.journal.clear().catch(() => undefined);
+    const rolledBack = await finishRollback(rollback(storage, previous, written));
     return {
       status: 'failed',
       stage: 'verify',
@@ -762,6 +1001,8 @@ export async function executeRestore(input: {
 
   let journalWarning: string | null = null;
   try {
+    if (!(await cleanRestorePdfs(journal, storage, blobs, permit, true)))
+      throw new Error('PDF 清理任务尚未持久化。');
     await input.journal.clear();
   } catch {
     journalWarning =
@@ -823,47 +1064,97 @@ export type RestoreRecovery = 'none' | 'completed' | 'clean' | 'rolled-back' | '
  * or stop in the middle? A mixture means the old values go back — the alternative is a
  * workspace where projects point at knowledge that was never written.
  */
-export async function recoverInterruptedRestore(input?: {
+interface RecoveryInput {
   storage?: KeyValueStore | null;
   journal?: RestoreJournalStore;
-}): Promise<RestoreRecovery> {
-  const storage = input?.storage ?? defaultStore();
+  blobs?: PdfBlobStore;
+  onProblem?: (detail: string) => void;
+}
+
+export async function recoverInterruptedRestore(input?: RecoveryInput): Promise<RestoreRecovery> {
+  try {
+    return await workspaceAccess.exclusive(async (permit) => {
+      const result = await recoverRestoreLocked(input, permit);
+      if (result === 'blocked') workspaceAccess.block();
+      return result;
+    });
+  } catch (error) {
+    input?.onProblem?.(describe(error));
+    workspaceAccess.block();
+    return 'blocked';
+  }
+}
+
+async function recoverRestoreLocked(
+  input: RecoveryInput | undefined,
+  permit: WorkspaceWritePermit,
+): Promise<RestoreRecovery> {
+  const storage = input?.storage === undefined ? defaultStore() : input.storage;
   const journalStore = input?.journal;
-  if (journalStore === undefined) return 'none';
+  if (journalStore === undefined) return 'blocked';
 
   let journal: RestoreJournal | null;
   try {
     journal = await journalStore.read();
-  } catch {
-    // No journal store is reachable. A restore cannot have written one in this context, and
-    // nothing else can be recovered from it; the dialog itself will refuse to start a restore.
+  } catch (error) {
+    input?.onProblem?.(describe(error));
+    return 'blocked';
+  }
+  if (journal === null) {
+    // A failed read is not an empty workspace. Probe before loaders can turn unreadable
+    // keys into EMPTY and a later successful write can overwrite the original data.
+    for (const key of [...Object.keys(KEY_LABEL), ...RECOVERY_KEYS]) readStrict(storage, key);
     return 'none';
   }
-  if (journal === null) return 'none';
+  assertRestoreJournal(journal);
+  if (storage === null) return 'blocked';
 
   if (journal.committed === true) {
     // The restore finished and was verified; only its cleanup was lost. Nothing is rolled back.
-    await journalStore.clear().catch(() => undefined);
+    if (await cleanRestorePdfs(journal, storage, input?.blobs, permit, true)) {
+      await journalStore.clear().catch(() => undefined);
+    }
     return 'completed';
   }
 
   const keys = Object.keys(journal.keys);
-  let allNext = true;
+  let allNext = journal.phase !== 'prepared';
   let allPrevious = true;
   for (const key of keys) {
     const entry = journal.keys[key];
     if (entry === undefined) continue;
-    const current = readItem(key, storage);
-    if (current === null || (await sha256Hex(current)) !== entry.nextSha256) allNext = false;
-    if (current !== entry.previous) allPrevious = false;
+    const current = storage.getItem(key);
+    const matchesNext = current !== null && (await sha256Hex(current)) === entry.nextSha256;
+    if (!matchesNext) allNext = false;
+    if (current !== entry.previous) {
+      allPrevious = false;
+      // Older builds do not honour our lock. Preserve an unrecognised edit rather than
+      // overwriting it with a rollback snapshot that cannot account for that writer.
+      if (!matchesNext) return 'blocked';
+    }
   }
 
   if (allNext) {
-    await journalStore.clear().catch(() => undefined);
+    const additions = [...(journal.pdfsAdded ?? []), ...(journal.pdfsPending ?? [])];
+    if (additions.length > 0) {
+      const references = readPdfReferences(storage);
+      if (references === null || input?.blobs === undefined) return 'blocked';
+      for (const hash of additions) {
+        if (!references.has(hash)) continue;
+        const bytes = await input.blobs.get(hash);
+        if (bytes === null || (await sha256Hex(bytes)) !== hash) return 'blocked';
+      }
+    }
+    // A lost cleanup must not later roll back subsequent edits. Make the completion durable.
+    await journalStore.write({ ...journal, committed: true });
+    if (await cleanRestorePdfs(journal, storage, input?.blobs, permit, true)) {
+      await journalStore.clear().catch(() => undefined);
+    }
     return 'completed';
   }
   if (allPrevious) {
-    await journalStore.clear().catch(() => undefined);
+    if (!(await cleanRestorePdfs(journal, storage, input?.blobs, permit))) return 'blocked';
+    await journalStore.clear();
     return 'clean';
   }
 
@@ -871,16 +1162,16 @@ export async function recoverInterruptedRestore(input?: {
   for (const key of keys) {
     const entry = journal.keys[key];
     if (entry === undefined) continue;
-    if (readItem(key, storage) === entry.previous) continue;
+    if (storage.getItem(key) === entry.previous) continue;
     const outcome =
       entry.previous === null
         ? removeStrict(storage, key)
           ? 'ok'
           : 'failed'
         : writeStrict(storage, key, entry.previous);
-    if (outcome !== 'ok') ok = false;
+    if (outcome !== 'ok' || storage.getItem(key) !== entry.previous) ok = false;
   }
-  if (!ok) return 'blocked';
-  await journalStore.clear().catch(() => undefined);
+  if (!ok || !(await cleanRestorePdfs(journal, storage, input?.blobs, permit))) return 'blocked';
+  await journalStore.clear();
   return 'rolled-back';
 }

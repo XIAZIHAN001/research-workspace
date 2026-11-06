@@ -1,3 +1,4 @@
+import { workspaceAccess } from './workspaceAccess';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PdfBytes } from '../domain/pdfFile';
@@ -184,4 +185,112 @@ describe('createPdfBlobStore: reporting storage problems', () => {
       expect(await store.usage()).toBeNull();
     });
   });
+});
+
+describe('durable restore garbage collection', () => {
+  it('retains a cleanup task across reopening and removes only a verified orphan', async () => {
+    const factory = freshFactory();
+    const bytes = bytesOf('%PDF-1.4 orphan');
+    const { sha256Hex } = await import('./hash');
+    const hash = await sha256Hex(bytes);
+    const store = createPdfBlobStore(factory);
+    await store.put(hash, bytes);
+    expect(store.queueCleanup).toBeTypeOf('function');
+    await store.queueCleanup!([hash]);
+    const reopened = createPdfBlobStore(factory);
+    workspaceAccess.block();
+    expect(await reopened.collectGarbage!(() => new Set())).toMatchObject({ removed: 1 });
+    expect(await reopened.has(hash)).toBe(false);
+    expect(await reopened.collectGarbage!(() => new Set())).toMatchObject({ removed: 0 });
+  });
+
+  it('checks references again after reading a candidate, and preserves shared PDFs', async () => {
+    const store = createPdfBlobStore(freshFactory());
+    const bytes = bytesOf('%PDF-1.4 newly referenced');
+    const { sha256Hex } = await import('./hash');
+    const hash = await sha256Hex(bytes);
+    await store.put(hash, bytes);
+    expect(store.queueCleanup).toBeTypeOf('function');
+    await store.queueCleanup!([hash]);
+    let checks = 0;
+    workspaceAccess.block();
+    await store.collectGarbage!(() => (++checks === 1 ? new Set() : new Set([hash])));
+    expect(checks).toBeGreaterThanOrEqual(2);
+    expect(await store.has(hash)).toBe(true);
+  });
+
+  it('does not delete when references are unreadable, and retries later', async () => {
+    const store = createPdfBlobStore(freshFactory());
+    const bytes = bytesOf('%PDF-1.4 retry later');
+    const { sha256Hex } = await import('./hash');
+    const hash = await sha256Hex(bytes);
+    await store.put(hash, bytes);
+    expect(store.queueCleanup).toBeTypeOf('function');
+    await store.queueCleanup!([hash]);
+    workspaceAccess.block();
+    await store.collectGarbage!(() => null);
+    expect(await store.has(hash)).toBe(true);
+    await store.collectGarbage!(() => new Set());
+    expect(await store.has(hash)).toBe(false);
+  });
+
+  it('does not delete a blob whose content does not match the cleanup identity', async () => {
+    const store = createPdfBlobStore(freshFactory());
+    const hash = 'a'.repeat(64);
+    await store.put(hash, bytesOf('unverified bytes'));
+    expect(store.queueCleanup).toBeTypeOf('function');
+    await store.queueCleanup!([hash]);
+    workspaceAccess.block();
+    await expect(store.collectGarbage!(() => new Set())).rejects.toThrow();
+    expect(await store.has(hash)).toBe(true);
+  });
+});
+
+it('refuses live garbage collection before it can block ordinary workspace actions', async () => {
+  const store = createPdfBlobStore(freshFactory());
+  await expect(store.collectGarbage!(() => new Set())).rejects.toThrow(/启动/);
+  expect(workspaceAccess.canWrite()).toBe(true);
+});
+
+it('closes the PDF connection on versionchange and reconnects on the next read', async () => {
+  const factory = freshFactory();
+  const original = factory.open.bind(factory);
+  let database: IDBDatabase | undefined;
+  const opening = vi.spyOn(factory, 'open').mockImplementation((name, version) => {
+    const request = original(name, version);
+    request.addEventListener('success', () => {
+      database = request.result;
+    });
+    return request;
+  });
+  const store = createPdfBlobStore(factory);
+  await store.has('a'.repeat(64));
+  if (database === undefined) throw new Error('test database missing');
+  const close = vi.spyOn(database, 'close');
+  database.onversionchange?.call(database, new Event('versionchange') as IDBVersionChangeEvent);
+  expect(close).toHaveBeenCalledOnce();
+  await store.has('a'.repeat(64));
+  expect(opening).toHaveBeenCalledTimes(2);
+});
+
+it('closes a late successful PDF open after the blocked request already failed', async () => {
+  let request!: IDBOpenDBRequest;
+  const close = vi.fn();
+  const factory = {
+    open: () => {
+      request = {
+        result: { close },
+        onerror: null,
+        onsuccess: null,
+        onblocked: null,
+      } as unknown as IDBOpenDBRequest;
+      queueMicrotask(() =>
+        request.onblocked?.call(request, new Event('blocked') as IDBVersionChangeEvent),
+      );
+      return request;
+    },
+  } as unknown as IDBFactory;
+  await expect(createPdfBlobStore(factory).has('a'.repeat(64))).rejects.toThrow();
+  request.onsuccess?.call(request, new Event('success'));
+  expect(close).toHaveBeenCalledOnce();
 });

@@ -102,6 +102,9 @@ const READING_SAVE_DELAY = 800;
  * but it never shows the payload itself or any internal detail.
  */
 function loadIssueNotice(issue: LoadIssue): string {
+  if (issue.readFailed === true) {
+    return '无法读取本机项目存储，已暂停保存，以免覆盖尚未读取的数据。未创建恢复副本。请检查存储权限后重新载入，不要清理浏览器数据。';
+  }
   const reason: Record<LoadIssue['kind'], string> = {
     unreadable: '本地保存的项目数据已损坏，无法读取。',
     invalid: '本地保存的项目数据格式不正确，无法读取。',
@@ -109,9 +112,11 @@ function loadIssueNotice(issue: LoadIssue): string {
     'migration-failed': '本地保存的项目数据升级失败，已停止使用它。',
   };
   const kept =
-    issue.kind === 'unsupported-version' || issue.kind === 'migration-failed'
-      ? `原始数据已完整备份在本机（${PROJECTS_BACKUP_KEY}），没有被覆盖或删除。`
-      : `原始数据仍保留在本机（隔离副本 ${PROJECTS_CORRUPT_KEY}），没有被删除。`;
+    issue.recoveryCopy !== 'saved'
+      ? '未能建立安全恢复副本，已暂停保存。原始数据没有被覆盖或删除。'
+      : issue.kind === 'unsupported-version' || issue.kind === 'migration-failed'
+        ? `原始数据已完整备份在本机（${PROJECTS_BACKUP_KEY}），没有被覆盖或删除。`
+        : `原始数据仍保留在本机（隔离副本 ${PROJECTS_CORRUPT_KEY}），没有被删除。`;
   return `${reason[issue.kind]}${kept}在确认数据恢复之前，请不要清理浏览器数据。`;
 }
 

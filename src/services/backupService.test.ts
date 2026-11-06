@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { workspaceAccess } from './workspaceAccess';
 import type { KnowledgeState } from '../domain/knowledge';
 import type { Paper } from '../domain/papers';
 import type { ProjectsState } from '../domain/projectsState';
@@ -14,6 +15,7 @@ import {
   inspectBackupFile,
   presentPdfHashes,
   readBackupPreferences,
+  readPdfReferences,
   readBackupSource,
   readRecoveryCopies,
   recoverInterruptedRestore,
@@ -519,10 +521,13 @@ describe('restoring a backup', () => {
       now: NOW.getTime(),
     });
     const projectsAfterFirst = storage.getItem(PROJECTS_STORAGE_KEY);
+    // A completed restore freezes the old live stores; the second import is after reload.
+    workspaceAccess.allowWrites();
 
     const second = await inspectBackupFile(file, {
       ...options,
       current: sampleSource(),
+      currentPreferences: readBackupPreferences(storage),
       presentPdfHashes: new Set([SHA_A]),
     });
     expect(second.plan?.additions).toMatchObject({ projects: 0, papers: 0, annotations: 0 });
@@ -719,6 +724,47 @@ describe('restoring a backup', () => {
 });
 
 describe('recovering an interrupted restore', () => {
+  it('blocks startup if the journal cannot be read, preserving every key', async () => {
+    const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'dark' });
+    const journal: RestoreJournalStore = {
+      read: async () => {
+        throw new Error('blocked IndexedDB');
+      },
+      write: async () => {
+        throw new Error('unexpected write');
+      },
+      clear: async () => {
+        throw new Error('must not discard unreadable evidence');
+      },
+    };
+    await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('blocked');
+    expect(storage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+  });
+
+  it('blocks startup when no journal store was supplied', async () => {
+    await expect(recoverInterruptedRestore()).resolves.toBe('blocked');
+  });
+
+  it('blocks startup if LocalStorage cannot be read, without rolling back', async () => {
+    const journal = memoryJournal();
+    await journal.write(
+      await journalFor({ [THEME_STORAGE_KEY]: { previous: 'light', next: 'dark' } }),
+    );
+    const storage: KeyValueStore = {
+      getItem: () => {
+        throw new Error('storage access denied');
+      },
+      setItem: () => {
+        throw new Error('must not write');
+      },
+      removeItem: () => {
+        throw new Error('must not remove');
+      },
+    };
+    await expect(recoverInterruptedRestore({ storage, journal })).resolves.toBe('blocked');
+    expect(journal.peek()).not.toBeNull();
+  });
+
   async function journalFor(entries: Record<string, { previous: string | null; next: string }>) {
     const keys: RestoreJournal['keys'] = {};
     for (const [key, entry] of Object.entries(entries)) {
@@ -850,5 +896,375 @@ describe('reading current preferences and recovery copies', () => {
       store,
     );
     expect([...present]).toEqual([SHA_A]);
+  });
+});
+
+describe('restore PDF write-ahead tracking and rollback', () => {
+  async function restoreFixture(twoFiles = false) {
+    const source = sampleSource();
+    const hashB = await sha256Hex(bytes('second'));
+    if (twoFiles)
+      source.projects.papers['paper-2'] = paper('paper-2', 'second', {
+        pdf: { sha256: hashB, name: 'second.pdf', bytes: 20, pageCount: 1, addedAt: 1 },
+      });
+    const { file } = await backupFile(
+      source,
+      blobStore({ [SHA_A]: PDF_BYTES, [hashB]: bytes('second') }),
+    );
+    const inspection = await inspectBackupFile(file, {
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      presentPdfHashes: new Set(),
+      availableBytes: null,
+    });
+    return {
+      file,
+      inspection,
+      hashB,
+      choice: DEFAULT_RESTORE_CHOICE,
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      now: NOW.getTime(),
+    };
+  }
+
+  it('removes PDF A after PDF B fails, preserving preexisting blobs', async () => {
+    const fixture = await restoreFixture(true);
+    const blobs = blobStore({ ['f'.repeat(64)]: bytes('preexisting') });
+    blobs.failPut.add(fixture.hashB);
+    const journal = memoryJournal();
+    const result = await executeRestore({ ...fixture, blobs, journal, storage: new MemoryStore() });
+    expect(result.status).toBe('failed');
+    expect(blobs.files.has(SHA_A)).toBe(false);
+    expect(blobs.files.has('f'.repeat(64))).toBe(true);
+    expect(journal.peek()).toBeNull();
+  });
+
+  it('cleans newly written PDFs when LocalStorage fails', async () => {
+    const fixture = await restoreFixture();
+    const blobs = blobStore();
+    const storage = new MemoryStore();
+    storage.failOn.add(KNOWLEDGE_STORAGE_KEY);
+    const result = await executeRestore({ ...fixture, blobs, storage, journal: memoryJournal() });
+    expect(result.status).toBe('failed');
+    expect(blobs.files.size).toBe(0);
+  });
+
+  it('never removes a preexisting PDF, even if a stale plan said to copy it', async () => {
+    const fixture = await restoreFixture();
+    const blobs = blobStore({ [SHA_A]: PDF_BYTES });
+    const storage = new MemoryStore();
+    storage.failOn.add(KNOWLEDGE_STORAGE_KEY);
+    await executeRestore({ ...fixture, blobs, storage, journal: memoryJournal() });
+    expect(blobs.files.has(SHA_A)).toBe(true);
+  });
+
+  it('records write intent before storing bytes and actual additions afterwards', async () => {
+    const fixture = await restoreFixture();
+    const blobs = blobStore();
+    const journal = memoryJournal();
+    const put = blobs.put;
+    let sawIntent = false;
+    blobs.put = async (hash, data) => {
+      sawIntent = journal.peek()?.pdfsPending?.includes(hash) === true;
+      await put(hash, data);
+    };
+    const result = await executeRestore({ ...fixture, blobs, journal, storage: new MemoryStore() });
+    expect(result.status).toBe('restored');
+    expect(sawIntent).toBe(true);
+  });
+
+  it('preserves journal and blob when reference metadata is unreadable during cleanup', async () => {
+    const journal = memoryJournal();
+    await journal.write({
+      id: 'crash',
+      startedAt: 1,
+      keys: {},
+      phase: 'prepared',
+      pdfsPending: [SHA_A],
+      pdfsAdded: [],
+    });
+    const storage = new MemoryStore({ [PROJECTS_STORAGE_KEY]: '{broken' });
+    const blobs = blobStore({ [SHA_A]: PDF_BYTES });
+    expect(await recoverInterruptedRestore({ storage, journal, blobs })).toBe('blocked');
+    expect(blobs.files.has(SHA_A)).toBe(true);
+    expect(journal.peek()).not.toBeNull();
+  });
+
+  it('recovers a crash after PDF bytes were saved but before addition was acknowledged', async () => {
+    const journal = memoryJournal();
+    await journal.write({
+      id: 'crash',
+      startedAt: 1,
+      keys: {},
+      phase: 'prepared',
+      pdfsPending: [SHA_A],
+      pdfsAdded: [],
+    });
+    const blobs = blobStore({ [SHA_A]: PDF_BYTES });
+    expect(await recoverInterruptedRestore({ storage: new MemoryStore(), journal, blobs })).toBe(
+      'clean',
+    );
+    expect(blobs.files.has(SHA_A)).toBe(false);
+    expect(journal.peek()).toBeNull();
+  });
+
+  it('keeps a newly added PDF when either of two papers still references it', async () => {
+    const journal = memoryJournal();
+    await journal.write({
+      id: 'crash',
+      startedAt: 1,
+      keys: {},
+      phase: 'prepared',
+      pdfsAdded: [SHA_A],
+      pdfsPending: [],
+    });
+    const projects = sampleSource().projects;
+    projects.papers['paper-2'] = paper('paper-2', 'shared', {
+      pdf: projects.papers['paper-1']!.pdf,
+    });
+    const storage = new MemoryStore({ [PROJECTS_STORAGE_KEY]: serializeProjects(projects) });
+    const blobs = blobStore({ [SHA_A]: PDF_BYTES });
+    expect(await recoverInterruptedRestore({ storage, journal, blobs })).toBe('clean');
+    expect(blobs.files.has(SHA_A)).toBe(true);
+  });
+});
+
+it('refuses a new restore after writes have been frozen for recovery', async () => {
+  workspaceAccess.block();
+  await expect(executeRestore({} as Parameters<typeof executeRestore>[0])).rejects.toThrow(/暂停/);
+});
+
+it('refuses a stale restore snapshot instead of overwriting a newly saved paper', async () => {
+  const { file } = await backupFile(sampleSource());
+  const inspection = await inspectBackupFile(file, {
+    current: EMPTY_SOURCE,
+    currentPreferences: { ...EMPTY_PREFERENCES },
+    presentPdfHashes: new Set(),
+    availableBytes: null,
+  });
+  const newer = { ...EMPTY_STATE, papers: { recent: paper('recent', 'newly saved') } };
+  const storage = new MemoryStore({ [PROJECTS_STORAGE_KEY]: serializeProjects(newer) });
+  const journal = memoryJournal();
+  const result = await executeRestore({
+    file,
+    inspection,
+    current: EMPTY_SOURCE,
+    currentPreferences: { ...EMPTY_PREFERENCES },
+    choice: DEFAULT_RESTORE_CHOICE,
+    storage,
+    journal,
+    blobs: blobStore(),
+    now: NOW.getTime(),
+  });
+  expect(result.status).toBe('refused');
+  expect(storage.getItem(PROJECTS_STORAGE_KEY)).toBe(serializeProjects(newer));
+  expect(journal.peek()).toBeNull();
+});
+
+it('requires reinspection when the current snapshot changed after preview', async () => {
+  const { file } = await backupFile(sampleSource());
+  const inspection = await inspectBackupFile(file, {
+    current: EMPTY_SOURCE,
+    currentPreferences: { ...EMPTY_PREFERENCES },
+    presentPdfHashes: new Set(),
+    availableBytes: null,
+  });
+  const newer = sampleSource();
+  const storage = new MemoryStore({
+    [PROJECTS_STORAGE_KEY]: serializeProjects(newer.projects),
+    [KNOWLEDGE_STORAGE_KEY]: JSON.stringify(newer.knowledge),
+    [REVIEW_STORAGE_KEY]: JSON.stringify(newer.review),
+    [DIFFICULTY_STORAGE_KEY]: JSON.stringify({ version: 1, ...newer.difficulties }),
+  });
+  const journal = memoryJournal();
+  const result = await executeRestore({
+    file,
+    inspection,
+    current: newer,
+    currentPreferences: { ...EMPTY_PREFERENCES },
+    choice: { ...DEFAULT_RESTORE_CHOICE, sameIdPolicy: 'prefer-backup' },
+    storage,
+    journal,
+    blobs: blobStore(),
+    now: NOW.getTime(),
+  });
+  expect(result.status).toBe('refused');
+  expect(journal.peek()).toBeNull();
+});
+
+it('preserves edits from an uncoordinated older tab instead of rolling them back', async () => {
+  const journal = memoryJournal();
+  await journal.write({
+    id: 'crash',
+    startedAt: 1,
+    keys: {
+      [THEME_STORAGE_KEY]: { previous: 'light', nextSha256: await sha256Hex('dark') },
+    },
+  });
+  const storage = new MemoryStore({ [THEME_STORAGE_KEY]: 'newer-external-edit' });
+  expect(await recoverInterruptedRestore({ journal, storage })).toBe('blocked');
+  expect(storage.getItem(THEME_STORAGE_KEY)).toBe('newer-external-edit');
+  expect(journal.peek()).not.toBeNull();
+});
+
+it('does not promote matching metadata to committed when an added referenced PDF is missing', async () => {
+  const journal = memoryJournal();
+  const raw = serializeProjects(sampleSource().projects);
+  await journal.write({
+    id: 'crash',
+    startedAt: 1,
+    phase: 'data',
+    pdfsAdded: [SHA_A],
+    pdfsPending: [],
+    keys: {
+      [PROJECTS_STORAGE_KEY]: { previous: null, nextSha256: await sha256Hex(raw) },
+    },
+  });
+  const storage = new MemoryStore({ [PROJECTS_STORAGE_KEY]: raw });
+  expect(await recoverInterruptedRestore({ journal, storage, blobs: blobStore() })).toBe('blocked');
+  expect(journal.peek()?.committed).not.toBe(true);
+  expect(storage.getItem(PROJECTS_STORAGE_KEY)).toBe(raw);
+});
+
+it('retains recovery evidence when a rollback write silently fails its readback', async () => {
+  const journal = memoryJournal();
+  await journal.write({
+    id: 'crash',
+    startedAt: 1,
+    keys: {
+      [THEME_STORAGE_KEY]: { previous: 'light', nextSha256: await sha256Hex('dark') },
+      [DIFFICULTY_PREFS_KEY]: { previous: null, nextSha256: await sha256Hex('prefs') },
+    },
+  });
+  const storage: KeyValueStore = {
+    getItem: (key) => (key === THEME_STORAGE_KEY ? 'dark' : null),
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  };
+  expect(await recoverInterruptedRestore({ journal, storage })).toBe('blocked');
+  expect(journal.peek()).not.toBeNull();
+});
+
+it('does not interpret a LocalStorage read failure as a new empty workspace', async () => {
+  const storage: KeyValueStore = {
+    getItem: () => {
+      throw new Error('denied');
+    },
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  };
+  expect(await recoverInterruptedRestore({ storage, journal: memoryJournal() })).toBe('blocked');
+});
+
+describe('restore commit and cleanup faults', () => {
+  async function request() {
+    const { file } = await backupFile(sampleSource());
+    const inspection = await inspectBackupFile(file, {
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      presentPdfHashes: new Set(),
+      availableBytes: null,
+    });
+    return {
+      file,
+      inspection,
+      current: EMPTY_SOURCE,
+      currentPreferences: { ...EMPTY_PREFERENCES },
+      choice: DEFAULT_RESTORE_CHOICE,
+      storage: new MemoryStore(),
+      blobs: blobStore(),
+      now: NOW.getTime(),
+    };
+  }
+
+  it('rolls back metadata and only newly added PDFs when the commit marker fails', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    const write = journal.write;
+    journal.write = async (value) => {
+      if (value.committed) throw new Error('commit failed');
+      await write(value);
+    };
+    const result = await executeRestore({ ...input, journal });
+    expect(result).toMatchObject({ status: 'failed', stage: 'verify', rolledBack: true });
+    expect(input.storage.items.size).toBe(0);
+    expect(input.blobs.files.size).toBe(0);
+    expect(journal.peek()).toBeNull();
+  });
+
+  it('keeps a committed marker if cleanup fails and never rolls back later edits', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    journal.clear = async () => {
+      throw new Error('cleanup failed');
+    };
+    const result = await executeRestore({ ...input, journal });
+    expect(result.status).toBe('restored');
+    expect(journal.peek()?.committed).toBe(true);
+    input.storage.setItem(THEME_STORAGE_KEY, 'later-edit');
+    expect(
+      await recoverInterruptedRestore({ storage: input.storage, journal, blobs: input.blobs }),
+    ).toBe('completed');
+    expect(input.storage.getItem(THEME_STORAGE_KEY)).toBe('later-edit');
+    expect(input.blobs.files.has(SHA_A)).toBe(true);
+  });
+
+  it('retains failed PDF cleanup for the next startup instead of discarding its journal', async () => {
+    const input = await request();
+    const journal = memoryJournal();
+    input.storage.failOn.add(KNOWLEDGE_STORAGE_KEY);
+    const remove = input.blobs.remove;
+    input.blobs.remove = async () => {
+      throw new Error('delete failed');
+    };
+    const result = await executeRestore({ ...input, journal });
+    expect(result).toMatchObject({ status: 'failed', rolledBack: false });
+    expect(journal.peek()).not.toBeNull();
+    expect(input.blobs.files.has(SHA_A)).toBe(true);
+    input.blobs.remove = remove;
+    expect(
+      await recoverInterruptedRestore({ storage: input.storage, journal, blobs: input.blobs }),
+    ).toBe('clean');
+    expect(input.blobs.files.has(SHA_A)).toBe(false);
+    expect(journal.peek()).toBeNull();
+  });
+
+  it('does not accept unavailable PDF storage as proof that a pending file is absent', async () => {
+    const journal = memoryJournal();
+    await journal.write({
+      id: 'pending',
+      startedAt: 1,
+      keys: {},
+      phase: 'prepared',
+      pdfsPending: [SHA_A],
+    });
+    const blobs = { ...blobStore(), durable: false };
+    expect(await recoverInterruptedRestore({ storage: new MemoryStore(), journal, blobs })).toBe(
+      'blocked',
+    );
+    expect(journal.peek()).not.toBeNull();
+  });
+
+  it('keeps PDF origins recorded only by a summary or a malformed optional binding', () => {
+    const p = paper('p', 'provenance', {
+      summary: {
+        text: 'summary',
+        provider: 'mock',
+        providerLabel: 'mock',
+        model: 'm',
+        online: false,
+        createdAt: 1,
+        pdfSha256: SHA_A,
+      },
+    });
+    const raw = JSON.stringify({
+      version: SCHEMA_VERSION,
+      ...EMPTY_STATE,
+      papers: { p: { ...p, pdf: { sha256: 'a'.repeat(64) } } },
+    });
+    const hashes = readPdfReferences(new MemoryStore({ [PROJECTS_STORAGE_KEY]: raw }));
+    expect(hashes?.has(SHA_A)).toBe(true);
+    expect(hashes?.has('a'.repeat(64))).toBe(true);
   });
 });

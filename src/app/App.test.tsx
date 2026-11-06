@@ -685,8 +685,37 @@ describe('avatar', () => {
 });
 
 describe('persistence warning', () => {
+  it('immediately reports unavailable storage without inventing corruption or a recovery copy', () => {
+    const { container } = setup({ store: createProjectsStore(null) });
+    expect(screen.getByText(/无法读取本机项目存储/)).toBeInTheDocument();
+    expect(container.textContent).not.toContain('已损坏');
+    expect(container.textContent).not.toContain('隔离副本 rw.projects.corrupt');
+  });
+
+  it('does not claim a quarantine copy exists when its slots cannot be read', () => {
+    const disk = {
+      getItem: (key: string) => {
+        if (key === PROJECTS_STORAGE_KEY) return '{broken';
+        throw new Error('read denied');
+      },
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    };
+    const { container } = setup({ store: createProjectsStore(disk) });
+    expect(screen.getByText(/未能建立安全恢复副本/)).toBeInTheDocument();
+    expect(container.textContent).not.toContain('隔离副本 rw.projects.corrupt');
+  });
+
   it('tells the user when changes cannot be saved', async () => {
-    const { user } = setup({ store: createProjectsStore(null) });
+    const { user } = setup({
+      store: createProjectsStore({
+        getItem: () => null,
+        setItem: () => {
+          throw new DOMException('quota', 'QuotaExceededError');
+        },
+        removeItem: () => undefined,
+      }),
+    });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await createProject(user, 'Alpha');
     expect(await screen.findByRole('status')).toHaveTextContent('没有保存');

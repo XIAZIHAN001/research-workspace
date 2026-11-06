@@ -1,3 +1,4 @@
+import { workspaceAccess } from './workspaceAccess';
 import { PROJECTS_BACKUP_KEY, PROJECTS_CORRUPT_KEY, PROJECTS_STORAGE_KEY } from '../app/config';
 import { migrateStoredPayload, SCHEMA_VERSION, serializeProjects } from '../domain/migrate';
 import { EMPTY_STATE, type ProjectsState } from '../domain/projectsState';
@@ -6,11 +7,12 @@ import { EMPTY_STATE, type ProjectsState } from '../domain/projectsState';
 export type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 /** Why the stored payload is not in use. Null after a clean load. */
-export type LoadIssue =
+export type LoadIssue = (
   | { kind: 'unreadable'; detail: string }
   | { kind: 'invalid'; detail: string }
   | { kind: 'unsupported-version'; detail: string; found: number }
-  | { kind: 'migration-failed'; detail: string; from: number };
+  | { kind: 'migration-failed'; detail: string; from: number }
+) & { readFailed?: boolean; recoveryCopy?: 'saved' | 'failed' };
 
 export interface LoadResult {
   state: ProjectsState;
@@ -42,14 +44,20 @@ const QUARANTINE_SLOTS = 3;
 function keepCopy(raw: string, baseKey: string, store: KeyValueStore | null): boolean {
   const keyFor = (slot: number): string => (slot === 1 ? baseKey : `${baseKey}.${slot}`);
 
-  // Already kept somewhere in the family: writing it again would only cost space.
-  for (let slot = 1; slot <= QUARANTINE_SLOTS; slot += 1) {
-    if (readItem(keyFor(slot), store) === raw) return true;
+  if (store === null) return false;
+  try {
+    // Already kept somewhere in the family: writing it again would only cost space.
+    for (let slot = 1; slot <= QUARANTINE_SLOTS; slot += 1) {
+      if (store.getItem(keyFor(slot)) === raw) return true;
+    }
+    for (let slot = 1; slot <= QUARANTINE_SLOTS; slot += 1) {
+      if (store.getItem(keyFor(slot)) === null) return writeItem(keyFor(slot), raw, store);
+    }
+    return false;
+  } catch {
+    // An unreadable quarantine slot may hold an older user's only surviving copy.
+    return false;
   }
-  for (let slot = 1; slot <= QUARANTINE_SLOTS; slot += 1) {
-    if (readItem(keyFor(slot), store) === null) return writeItem(keyFor(slot), raw, store);
-  }
-  return false;
 }
 
 /** Reading `window.localStorage` itself can throw (blocked storage, sandboxed frames). */
@@ -75,7 +83,7 @@ export function writeItem(
   value: string,
   store: KeyValueStore | null = defaultStore(),
 ): boolean {
-  if (store === null) return false;
+  if (store === null || !workspaceAccess.canWrite()) return false;
   try {
     store.setItem(key, value);
     return true;
@@ -85,6 +93,7 @@ export function writeItem(
 }
 
 export function removeItem(key: string, store: KeyValueStore | null = defaultStore()): void {
+  if (!workspaceAccess.canWrite()) return;
   try {
     store?.removeItem(key);
   } catch {
@@ -102,7 +111,24 @@ export function removeItem(key: string, store: KeyValueStore | null = defaultSto
  * result says so, so the caller can refuse to overwrite it.
  */
 export function loadProjectsWithReport(store: KeyValueStore | null = defaultStore()): LoadResult {
-  const raw = readItem(PROJECTS_STORAGE_KEY, store);
+  let raw: string | null;
+  try {
+    if (store === null) throw new Error('LocalStorage 不可用。');
+    raw = store.getItem(PROJECTS_STORAGE_KEY);
+  } catch (error) {
+    // An unreadable key may still hold the only copy. Never start a writable empty store.
+    return {
+      state: EMPTY_STATE,
+      issue: {
+        kind: 'unreadable',
+        readFailed: true,
+        recoveryCopy: 'failed',
+        detail: error instanceof Error ? error.message : String(error),
+      },
+      persisted: false,
+      recoveryCopy: 'failed',
+    };
+  }
   if (raw === null) {
     return { state: EMPTY_STATE, issue: null, persisted: true, recoveryCopy: 'not-needed' };
   }
@@ -123,7 +149,7 @@ export function loadProjectsWithReport(store: KeyValueStore | null = defaultStor
           : { kind: outcome.reason, detail: outcome.detail };
     return {
       state: EMPTY_STATE,
-      issue,
+      issue: { ...issue, recoveryCopy: saved ? 'saved' : 'failed' },
       persisted: saved,
       recoveryCopy: saved ? 'saved' : 'failed',
     };

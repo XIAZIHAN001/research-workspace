@@ -102,12 +102,15 @@ export function BackupDialog({
   const fileInput = useRef<HTMLInputElement>(null);
   const journal = useMemo(() => createIndexedDbJournal(), []);
 
+  const requiresReload =
+    result?.status === 'restored' || (result?.status === 'failed' && !result.rolledBack);
+
   const handleClose = useCallback(() => {
     // A successful restore leaves the running React stores behind the persisted values. Closing
     // this dialog and continuing to edit would write the old state back over the restored data.
-    if (busy !== null || result?.status === 'restored') return;
+    if (busy !== null || requiresReload) return;
     onClose();
-  }, [busy, onClose, result]);
+  }, [busy, onClose, requiresReload]);
 
   const runExport = async (): Promise<void> => {
     setExporting(true);
@@ -227,6 +230,7 @@ export function BackupDialog({
   const needsPolicy = (plan?.conflicts.length ?? 0) > 0;
   const canRestore =
     !rejected &&
+    !requiresReload &&
     plan !== null &&
     busy === null &&
     acknowledged &&
@@ -246,7 +250,7 @@ export function BackupDialog({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={exporting}
+            disabled={exporting || busy === 'restoring' || requiresReload}
             onClick={() => {
               void runExport();
             }}
@@ -274,7 +278,7 @@ export function BackupDialog({
           <button
             type="button"
             className="btn"
-            disabled={busy !== null}
+            disabled={busy !== null || requiresReload}
             onClick={() => {
               fileInput.current?.click();
             }}
@@ -538,6 +542,14 @@ function RestoreResultView({ result, onReload }: { result: RestoreResult; onRelo
             <li key={problem}>{problem}</li>
           ))}
         </ul>
+      )}
+      {!result.rolledBack && (
+        <div className="backup-actions">
+          <p>工作区写入已暂停；恢复日志和文件均已保留，请重新载入完成恢复检查。</p>
+          <button type="button" className="btn btn-primary" onClick={onReload}>
+            重新载入以重试恢复检查
+          </button>
+        </div>
       )}
       {result.rolledBack && (
         <p className="backup-message is-info">

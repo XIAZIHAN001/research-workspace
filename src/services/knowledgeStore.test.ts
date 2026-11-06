@@ -209,3 +209,71 @@ describe('createKnowledgeStore', () => {
     expect(notified).toBe(0);
   });
 });
+
+it('blocks an unavailable knowledge store rather than treating it as an empty graph', () => {
+  expect(loadKnowledge(null)).toMatchObject({
+    issue: 'unreadable',
+    writeBlocked: true,
+    backupSaved: false,
+  });
+});
+
+it('preserves graph bytes after a transient initial read failure even when later writes work', () => {
+  const original = JSON.stringify(stateWithConcept());
+  const disk = store({ [KNOWLEDGE_STORAGE_KEY]: original });
+  let failNextRead = true;
+  const storage = {
+    ...disk,
+    getItem(key: string) {
+      if (failNextRead) {
+        failNextRead = false;
+        throw new Error('Transient knowledge read failure');
+      }
+      return disk.getItem(key);
+    },
+  };
+  const knowledge = createKnowledgeStore(storage);
+  expect(knowledge.getSnapshot()).toMatchObject({
+    issue: 'unreadable',
+    writesBlocked: true,
+    persisted: false,
+  });
+  knowledge.dispatch({
+    type: 'concept/create',
+    input: { name: 'new', projectIds: [] },
+    id: 'new',
+    at: 2,
+  });
+  expect(knowledge.getSnapshot().persisted).toBe(false);
+  expect(disk.items.get(KNOWLEDGE_STORAGE_KEY)).toBe(original);
+  expect(disk.items.size).toBe(1);
+  expect(createKnowledgeStore(storage).getSnapshot().state).toEqual(stateWithConcept());
+});
+
+it('preserves a hidden knowledge quarantine copy and blocks later writes after its read fails', () => {
+  const original = {
+    [KNOWLEDGE_STORAGE_KEY]: '{broken current graph',
+    [KNOWLEDGE_BACKUP_KEY]: 'older recoverable graph',
+  };
+  const disk = store(original);
+  let failNextBackupRead = true;
+  const storage = {
+    ...disk,
+    getItem(key: string) {
+      if (key === KNOWLEDGE_BACKUP_KEY && failNextBackupRead) {
+        failNextBackupRead = false;
+        throw new Error('Transient quarantine read failure');
+      }
+      return disk.getItem(key);
+    },
+  };
+  const knowledge = createKnowledgeStore(storage);
+  knowledge.dispatch({
+    type: 'concept/create',
+    input: { name: 'new', projectIds: [] },
+    id: 'new',
+    at: 2,
+  });
+  expect(Object.fromEntries(disk.items)).toEqual(original);
+  expect(knowledge.getSnapshot()).toMatchObject({ persisted: false, writesBlocked: true });
+});

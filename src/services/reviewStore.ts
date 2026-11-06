@@ -1,3 +1,4 @@
+import { workspaceAccess } from './workspaceAccess';
 import { REVIEW_STORAGE_KEY } from '../app/config';
 import {
   EMPTY_REVIEW_STATE,
@@ -8,7 +9,7 @@ import {
   type ReviewGrade,
   type ReviewState,
 } from '../domain/review';
-import { defaultStore, readItem, writeItem, type KeyValueStore } from './storage';
+import { defaultStore, writeItem, type KeyValueStore } from './storage';
 
 /**
  * The review schedule, in its own key with its own version — the same boundary the knowledge
@@ -26,7 +27,14 @@ export type ReviewAction =
  * destroy whatever that build had scheduled. The session then works in memory only.
  */
 function loadReview(storage: KeyValueStore | null): { state: ReviewState; blocked: boolean } {
-  const raw = readItem(REVIEW_STORAGE_KEY, storage);
+  let raw: string | null;
+  try {
+    if (storage === null) throw new Error('LocalStorage 不可用。');
+    raw = storage.getItem(REVIEW_STORAGE_KEY);
+  } catch {
+    // A transient read error is not evidence that the existing schedule is absent or invalid.
+    return { state: EMPTY_REVIEW_STATE, blocked: true };
+  }
   if (raw === null) return { state: EMPTY_REVIEW_STATE, blocked: false };
   try {
     return (
@@ -71,6 +79,12 @@ export function createReviewStore(storage: KeyValueStore | null = defaultStore()
       return snapshot;
     },
     dispatch(action) {
+      if (!workspaceAccess.canWrite()) {
+        persisted = false;
+        snapshot = { state, persisted };
+        emit();
+        return;
+      }
       // A concept id is an external identifier too; never use one as a magic object key.
       if (action.conceptId === '__proto__') return;
       if (action.type === 'grade') {

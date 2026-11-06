@@ -146,3 +146,34 @@ describe('reviewStore', () => {
     expect(graded?.intervalDays).toBe(1);
   });
 });
+
+it('marks an unavailable review store unpersisted', () => {
+  const review = createReviewStore(null);
+  expect(review.getSnapshot().persisted).toBe(false);
+  review.dispatch({ type: 'grade', conceptId: 'new', grade: 'good', at: 2 });
+  expect(review.getSnapshot().persisted).toBe(false);
+});
+
+it('preserves schedule bytes after a transient initial read failure even when later writes work', () => {
+  const original = JSON.stringify({ version: 1, cards: { original: beginCard('original', 1) } });
+  const disk = memoryStore({ [REVIEW_STORAGE_KEY]: original });
+  let failNextRead = true;
+  const storage: KeyValueStore = {
+    ...disk,
+    getItem(key) {
+      if (failNextRead) {
+        failNextRead = false;
+        throw new Error('Transient review read failure');
+      }
+      return disk.getItem(key);
+    },
+  };
+  const review = createReviewStore(storage);
+  expect(review.getSnapshot().persisted).toBe(false);
+  review.dispatch({ type: 'grade', conceptId: 'new', grade: 'good', at: 2 });
+  expect(review.getSnapshot().persisted).toBe(false);
+  expect(disk.getItem(REVIEW_STORAGE_KEY)).toBe(original);
+  expect(createReviewStore(storage).getSnapshot().state.cards.original).toEqual(
+    beginCard('original', 1),
+  );
+});

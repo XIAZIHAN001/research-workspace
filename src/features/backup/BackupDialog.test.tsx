@@ -1,3 +1,4 @@
+import * as backupService from '../../services/backupService';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -123,4 +124,39 @@ describe('BackupDialog', () => {
       expect(screen.getByText(/不能恢复/)).toBeInTheDocument();
     });
   });
+});
+
+it('requires reload and disables more restores after an incomplete rollback', async () => {
+  const execute = vi.spyOn(backupService, 'executeRestore').mockResolvedValueOnce({
+    status: 'failed',
+    stage: 'data',
+    message: 'rollback incomplete',
+    rolledBack: false,
+    problems: [],
+    pdfsCopied: 0,
+  });
+  const onClose = vi.fn();
+  const onReload = vi.fn();
+  try {
+    render(
+      <BackupDialog
+        open
+        onClose={onClose}
+        projects={stateWithProject('本机的项目')}
+        knowledge={EMPTY_KNOWLEDGE}
+        blobs={blobs}
+        onReload={onReload}
+      />,
+    );
+    await choose(await backupFile('本机的项目'));
+    await userEvent.click(screen.getByRole('button', { name: '校验并完成恢复' }));
+    await screen.findByText('rollback incomplete');
+    expect(screen.getByRole('button', { name: '校验并完成恢复' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: /重新载入以重试恢复检查/ }));
+    expect(onReload).toHaveBeenCalledOnce();
+  } finally {
+    execute.mockRestore();
+  }
 });

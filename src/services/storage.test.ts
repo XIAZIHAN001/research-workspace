@@ -513,3 +513,92 @@ describe('loadProjectsWithReport: never destroys an earlier copy', () => {
     expect(result.state.projects).toHaveLength(2);
   });
 });
+
+it('reports unavailable project storage as unreadable and unsafe to overwrite', () => {
+  for (const storage of [null, createUnreadableStore()]) {
+    expect(loadProjectsWithReport(storage)).toMatchObject({
+      state: EMPTY_STATE,
+      issue: { kind: 'unreadable' },
+      persisted: false,
+      recoveryCopy: 'failed',
+    });
+  }
+});
+
+it('preserves project bytes after a transient initial read failure even when later writes work', async () => {
+  const { createProjectsStore } = await import('./projectsStore');
+  const original = currentPayload(SAMPLE_STATE);
+  const disk = createMemoryStore({ [PROJECTS_STORAGE_KEY]: original });
+  let failNextRead = true;
+  const storage: KeyValueStore = {
+    ...disk,
+    getItem(key) {
+      if (failNextRead) {
+        failNextRead = false;
+        throw new Error('Transient project read failure');
+      }
+      return disk.getItem(key);
+    },
+  };
+  const projects = createProjectsStore(storage);
+  expect(projects.getSnapshot()).toMatchObject({ issue: { kind: 'unreadable' }, persisted: false });
+  projects.dispatch({ type: 'registerPaper', paper: makePaper('new-paper') });
+  expect(projects.getSnapshot().persisted).toBe(false);
+  expect(disk.data.get(PROJECTS_STORAGE_KEY)).toBe(original);
+  expect(disk.data.size).toBe(1);
+  expect(createProjectsStore(storage).getSnapshot().state).toEqual(SAMPLE_STATE);
+});
+
+it.each([
+  { name: 'corrupt', baseKey: PROJECTS_CORRUPT_KEY, raw: '{broken current payload' },
+  { name: 'migration', baseKey: PROJECTS_BACKUP_KEY, raw: PHASE_0_PAYLOAD },
+])(
+  'preserves hidden $name quarantine bytes and blocks writes when a slot read fails',
+  async ({ baseKey, raw }) => {
+    const { createProjectsStore } = await import('./projectsStore');
+    const original = {
+      [PROJECTS_STORAGE_KEY]: raw,
+      [baseKey]: 'oldest preserved original',
+      [`${baseKey}.2`]: 'second preserved original',
+      [`${baseKey}.3`]: 'third preserved original',
+    };
+    const disk = createMemoryStore(original);
+    let baseReads = 0;
+    const storage: KeyValueStore = {
+      ...disk,
+      getItem(key) {
+        if (key === baseKey && ++baseReads === 2)
+          throw new Error('Transient quarantine read failure');
+        return disk.getItem(key);
+      },
+    };
+    const projects = createProjectsStore(storage);
+    projects.dispatch({ type: 'registerPaper', paper: makePaper('new-paper') });
+    expect(Object.fromEntries(disk.data)).toEqual(original);
+    expect(projects.getSnapshot().persisted).toBe(false);
+  },
+);
+
+it('does not assume a quarantine scan is safe after one slot was unreadable', () => {
+  const disk = createMemoryStore({
+    [PROJECTS_STORAGE_KEY]: '{broken',
+    [PROJECTS_CORRUPT_KEY]: 'older original',
+  });
+  let failNextBackupRead = true;
+  const storage: KeyValueStore = {
+    ...disk,
+    getItem(key) {
+      if (key === PROJECTS_CORRUPT_KEY && failNextBackupRead) {
+        failNextBackupRead = false;
+        throw new Error('Cannot inspect quarantine');
+      }
+      return disk.getItem(key);
+    },
+  };
+  expect(loadProjectsWithReport(storage)).toMatchObject({
+    persisted: false,
+    recoveryCopy: 'failed',
+  });
+  expect(disk.data.get(PROJECTS_CORRUPT_KEY)).toBe('older original');
+  expect(disk.data.size).toBe(2);
+});
