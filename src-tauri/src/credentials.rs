@@ -9,6 +9,7 @@
 //! before it has been built and run there would be worse than an honest error.
 
 use serde::Serialize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The target naming scheme. Stable across versions: changing it would orphan existing keys
 /// rather than migrate them.
@@ -67,11 +68,16 @@ pub enum BindingTrust {
 
 /// What the credential store holds: the secret, the authority it was entered for, and how much
 /// that pairing can be trusted.
-#[derive(Clone)]
 pub struct StoredKey {
     pub key: String,
     pub endpoint: Option<String>,
     pub binding: BindingTrust,
+}
+
+impl Drop for StoredKey {
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 /// What a delete actually accomplished.
@@ -138,7 +144,7 @@ fn normalize_endpoint(value: Option<String>) -> Option<String> {
 
 /// Packs the key and its binding into one blob. Every write is a single credential record, so
 /// there is no intermediate state where a new key exists beside the previous binding.
-fn encode_record(key: &str, endpoint: Option<&str>) -> Result<String, String> {
+fn encode_record(key: &str, endpoint: Option<&str>) -> Result<Zeroizing<String>, String> {
     if key.is_empty() || key.contains(RECORD_SEPARATOR) {
         return Err("系统凭据内容不合法，已拒绝保存。".to_string());
     }
@@ -149,7 +155,7 @@ fn encode_record(key: &str, endpoint: Option<&str>) -> Result<String, String> {
     if endpoint.contains(RECORD_SEPARATOR) {
         return Err("API 地址包含无法保存的字符，已拒绝保存。".to_string());
     }
-    let record = format!("{RECORD_MAGIC}{endpoint}{RECORD_SEPARATOR}{key}");
+    let record = Zeroizing::new(format!("{RECORD_MAGIC}{endpoint}{RECORD_SEPARATOR}{key}"));
     if record.len() > MAX_RECORD_BYTES {
         return Err("API Key 与 API 地址合计过长，系统凭据无法安全保存。".to_string());
     }
@@ -233,6 +239,7 @@ fn get_for_with(backend: &dyn Backend, provider: &str) -> Result<Option<StoredKe
         let Some(legacy) = backend.get(LEGACY_DEEPSEEK_TARGET)? else {
             return Ok(None);
         };
+        let mut legacy = Zeroizing::new(legacy);
         // The single-key layout recorded no endpoint. A `.endpoint` left in the other legacy
         // target cannot prove it was saved with this key, so it is not copied into the new
         // atomic record: doing that would invent a binding the reader may never have authorised.
@@ -243,12 +250,13 @@ fn get_for_with(backend: &dyn Backend, provider: &str) -> Result<Option<StoredKe
             }
         }
         return Ok(Some(StoredKey {
-            key: legacy,
+            key: std::mem::take(&mut *legacy),
             endpoint: None,
             binding: BindingTrust::LegacyUnbound,
         }));
     };
 
+    let mut raw = Zeroizing::new(raw);
     match decode_record(&raw)? {
         Some((key, endpoint)) => Ok(Some(StoredKey {
             key,
@@ -265,7 +273,7 @@ fn get_for_with(backend: &dyn Backend, provider: &str) -> Result<Option<StoredKe
                 BindingTrust::LegacyUnbound
             };
             Ok(Some(StoredKey {
-                key: raw,
+                key: std::mem::take(&mut *raw),
                 endpoint,
                 binding,
             }))
@@ -349,6 +357,7 @@ mod platform {
         CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
         CRED_TYPE_GENERIC,
     };
+    use zeroize::{Zeroize, Zeroizing};
 
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain(std::iter::once(0)).collect()
@@ -388,27 +397,31 @@ mod platform {
 
         let credential = unsafe { &*raw };
         let size = credential.CredentialBlobSize as usize;
-        let mut bytes = if size == 0 || credential.CredentialBlob.is_null() {
+        let bytes = if size == 0 || credential.CredentialBlob.is_null() {
             Vec::new()
         } else {
             // Copy before CredFree: the system owns the original buffer.
             unsafe { std::slice::from_raw_parts(credential.CredentialBlob, size) }.to_vec()
         };
+        if size > 0 && !credential.CredentialBlob.is_null() {
+            unsafe { std::slice::from_raw_parts_mut(credential.CredentialBlob, size) }.zeroize();
+        }
         unsafe { CredFree(raw.cast()) };
 
-        let result = String::from_utf8(bytes.clone());
-        // The copy exists only long enough to become a String; wipe it either way.
-        bytes.fill(0);
-        match result {
+        // Move the allocation into String instead of making a second secret copy.
+        match String::from_utf8(bytes) {
             Ok(text) => Ok(Some(text)),
-            Err(_) => Err("系统凭据不是有效的文本，已拒绝使用。".to_string()),
+            Err(error) => {
+                error.into_bytes().zeroize();
+                Err("系统凭据不是有效的文本，已拒绝使用。".to_string())
+            }
         }
     }
 
     fn write_target(target_name: &str, key: &str) -> Result<(), String> {
         let mut target = wide(target_name);
         let mut user = wide("research-workspace-api-key");
-        let mut blob = key.as_bytes().to_vec();
+        let mut blob = Zeroizing::new(key.as_bytes().to_vec());
 
         let mut credential: CREDENTIALW = CREDENTIALW::default();
         credential.Type = CRED_TYPE_GENERIC;
@@ -421,7 +434,7 @@ mod platform {
         let ok = unsafe { CredWriteW(&credential, 0) };
         // The API has copied what it needs; this process should not keep the key in a mutable
         // heap buffer longer than necessary. (The key also exists in the caller's String.)
-        blob.fill(0);
+        blob.zeroize();
         if ok == 0 {
             return Err(last_error("写入系统凭据"));
         }

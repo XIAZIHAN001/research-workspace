@@ -22,6 +22,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod credentials;
+mod lifecycle;
+mod preferences;
 mod providers;
 
 use std::collections::VecDeque;
@@ -35,6 +37,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 const READY_PREFIX: &str = "RW_AI_READY ";
 const SECRET_PREFIX: &str = "RW_AI_SECRET ";
@@ -319,28 +322,37 @@ struct AiRuntime {
 }
 
 #[derive(Clone)]
-struct AiManager(Arc<Mutex<AiRuntime>>);
+struct AiManager(Arc<Mutex<AiRuntime>>, Arc<Mutex<()>>);
+// Lock order: operation lock, then runtime lock. Monitors take only the runtime lock.
+// All mutations (including credentials) hold the operation lock through validation, disk
+// commit and restart so no command starts a child using another command's partial state.
 
 impl AiManager {
     fn new() -> Self {
-        Self(Arc::new(Mutex::new(AiRuntime {
-            child: None,
-            stdin: None,
-            status: AiServiceStatus::empty(STATUS_STOPPED, AiMode::Mock),
-            stderr: Arc::new(Mutex::new(VecDeque::new())),
-            generation: 0,
-            // Every launch starts offline. The interface can switch to online in this session,
-            // but nothing about a previous session can turn a new launch into a paid one.
-            mode: AiMode::Mock,
-            settings: AiSettings::default(),
-        })))
+        Self(
+            Arc::new(Mutex::new(AiRuntime {
+                child: None,
+                stdin: None,
+                status: AiServiceStatus::empty(STATUS_STOPPED, AiMode::Mock),
+                stderr: Arc::new(Mutex::new(VecDeque::new())),
+                generation: 0,
+                // Every launch starts offline. The interface can switch to online in this session,
+                // but nothing about a previous session can turn a new launch into a paid one.
+                mode: AiMode::Mock,
+                settings: AiSettings::default(),
+            })),
+            Arc::new(Mutex::new(())),
+        )
     }
 
     fn shutdown(&self) {
+        let _operation = self.1.lock().expect("AI operation lock poisoned");
         let mut runtime = self.0.lock().expect("AI runtime lock poisoned");
         runtime.generation = runtime.generation.wrapping_add(1);
-        stop_child(&mut runtime);
-        runtime.status = AiServiceStatus::empty(STATUS_STOPPED, runtime.mode);
+        runtime.status = match stop_child(&mut runtime) {
+            Ok(()) => AiServiceStatus::empty(STATUS_STOPPED, runtime.mode),
+            Err(error) => failed_status(runtime.mode, false, error),
+        };
     }
 }
 
@@ -366,6 +378,7 @@ fn current_status(manager: &AiManager) -> AiServiceStatus {
 
 #[tauri::command]
 fn ai_service_info(manager: State<'_, AiManager>) -> AiServiceStatus {
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
     current_status(manager.inner())
 }
 
@@ -377,7 +390,11 @@ fn ai_providers() -> Vec<providers::ProviderPreset> {
 }
 
 #[tauri::command]
-fn ai_credentials_status(provider: String) -> credentials::CredentialStatus {
+fn ai_credentials_status(
+    manager: State<'_, AiManager>,
+    provider: String,
+) -> credentials::CredentialStatus {
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
     credentials::status_for(&provider)
 }
 
@@ -389,7 +406,10 @@ fn set_ai_api_key(
     key: String,
     base_url: Option<String>,
 ) -> Result<AiServiceStatus, String> {
-    let mut candidate = key.trim().to_string();
+    let key = Zeroizing::new(key);
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
+    let mut candidate = Zeroizing::new(key.trim().to_string());
+    drop(key);
     let valid = candidate.chars().count() >= credentials::KEY_MIN_CHARS
         && candidate.chars().count() <= credentials::KEY_MAX_CHARS
         && candidate.chars().all(|value| ('!'..='~').contains(&value));
@@ -434,8 +454,8 @@ fn set_ai_api_key(
     };
 
     let written = credentials::set_for(&provider, &candidate, endpoint.as_deref());
-    // This local copy exists only for the duration of the call. The IPC argument itself is
-    // owned by Tauri and is not persisted or logged by this shell.
+    // Both Rust-owned IPC input and trimmed copy are drop-cleared. JavaScript/Tauri transport
+    // copies are outside these guards and cannot be promised zeroized.
     wipe_string(&mut candidate);
     written?;
 
@@ -472,6 +492,7 @@ fn delete_ai_api_key(
     manager: State<'_, AiManager>,
     provider: String,
 ) -> Result<ApiKeyDeletion, String> {
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
     // Revoke first. The old order deleted the store record first and only then stopped the
     // service; a partial storage failure (most often the legacy `.endpoint` record) returned
     // early and left a child running with a key the reader had just asked to remove.
@@ -481,12 +502,19 @@ fn delete_ai_api_key(
     };
     if revoke {
         start_service(&app, manager.inner());
+        let runtime = manager.0.lock().expect("AI runtime lock poisoned");
+        if runtime.status.state == STATUS_FAILED && runtime.child.is_some() {
+            return Err(
+                "旧 AI 服务尚未停止，API Key 未删除。请退出应用并确认旧进程已结束后再试。"
+                    .to_string(),
+            );
+        }
     }
 
     let report = credentials::delete_for(&provider)?;
 
-    // `set_ai_mode` could have started an online child between the revoke and the delete. With
-    // the key gone, that child must not keep running.
+    // Defensive reconciliation; the operation lock also prevents mode changes from
+    // interleaving with revocation and credential deletion.
     let reconcile = {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
         reconcile_after_key_delete(&mut runtime, &provider, report.key_removed)
@@ -504,7 +532,11 @@ fn delete_ai_api_key(
 
 /// Returns the runtime to mock when the key being deleted is the one serving online mode.
 fn revoke_online_for_key_delete(runtime: &mut AiRuntime, provider: &str) -> bool {
-    if runtime.mode == AiMode::Online && runtime.settings.provider == provider {
+    // After a failed replacement, settings may already name another provider. A retained
+    // failed child has an uncertain active credential, so revoke it before ANY key deletion.
+    if (runtime.mode == AiMode::Online && runtime.settings.provider == provider)
+        || (runtime.child.is_some() && runtime.status.state == STATUS_FAILED)
+    {
         runtime.mode = AiMode::Mock;
         true
     } else {
@@ -528,6 +560,7 @@ fn set_ai_mode(
     manager: State<'_, AiManager>,
     mode: String,
 ) -> Result<AiServiceStatus, String> {
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
     let next = AiMode::parse(&mode)
         .ok_or_else(|| "未知的 AI 模式；只能是 mock 或 online。".to_string())?;
     if next == AiMode::Online {
@@ -562,43 +595,60 @@ fn update_ai_settings(
     manager: State<'_, AiManager>,
     patch: AiSettingsPatch,
 ) -> Result<AiSettings, String> {
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
     let next = {
         let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-        let mut next = runtime.settings.clone();
-        if let Some(budget) = patch.budget {
-            next.budget = budget;
-        }
-        if let Some(provider) = patch.provider {
-            next.provider = provider;
-        }
-        if let Some(base_url) = patch.base_url {
-            next.base_url = providers::normalize_base_url(&base_url);
-        }
-        if let Some(model) = patch.model {
-            next.model = model.trim().to_string();
-        }
-        if let Some(effort) = patch.reasoning_effort {
-            next.reasoning_effort = effort;
-        }
-        // A save while online must not leave the running service with settings it cannot use.
-        if runtime.mode == AiMode::Online {
-            next.online_ready()?;
-            check_online_credential(&next.provider, &next.base_url)?;
-        } else {
-            next.validate()?;
-        }
-        runtime.settings = next.clone();
+        let next = commit_settings(&mut runtime, patch, check_online_credential, |next| {
+            save_preferences(&app, next)
+        })?;
+        runtime.generation = runtime.generation.wrapping_add(1);
+        runtime.status = AiServiceStatus::empty(STATUS_STARTING, runtime.mode);
         next
     };
-    save_preferences(&app, &next)?;
     // The sidecar reads every one of these from its environment, so applying a change means a
     // fresh process. It also gives the reader a clean session counter to go with the new limits.
     start_service(&app, manager.inner());
     Ok(next)
 }
 
+/// The runtime lock is held for validation and persistence. Failed persistence must not
+/// alter settings, mode, status, generation, or the existing child's ownership.
+fn commit_settings(
+    runtime: &mut AiRuntime,
+    patch: AiSettingsPatch,
+    credential_check: impl FnOnce(&str, &str) -> Result<(), String>,
+    persist: impl FnOnce(&AiSettings) -> Result<(), String>,
+) -> Result<AiSettings, String> {
+    let mut next = runtime.settings.clone();
+    if let Some(budget) = patch.budget {
+        next.budget = budget;
+    }
+    if let Some(provider) = patch.provider {
+        next.provider = provider;
+    }
+    if let Some(base_url) = patch.base_url {
+        next.base_url = providers::normalize_base_url(&base_url);
+    }
+    if let Some(model) = patch.model {
+        next.model = model.trim().to_string();
+    }
+    if let Some(effort) = patch.reasoning_effort {
+        next.reasoning_effort = effort;
+    }
+    if runtime.mode == AiMode::Online {
+        next.online_ready()?;
+        credential_check(&next.provider, &next.base_url)?;
+    } else {
+        next.validate()?;
+    }
+    persist(&next)?;
+    runtime.settings = next.clone();
+    Ok(next)
+}
+
 #[tauri::command]
 fn restart_ai_service(app: AppHandle, manager: State<'_, AiManager>) -> AiServiceStatus {
+    let _operation = manager.1.lock().expect("AI operation lock poisoned");
     start_service(&app, manager.inner());
     current_status(manager.inner())
 }
@@ -621,6 +671,7 @@ async fn list_ai_models(
     base_url: Option<String>,
     api_key: Option<String>,
 ) -> Result<Vec<String>, String> {
+    let api_key = api_key.map(Zeroizing::new);
     let preset =
         providers::find(&provider).ok_or_else(|| format!("未知的模型提供方：{provider}。"))?;
     let (stored_provider, stored_base_url) = {
@@ -643,7 +694,7 @@ async fn list_ai_models(
 
     let explicit_key = match api_key {
         Some(value) if !value.trim().is_empty() => {
-            let candidate = value.trim().to_string();
+            let candidate = Zeroizing::new(value.trim().to_string());
             let valid = candidate.chars().count() >= credentials::KEY_MIN_CHARS
                 && candidate.chars().count() <= credentials::KEY_MAX_CHARS
                 && candidate.chars().all(|value| ('!'..='~').contains(&value));
@@ -690,7 +741,10 @@ async fn list_ai_models(
     let mut key = if let Some(key) = explicit_key {
         key
     } else {
-        let stored = credentials::get_for(&provider)?.ok_or_else(|| {
+        // Legacy reads may migrate a credential. Serialize that read with key deletion/saves;
+        // never hold the operation lock over the outbound await below.
+        let _operation = manager.1.lock().expect("AI operation lock poisoned");
+        let mut stored = credentials::get_for(&provider)?.ok_or_else(|| {
             "还没有保存这个提供方的 API Key，可以先保存再获取模型列表。".to_string()
         })?;
         if let Err(error) = check_credential_endpoint(&provider, &stored, &base) {
@@ -698,7 +752,7 @@ async fn list_ai_models(
             wipe_string(&mut stored.key);
             return Err(error);
         }
-        stored.key
+        Zeroizing::new(std::mem::take(&mut stored.key))
     };
 
     let outcome = fetch_models(&base, &key).await;
@@ -850,6 +904,8 @@ fn load_preferences(app: &AppHandle) -> AiSettings {
     let Ok(path) = preferences_path(app) else {
         return AiSettings::default();
     };
+    // setup runs only after the single-instance guard admits this process.
+    preferences::cleanup_interrupted(&path);
     let Ok(text) = std::fs::read_to_string(path) else {
         return AiSettings::default();
     };
@@ -872,7 +928,7 @@ fn save_preferences(app: &AppHandle, settings: &AiSettings) -> Result<(), String
     }
     let text = serde_json::to_string_pretty(settings)
         .map_err(|error| format!("无法序列化 AI 设置：{error}"))?;
-    std::fs::write(path, text).map_err(|error| format!("无法保存 AI 设置：{error}"))
+    preferences::save(&path, text.as_bytes()).map_err(|error| format!("无法保存 AI 设置：{error}"))
 }
 
 fn stderr_tail(runtime: &AiRuntime) -> String {
@@ -999,65 +1055,44 @@ fn check_online_credential(provider: &str, base_url: &str) -> Result<(), String>
     Ok(())
 }
 
-fn stop_child(runtime: &mut AiRuntime) {
-    // Closing the pipe first gives the service a chance to shut down by itself; the explicit
-    // kill below is bounded so a stuck process cannot hold the application open.
+fn stop_child(runtime: &mut AiRuntime) -> Result<(), String> {
     runtime.stdin.take();
-    if let Some(mut child) = runtime.child.take() {
-        let deadline = Instant::now() + STOP_GRACE;
-        loop {
-            match child.try_wait() {
-                Ok(Some(_)) => return,
-                Ok(None) if Instant::now() < deadline => {
-                    thread::sleep(Duration::from_millis(50));
-                }
-                _ => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return;
-                }
-            }
-        }
+    if let Some(child) = runtime.child.as_mut() {
+        lifecycle::terminate(child, STOP_GRACE)
+            .map_err(|error| format!("无法确认旧 AI 服务已停止，未启动替代服务：{error}"))?;
     }
+    // Keep the handle on every failure so a retry can stop it; never orphan a live child.
+    runtime.child.take();
+    Ok(())
 }
 
 fn emit_status(app: &AppHandle, status: &AiServiceStatus) {
     let _ = app.emit(STATUS_EVENT, status.public());
 }
 
-/// Overwrites the bytes of a string in place. The capacity stays, but the secret does not.
+/// Optimizer-resistant clearing, including the String's spare capacity.
 fn wipe_string(value: &mut String) {
-    // Writing zeroes over a valid UTF-8 string keeps it valid: NUL is valid UTF-8.
-    unsafe {
-        value.as_bytes_mut().fill(0);
-    }
+    value.zeroize();
 }
 
-/**
- * Hands the key to the child over its stdin.
- *
- * Nothing in this function writes the key to a log or an error: a failure is reported as a bare
- * reason. The line buffer is wiped after the write; the child keeps the key in its own memory.
- */
-fn write_secret(stdin: &mut ChildStdin, key: &str) -> Result<(), String> {
+/// One owned, drop-cleared buffer; all write/flush failures also clear it. OS pipe buffers and
+/// the Node/V8 copy remain outside Rust's memory ownership and cannot be promised zeroized.
+fn write_secret(stdin: &mut impl Write, key: &str) -> Result<(), String> {
     #[derive(Serialize)]
     struct SecretPayload<'a> {
         #[serde(rename = "apiKey")]
         api_key: &'a str,
     }
-
-    let mut payload = serde_json::to_string(&SecretPayload { api_key: key })
-        .map_err(|error| format!("无法构造凭据消息：{error}"))?;
-    let mut line = format!("{SECRET_PREFIX}{payload}\n").into_bytes();
-    let result = stdin
+    // Allow worst-case JSON escaping (including legacy keys) without reallocating secret bytes.
+    let mut line = Zeroizing::new(Vec::with_capacity(SECRET_PREFIX.len() + key.len() * 6 + 32));
+    line.extend_from_slice(SECRET_PREFIX.as_bytes());
+    serde_json::to_writer(&mut *line, &SecretPayload { api_key: key })
+        .map_err(|_| "无法构造凭据消息。".to_string())?;
+    line.push(b'\n');
+    stdin
         .write_all(&line)
         .and_then(|()| stdin.flush())
-        .map_err(|error| format!("无法把 API Key 交给本地 AI 服务：{error}"));
-    line.fill(0);
-    unsafe {
-        payload.as_bytes_mut().fill(0);
-    }
-    result
+        .map_err(|_| "无法把 API Key 交给本地 AI 服务。".to_string())
 }
 
 #[cfg(debug_assertions)]
@@ -1080,7 +1115,7 @@ fn spawn_child(
     instance: &str,
     settings: &AiSettings,
     stderr_sink: Arc<Mutex<VecDeque<String>>>,
-) -> Result<(Child, Option<ChildStdin>, ChildStdout), String> {
+) -> Result<(Child, Option<ChildStdin>, Option<ChildStdout>), String> {
     let directory = sidecar_dir(app)?;
     // The same filename on every platform keeps the bundle resource list identical. On Linux
     // this is a Linux binary that happens to carry a .exe suffix; the shell never relies on
@@ -1197,10 +1232,7 @@ fn spawn_child(
         .spawn()
         .map_err(|error| format!("无法启动本地 AI 服务：{error}"))?;
     let stdin = child.stdin.take();
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "无法读取本地 AI 服务的启动输出。".to_string())?;
+    let stdout = child.stdout.take();
 
     if let Some(stderr) = child.stderr.take() {
         thread::spawn(move || {
@@ -1218,6 +1250,21 @@ fn spawn_child(
     Ok((child, stdin, stdout))
 }
 
+fn ready_matches(
+    value: &ReadyLine,
+    instance: &str,
+    mode: AiMode,
+    provider: &str,
+    model: &str,
+) -> bool {
+    value.port != 0
+        && value.desktop_instance == instance
+        && value.instance_id.len() >= 8
+        && value.provider == provider
+        && value.online == mode.expects_online()
+        && value.model == model
+}
+
 /// Reads the ready handshake and then watches the child for the rest of its life.
 ///
 /// Runs on its own thread: `setup` must not wait for a process to start, and a failed start
@@ -1231,6 +1278,7 @@ fn monitor_service(
     token: String,
     expected_mode: AiMode,
     expected_provider: String,
+    expected_model: String,
     expected_credential: bool,
 ) {
     let (ready_tx, ready_rx) = mpsc::channel::<Option<ReadyLine>>();
@@ -1285,28 +1333,30 @@ fn monitor_service(
     // The ready line is the child's own claim. It must name the instance this shell generated,
     // it must say the mode we asked for, and it must name the provider that mode implies.
     // Anything else is not the service we started.
-    let valid = ready
-        .as_ref()
-        .map(|value| {
-            value.port != 0
-                && value.desktop_instance == instance
-                && value.instance_id.len() >= 8
-                && value.provider == expected_provider
-                && value.online == expected_mode.expects_online()
-                && !value.model.trim().is_empty()
-        })
-        .unwrap_or(false);
+    let valid = ready.as_ref().is_some_and(|value| {
+        ready_matches(
+            value,
+            &instance,
+            expected_mode,
+            &expected_provider,
+            &expected_model,
+        )
+    });
 
     if !valid {
-        stop_child(&mut runtime);
+        let stop_error = stop_child(&mut runtime).err();
         let reason = if ready.is_some() {
             format!(
-                "本地 AI 服务返回的身份或模式不匹配（期望 {} / {}），已停止该进程。",
+                "本地 AI 服务返回的身份或模式不匹配（期望 {} / {}），已拒绝启用该进程。",
                 expected_mode.as_str(),
                 expected_provider
             )
         } else {
             "本地 AI 服务没有在限定时间内就绪。".to_string()
+        };
+        let reason = match stop_error {
+            Some(error) => format!("{reason} {error}"),
+            None => reason,
         };
         let error = with_details(reason, &runtime);
         runtime.status = AiServiceStatus {
@@ -1322,8 +1372,8 @@ fn monitor_service(
             error: Some(error),
         };
         let status = runtime.status.clone();
-        drop(runtime);
         emit_status(&app, &status);
+        drop(runtime);
         return;
     }
 
@@ -1342,8 +1392,8 @@ fn monitor_service(
         error: None,
     };
     let ready_status = runtime.status.clone();
-    drop(runtime);
     emit_status(&app, &ready_status);
+    drop(runtime);
 
     // Stay with the child. A sidecar that dies later must become a visible failure, not a
     // service the interface keeps trying to reach.
@@ -1378,8 +1428,8 @@ fn monitor_service(
             error: Some(error),
         };
         let failed = runtime.status.clone();
-        drop(runtime);
         emit_status(&app, &failed);
+        drop(runtime);
         return;
     }
 }
@@ -1401,8 +1451,14 @@ fn failed_status(mode: AiMode, credential_configured: bool, error: String) -> Ai
 
 fn start_service(app: &AppHandle, manager: &AiManager) {
     let mut runtime = manager.0.lock().expect("AI runtime lock poisoned");
-    stop_child(&mut runtime);
     runtime.generation = runtime.generation.wrapping_add(1);
+    if let Err(error) = stop_child(&mut runtime) {
+        let failed = failed_status(runtime.mode, false, error);
+        runtime.status = failed.clone();
+        emit_status(app, &failed);
+        drop(runtime);
+        return;
+    }
     let generation = runtime.generation;
     let token = random_token();
     let instance = Uuid::new_v4().to_string();
@@ -1424,81 +1480,42 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
         if let Err(error) = settings.online_ready() {
             let failed = failed_status(mode, credential_configured, error);
             runtime.status = failed.clone();
-            drop(runtime);
             emit_status(app, &failed);
+            drop(runtime);
             return;
         }
     }
 
     match spawn_child(app, mode, &token, &instance, &settings, stderr_sink) {
-        Ok((mut child, mut stdin, stdout)) => {
-            if mode == AiMode::Online {
-                // Read the key only now, after the child exists. An absent or unreadable key is
-                // a failed start, not a quiet fallback to a different service.
-                let read = credentials::get_for(&settings.provider);
-                match read {
-                    Ok(Some(mut stored)) => {
-                        if let Err(error) = check_credential_endpoint(
-                            &settings.provider,
-                            &stored,
-                            &settings.base_url,
-                        ) {
-                            wipe_string(&mut stored.key);
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            let failed = failed_status(mode, credential_configured, error);
-                            runtime.status = failed.clone();
-                            drop(runtime);
-                            emit_status(app, &failed);
-                            return;
-                        }
-                        let handed = match stdin.as_mut() {
-                            Some(pipe) => write_secret(pipe, &stored.key),
-                            None => Err("本地 AI 服务没有可用的凭据通道。".to_string()),
-                        };
-                        wipe_string(&mut stored.key);
-                        if let Err(error) = handed {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            let failed = failed_status(mode, credential_configured, error);
-                            runtime.status = failed.clone();
-                            drop(runtime);
-                            emit_status(app, &failed);
-                            return;
-                        }
-                    }
-                    Ok(None) => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        let label = providers::find(&settings.provider)
-                            .map(|preset| preset.label)
-                            .unwrap_or("当前供应商");
-                        let failed = failed_status(
-                            mode,
-                            false,
-                            format!("没有找到 {label} 的 API Key，在线服务没有启动。"),
-                        );
-                        runtime.status = failed.clone();
-                        drop(runtime);
-                        emit_status(app, &failed);
-                        return;
-                    }
-                    Err(error) => {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        let failed = failed_status(mode, false, error);
-                        runtime.status = failed.clone();
-                        drop(runtime);
-                        emit_status(app, &failed);
-                        return;
-                    }
-                }
-            }
-
+        Ok((child, stdin, stdout)) => {
             runtime.child = Some(child);
             runtime.stdin = stdin;
-            drop(runtime);
+            let prepared = (|| {
+                if mode == AiMode::Online {
+                    let stored = online_credential(&settings.provider, &settings.base_url)?;
+                    let pipe = runtime
+                        .stdin
+                        .as_mut()
+                        .ok_or_else(|| "本地 AI 服务没有可用的凭据通道。".to_string())?;
+                    write_secret(pipe, &stored.key)?;
+                }
+                stdout.ok_or_else(|| "无法读取本地 AI 服务的启动输出。".to_string())
+            })();
+            let stdout = match prepared {
+                Ok(stdout) => stdout,
+                Err(error) => {
+                    let error = match stop_child(&mut runtime) {
+                        Ok(()) => error,
+                        Err(stop_error) => format!("{error} {stop_error}"),
+                    };
+                    let failed = failed_status(mode, credential_configured, error);
+                    runtime.status = failed.clone();
+                    emit_status(app, &failed);
+                    return;
+                }
+            };
             emit_status(app, &starting);
+            drop(runtime);
             let app = app.clone();
             let manager = manager.clone();
             thread::spawn(move || {
@@ -1511,6 +1528,11 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
                     token,
                     mode,
                     expected_provider,
+                    if mode.expects_online() {
+                        settings.model
+                    } else {
+                        "mock-1".to_string()
+                    },
                     credential_configured,
                 );
             });
@@ -1519,8 +1541,8 @@ fn start_service(app: &AppHandle, manager: &AiManager) {
             let error = with_details(error, &runtime);
             let failed = failed_status(mode, credential_configured, error);
             runtime.status = failed.clone();
-            drop(runtime);
             emit_status(app, &failed);
+            drop(runtime);
         }
     }
 }
@@ -1598,6 +1620,7 @@ fn main() {
 
             let handle = app.handle().clone();
             let manager = app.state::<AiManager>().inner().clone();
+            let _operation = manager.1.lock().expect("AI operation lock poisoned");
             start_service(&handle, &manager);
             Ok(())
         })
@@ -1735,5 +1758,199 @@ mod tests {
         runtime.mode = AiMode::Online;
         assert!(!reconcile_after_key_delete(&mut runtime, "deepseek", false));
         assert_eq!(runtime.mode, AiMode::Online);
+    }
+    fn model_patch(model: &str) -> super::AiSettingsPatch {
+        super::AiSettingsPatch {
+            budget: None,
+            provider: None,
+            base_url: None,
+            model: Some(model.to_string()),
+            reasoning_effort: None,
+        }
+    }
+
+    #[test]
+    fn failed_preferences_commit_leaves_memory_and_service_untouched() {
+        let mut runtime = test_runtime("deepseek", AiMode::Mock);
+        runtime.generation = 7;
+        runtime.status.state = "ready".to_string();
+        runtime.status.instance_id = Some("old-instance".to_string());
+        let result = super::commit_settings(
+            &mut runtime,
+            model_patch("replacement"),
+            |_, _| Ok(()),
+            |_| Err("injected disk-full".to_string()),
+        );
+        assert!(result.is_err());
+        assert_eq!(runtime.settings.model, "deepseek-flash");
+        assert_eq!(runtime.generation, 7);
+        assert_eq!(runtime.status.state, "ready");
+        assert_eq!(runtime.status.instance_id.as_deref(), Some("old-instance"));
+    }
+
+    #[test]
+    fn invalid_settings_and_wrong_credentials_never_reach_disk() {
+        let mut runtime = test_runtime("deepseek", AiMode::Online);
+        assert!(super::commit_settings(
+            &mut runtime,
+            model_patch("invalid model!"),
+            |_, _| Ok(()),
+            |_| panic!("invalid settings reached persistence")
+        )
+        .is_err());
+        assert!(super::commit_settings(
+            &mut runtime,
+            model_patch("valid-model"),
+            |provider, base| {
+                assert_eq!(provider, "deepseek");
+                assert_eq!(base, "https://api.deepseek.com");
+                Err("injected binding mismatch".to_string())
+            },
+            |_| panic!("unbound credentials reached persistence")
+        )
+        .is_err());
+        assert_eq!(runtime.settings.model, "deepseek-flash");
+    }
+
+    #[test]
+    fn successful_preferences_commit_publishes_exact_persisted_settings() {
+        let mut runtime = test_runtime("deepseek", AiMode::Mock);
+        let mut persisted = String::new();
+        let next = super::commit_settings(
+            &mut runtime,
+            model_patch(" replacement "),
+            |_, _| Ok(()),
+            |settings| {
+                persisted = serde_json::to_string(settings).unwrap();
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(runtime.settings.model, "replacement");
+        assert_eq!(persisted, serde_json::to_string(&next).unwrap());
+        assert_eq!(persisted, serde_json::to_string(&runtime.settings).unwrap());
+    }
+
+    #[test]
+    fn concurrent_settings_changes_merge_without_losing_a_committed_field() {
+        let manager = super::AiManager::new();
+        let start = Arc::new(std::sync::Barrier::new(3));
+        let mut workers = vec![];
+        for index in 0..2 {
+            let manager = manager.clone();
+            let start = start.clone();
+            workers.push(std::thread::spawn(move || {
+                start.wait();
+                let _operation = manager.1.lock().unwrap();
+                let mut runtime = manager.0.lock().unwrap();
+                let patch = if index == 0 {
+                    model_patch("concurrent-model")
+                } else {
+                    super::AiSettingsPatch {
+                        model: None,
+                        reasoning_effort: Some("high".to_string()),
+                        ..model_patch("unused")
+                    }
+                };
+                super::commit_settings(&mut runtime, patch, |_, _| Ok(()), |_| Ok(())).unwrap();
+            }));
+        }
+        start.wait();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let runtime = manager.0.lock().unwrap();
+        assert_eq!(runtime.settings.model, "concurrent-model");
+        assert_eq!(runtime.settings.reasoning_effort, "high");
+    }
+
+    #[test]
+    fn readiness_rejects_wrong_model_instance_provider_mode_and_port() {
+        let ready = || super::ReadyLine {
+            port: 12345,
+            desktop_instance: "expected-instance".to_string(),
+            instance_id: "service-instance".to_string(),
+            provider: "deepseek".to_string(),
+            model: "deepseek-flash".to_string(),
+            online: true,
+        };
+        let valid = |value: &super::ReadyLine| {
+            super::ready_matches(
+                value,
+                "expected-instance",
+                AiMode::Online,
+                "deepseek",
+                "deepseek-flash",
+            )
+        };
+        assert!(valid(&ready()));
+        let mut value = ready();
+        value.model = "old-model".to_string();
+        assert!(!valid(&value));
+        let mut value = ready();
+        value.desktop_instance = "old-instance".to_string();
+        assert!(!valid(&value));
+        let mut value = ready();
+        value.provider = "openai".to_string();
+        assert!(!valid(&value));
+        let mut value = ready();
+        value.online = false;
+        assert!(!valid(&value));
+        let mut value = ready();
+        value.port = 0;
+        assert!(!valid(&value));
+    }
+
+    #[test]
+    fn credential_pipe_errors_never_return_secret_contents() {
+        struct Failure {
+            flush: bool,
+        }
+        impl std::io::Write for Failure {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if self.flush {
+                    Ok(bytes.len())
+                } else {
+                    Err(std::io::Error::other("private-error-with-sk-fake-secret"))
+                }
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("private-error-with-sk-fake-secret"))
+            }
+        }
+        for flush in [false, true] {
+            let error = super::write_secret(&mut Failure { flush }, "sk-fake-secret").unwrap_err();
+            assert!(!error.contains("sk-fake-secret"));
+        }
+        let mut bytes = Vec::new();
+        super::write_secret(&mut bytes, "sk-fake-secret").unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            "RW_AI_SECRET {\"apiKey\":\"sk-fake-secret\"}\n"
+        );
+    }
+    #[test]
+    fn failed_old_provider_child_blocks_key_deletion_even_after_provider_changes() {
+        // The same isolated test binary is the synthetic child on every OS. It never opens
+        // credentials or application data and is always killed/reaped before assertions.
+        if std::env::var_os("RW_TEST_IDLE_CHILD").is_some() {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            return;
+        }
+        let mut runtime = test_runtime("openai", AiMode::Online);
+        runtime.status.state = super::STATUS_FAILED.to_string();
+        runtime.child = Some(std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::failed_old_provider_child_blocks_key_deletion_even_after_provider_changes"])
+            .env("RW_TEST_IDLE_CHILD", "1")
+            .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+            .spawn().unwrap());
+        let revoked_previous_provider = revoke_online_for_key_delete(&mut runtime, "deepseek");
+        // A failed stop changes requested mode to mock; a retry must still attempt revocation.
+        let revoked_retry = revoke_online_for_key_delete(&mut runtime, "deepseek");
+        let mut child = runtime.child.take().unwrap();
+        let _ = child.kill();
+        child.wait().unwrap();
+        assert!(revoked_previous_provider);
+        assert!(revoked_retry);
     }
 }

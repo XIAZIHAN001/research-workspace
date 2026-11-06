@@ -249,12 +249,17 @@ export async function getAiSettings(): Promise<AiSettings | null> {
 
 export async function updateAiSettings(
   patch: AiSettingsPatch,
-): Promise<{ ok: true; settings: AiSettings } | { ok: false; message: string }> {
+): Promise<
+  | { ok: true; settings: AiSettings; status: DesktopAiStatus | null }
+  | { ok: false; message: string }
+> {
   if (!isDesktopApp()) return { ok: false, message: '只有桌面版可以修改 AI 设置。' };
   try {
     const settings = await invoke<AiSettings>('update_ai_settings', { patch });
     notifyAiModeChanged();
-    return { ok: true, settings };
+    // A successful save is not proof that the asynchronously monitored child is ready.
+    const status = await getDesktopAiStatus();
+    return { ok: true, settings, status };
   } catch (error) {
     return { ok: false, message: typeof error === 'string' ? error : 'AI 设置没有保存成功。' };
   }
