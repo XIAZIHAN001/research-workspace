@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'vitest';
 import {
   assertHostedRunner,
+  runnerGuardCode,
   selectInstaller,
   installedPaths,
   nsisInvocation,
@@ -182,7 +183,15 @@ test('report treats blocked capability and any failed cleanup as non-pass', () =
 test('actual driver denies missing opt-in before installation and writes a NOT RUN report', () => {
   const result = spawnSync(process.execPath, ['scripts/verify/windows-runtime.mjs'], {
     cwd: process.cwd(),
-    env: { ...process.env, RW_WINDOWS_FRESH_RUNNER: '' },
+    env: {
+      ...process.env,
+      ...env,
+      DEBUG: '',
+      PWDEBUG: '',
+      NODE_DEBUG: '',
+      NODE_OPTIONS: '',
+      RW_WINDOWS_FRESH_RUNNER: '',
+    },
     encoding: 'utf8',
     timeout: 10_000,
   });
@@ -191,7 +200,10 @@ test('actual driver denies missing opt-in before installation and writes a NOT R
   assert.ok(match);
   const report = JSON.parse(readFileSync(join(match[1].trim(), 'report.json'), 'utf8'));
   assert.equal(report.status, 'NOT RUN');
-  assert.equal(report.terminalError, 'FRESH_GITHUB_HOSTED_WINDOWS_REQUIRED');
+  const code = process.platform === 'win32' ? 'WORKFLOW_OPT_IN_REQUIRED' : 'WINDOWS_REQUIRED';
+  assert.equal(report.terminalError, code);
+  assert.ok(result.stdout.includes(`TERMINAL preflight: ${code}`));
+  assert.equal(report.stage, 'runtime');
   assert.ok(
     report.checks
       .filter((check) => check.name !== 'owned-cleanup')
@@ -337,4 +349,92 @@ test('a refused root stop is recorded and cannot short-circuit another pending l
   assert.equal(uncertain.length, 2);
   assert.equal(uncertain[0].rootStop, 'unconfirmed');
   assert.deepEqual(second.killCalls, ['SIGKILL']);
+});
+
+test('accepts only the documented win25-vs2026 suffix without weakening host guards', () => {
+  assert.doesNotThrow(() => assertHostedRunner({ ...env, ImageOS: 'win25-vs2026' }, 'win32'));
+  for (const ImageOS of [
+    'win25-vs2027',
+    'win25-custom',
+    'win25-vs2026-extra',
+    'win25-vs2026\n',
+    'windows-2025-vs2026',
+  ]) {
+    assert.throws(() => assertHostedRunner({ ...env, ImageOS }, 'win32'), {
+      message: 'WINDOWS_IMAGE_REQUIRED',
+    });
+  }
+  assert.throws(() =>
+    assertHostedRunner(
+      { ...env, ImageOS: 'win25-vs2026', RUNNER_ENVIRONMENT: 'self-hosted' },
+      'win32',
+    ),
+  );
+  assert.throws(() =>
+    assertHostedRunner({ ...env, ImageOS: 'win25-vs2026', RW_WINDOWS_FRESH_RUNNER: '' }, 'win32'),
+  );
+});
+
+test('preserves each classified hosted guard refusal without exposing arbitrary error text', () => {
+  const cases = [
+    [{}, 'linux', 'WINDOWS_REQUIRED'],
+    [{ DEBUG: 'secret-debug-value' }, 'win32', 'DRIVER_DEBUG_CHANNEL_REFUSED'],
+    [{ RUNNER_ENVIRONMENT: 'self-hosted' }, 'win32', 'FRESH_HOSTED_RUNNER_REQUIRED'],
+    [{ RW_WINDOWS_FRESH_RUNNER: '' }, 'win32', 'WORKFLOW_OPT_IN_REQUIRED'],
+    [{ ImageVersion: '' }, 'win32', 'RUNNER_METADATA_REQUIRED'],
+    [{ ImageOS: 'unknown' }, 'win32', 'WINDOWS_IMAGE_REQUIRED'],
+    [{ GITHUB_SHA: 'invalid' }, 'win32', 'COMMIT_REQUIRED'],
+    [{ RUNNER_TEMP: 'relative' }, 'win32', 'ABSOLUTE_RUNNER_PATH_REQUIRED'],
+  ];
+  for (const [patch, platform, code] of cases) {
+    assert.throws(
+      () => assertHostedRunner({ ...env, ...patch }, platform),
+      (error) => runnerGuardCode(error) === code,
+    );
+  }
+  for (const error of [
+    new Error('SECRET_PAYLOAD'),
+    new Error('Bearer secret'),
+    undefined,
+    'WINDOWS_IMAGE_REQUIRED',
+  ]) {
+    assert.equal(runnerGuardCode(error), 'FRESH_GITHUB_HOSTED_WINDOWS_REQUIRED');
+  }
+});
+
+test('refused build-marker mode preserves a precise code in a separate NOT RUN report', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/verify/windows-runtime.mjs', '--record-build-start'],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        ...env,
+        DEBUG: '',
+        PWDEBUG: '',
+        NODE_DEBUG: '',
+        NODE_OPTIONS: '',
+        RW_WINDOWS_FRESH_RUNNER: '',
+      },
+      encoding: 'utf8',
+      timeout: 10_000,
+    },
+  );
+  assert.equal(result.status, 2, result.stderr);
+  const match = /NOT RUN: (.+)\r?\n/.exec(result.stdout);
+  assert.ok(match);
+  const directory = match[1].trim();
+  assert.ok(directory.includes('windows-runtime-build'));
+  const report = JSON.parse(readFileSync(join(directory, 'report.json'), 'utf8'));
+  const code = process.platform === 'win32' ? 'WORKFLOW_OPT_IN_REQUIRED' : 'WINDOWS_REQUIRED';
+  assert.equal(report.stage, 'build-marker');
+  assert.equal(report.status, 'NOT RUN');
+  assert.equal(report.terminalError, code);
+  assert.ok(result.stdout.includes(`TERMINAL preflight: ${code}`));
+  assert.ok(
+    report.checks
+      .filter((entry) => entry.name !== 'owned-cleanup')
+      .every((entry) => entry.status === 'NOT RUN'),
+  );
 });

@@ -6,6 +6,10 @@ Status: **integrated, Windows execution pending / NOT RUN**. The preceding produ
 
 This gate is exclusively for a **fresh GitHub-hosted `windows-latest` job**, with no real workspace, real API key, or parallel Research Workspace test. It rejects non-Windows, self-hosted, missing runner metadata/explicit opt-in, existing application directories, uninstall registrations, application/sidecar processes, or any Credential Manager target beginning `ResearchWorkspace`. Metadata is a workflow guard, not cryptographic proof against someone deliberately spoofing the environment. Do not opt in on a user machine.
 
+The image guard accepts the legacy `win` + digits form and the single additional documented identifier `win25-vs2026`. It does not accept arbitrary suffixes or relax the hosted-runner, opt-in, metadata, commit or source checks. The exact [20261030.294 image manifest](https://github.com/actions/runner-images/blob/win25-vs2026/20261030.294/images/windows/Windows2025-VS2026-Readme.md) identifies Windows Server 2025 image version `20261030.294.1`; that release's [image generator](https://github.com/actions/runner-images/blob/win25-vs2026/20261030.294/helpers/GenerateResourcesAndImage.ps1) sets `ImageOS` to `win25-vs2026`, and [system-environment setup](https://github.com/actions/runner-images/blob/win25-vs2026/20261030.294/images/windows/scripts/build/Configure-SystemEnvironment.ps1) persists it.
+
+Run `42210528782` on commit `0035ee07` stopped in build-marker mode on that image. The previous image regex demonstrably rejects its official identifier. The run's first/only failing assertion cannot be recovered because its guard error was replaced by a generic code and its marker report was not retained. Reports now identify `stage: build-marker` versus `stage: runtime`, and known guard codes are preserved in both the report and a sanitized `TERMINAL` console line. Unknown guard error text is not echoed. No environment dump is needed.
+
 Windows Known Folders are read with `SHGetKnownFolderPath`, including both Roaming and Local AppData. Redirecting `APPDATA`/`LOCALAPPDATA` is not an isolation boundary. Credential Manager is scoped to the OS account. The test uses the fresh VM's actual empty profile and current provider target `ResearchWorkspace/Provider/{provider}`.
 
 Missing WebView2, a usable desktop, or CDP/window attachment is BLOCKED / **NOT RUN**, with a nonzero exit. The harness does not install/downgrade WebView2, bypass execution policy, disable security settings, use development executables, call a real model endpoint, or delete unexpected data. The already-installed runtime must be present before silent installation; consumer prerequisite installation remains untested.
@@ -33,6 +37,7 @@ The existing Windows workflow uses the following same-job sequence:
 ```yaml
 # Both these steps belong in the existing fresh windows-latest job.
 - name: Record exact Windows build start
+  id: windows_build_marker
   env:
     RW_WINDOWS_FRESH_RUNNER: 'yes'
   run: node scripts/verify/windows-runtime.mjs --record-build-start
@@ -63,7 +68,7 @@ The existing Windows workflow uses the following same-job sequence:
     retention-days: 14
 ```
 
-The marker records commit/tree/version/run/attempt/start time under `RUNNER_TEMP/rw-windows-build-start.json`, refuses to overwrite an existing marker and refuses old installers. A marker-only NOT RUN report is separate under `.cache/windows-runtime-build/`; it is not runtime evidence. Missing-opt-in refusal probes from portable tests report separately under `.cache/windows-runtime-refused/`, so they cannot be confused with the opted-in acceptance artifact. The gate rejects a stale (>1 hour) or source-mismatched marker, mismatched version, older artifact, ambiguous artifact, changed source, or unexpected location.
+The marker records commit/tree/version/run/attempt/start time under `RUNNER_TEMP/rw-windows-build-start.json`, refuses to overwrite an existing marker and refuses old installers. A marker-only NOT RUN report is separate under `.cache/windows-runtime-build/`; it is retained as a separate diagnostics artifact, never merged with runtime evidence or counted as a runtime PASS. Missing-opt-in refusal probes from portable tests report separately under `.cache/windows-runtime-refused/`, so they cannot be confused with the opted-in acceptance artifact. The gate rejects a stale (>1 hour) or source-mismatched marker, mismatched version, older artifact, ambiguous artifact, changed source, or unexpected location.
 
 The runtime has an 8-minute work budget and separately reserved cleanup phases totaling at most about 40 seconds. IPC/attachment/process operations are bounded. An initial NOT RUN report is written before testing, and the final report is written in `finally`; final process exit prevents leaked child/CDP handles from hanging the job. A CI cancellation, host crash or I/O failure can still interrupt finalization: the initial incomplete report is never PASS. Do not use `continue-on-error`, tolerate exit 2 as success, or infer success from a screenshot alone.
 

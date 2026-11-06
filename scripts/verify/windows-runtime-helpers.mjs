@@ -27,7 +27,11 @@ export function assertHostedRunner(env, platform) {
   ]) {
     requireValue(typeof env[key] === 'string' && env[key].length > 0, 'RUNNER_METADATA_REQUIRED');
   }
-  requireValue(/^win\d+$/.test(env.ImageOS ?? ''), 'WINDOWS_IMAGE_REQUIRED');
+  // Official runner-images Windows2025_vs2026 maps ImageOS to this exact suffixed value.
+  requireValue(
+    /^win\d+$/.test(env.ImageOS ?? '') || env.ImageOS === 'win25-vs2026',
+    'WINDOWS_IMAGE_REQUIRED',
+  );
   requireValue(/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? ''), 'COMMIT_REQUIRED');
   requireValue(
     path.isAbsolute(env.RUNNER_TEMP) && path.isAbsolute(env.GITHUB_WORKSPACE),
@@ -294,4 +298,19 @@ export function recordCleanup(report, failures, unverifiedLaunches = []) {
     report.cleanupFailures = [...new Set(combined)];
   }
   return report;
+}
+
+/** Only our known guard classifications may reach reports; never echo arbitrary error text. */
+export function runnerGuardCode(error) {
+  const codes = new Set([
+    'WINDOWS_REQUIRED',
+    'DRIVER_DEBUG_CHANNEL_REFUSED',
+    'FRESH_HOSTED_RUNNER_REQUIRED',
+    'WORKFLOW_OPT_IN_REQUIRED',
+    'RUNNER_METADATA_REQUIRED',
+    'WINDOWS_IMAGE_REQUIRED',
+    'COMMIT_REQUIRED',
+    'ABSOLUTE_RUNNER_PATH_REQUIRED',
+  ]);
+  return codes.has(error?.message) ? error.message : 'FRESH_GITHUB_HOSTED_WINDOWS_REQUIRED';
 }

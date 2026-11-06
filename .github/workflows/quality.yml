@@ -100,6 +100,7 @@ jobs:
       - name: Rust release check
         run: cargo check --manifest-path src-tauri/Cargo.toml --release --locked
       - name: Record exact Windows build start
+        id: windows_build_marker
         env:
           RW_WINDOWS_FRESH_RUNNER: 'yes'
         run: node scripts/verify/windows-runtime.mjs --record-build-start
@@ -110,6 +111,15 @@ jobs:
         env:
           RW_WINDOWS_FRESH_RUNNER: 'yes'
         run: node scripts/verify/windows-runtime.mjs
+      - name: Retain Windows build marker diagnostics
+        if: always() && steps.windows_build_marker.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-windows-build-marker-${{ github.sha }}
+          path: .cache/windows-runtime-build/**/report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain sanitized Windows runtime report
         if: always()
         uses: actions/upload-artifact@v4

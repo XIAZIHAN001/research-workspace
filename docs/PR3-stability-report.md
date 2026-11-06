@@ -41,9 +41,9 @@
 
 历史 PR 中的 1811 项 Vitest、37 项 Rust 和桌面冒烟数字不代表本轮验收。
 
-- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **116 个文件 / 2295 项 Vitest，0 失败、0 跳过**。
+- `npm run check`：通过。TypeScript、ESLint、Prettier 和 **116 个文件 / 2298 项 Vitest，0 失败、0 跳过**。
 - `npm run build`：通过；保留 Vite 既有的大于 500 kB chunk 提示，未通过提高阈值隐藏。
-- 本轮新增 **484 项 JS/TS 回归**（首轮生产整改 245、崩溃验收脚本 9、持久化与冲突边界 190、Windows 验收脚本 23、中文视觉/时序验收脚本 17）和 **15 项 Rust 回归**。
+- 本轮新增 **487 项 JS/TS 回归**（首轮生产整改 245、崩溃验收脚本 9、持久化与冲突边界 190、Windows 验收脚本 26、中文视觉/时序验收脚本 17）和 **15 项 Rust 回归**。
 - `cargo fmt --check`：通过。
 - Windows GNU 目标完整 Tauri `cargo check --release --all-targets`：通过（包含测试代码类型检查）。
 - 从当前源码构造的隔离 Rust 逻辑 harness：49/49 通过；不含 Windows Credential Manager 的实际调用验收。
@@ -110,15 +110,24 @@
 
 ## 后续独立 checkpoint：补齐真实平台验收证据
 
-该 checkpoint 不改应用或服务生产代码，仅增加验收脚本、CI 与说明，以上一个全绿 `e14684af` 为回滚点。
+该 checkpoint `0035ee07ba786cc32d81074b4a3a857db396de26` 不改应用或服务生产代码，仅增加验收脚本、CI 与说明，以上一个全绿 `e14684af` 为回滚点。
 
 - Ubuntu Node24 job 安装官方 `fonts-noto-cjk` / `fontconfig`。独立页面通过实际中文恢复标题、Chromium CDP 渲染字体与 Fontconfig 字符覆盖验证环境；单独记为第 22 项检查，不能替代其余 21 项功能检查。同步字体查询也受单调时钟截止时间约束，超时不能误报成功。
-- 持久进程的两次页面都在导航前设为 1440×950；成功恢复 → 精确状态读取 → SIGKILL 的序列保持不变。最终中文截图必须重新打开检查，目前不宣称已通过。
+- 持久进程的两次页面都在导航前设为 1440×950；成功恢复 → 精确状态读取 → SIGKILL 的序列保持不变。该提交的中文截图已实际打开，备份确认框、重启后 PDF、侧栏与阻断警告中文字均正常，无原来的方框缺字。
 - Windows 使用同一全新 GitHub 托管 job 的构建标记与精确 NSIS 产物，在安装后应用上检查 Mock、合成假凭据、端点绑定、删除与退出/重启；详情见 [Windows 运行验收范围](windows-runtime-acceptance.md)。未执行前保持 NOT RUN，缺环境、超时或断言失败会让门禁失败。
 - 独立复审修复了新验收脚本自身的清理误报：若启动进程后所有权观察失败，保留子进程句柄并标记后代清理未确认，不能将清理记为 PASS。只清理本测试证明拥有的进程/假凭据，不删除不明状态；该问题未进入已发布产品代码。
 - 报告与截图分别保存，缺少必需报告直接失败。Windows 消费者安装前置条件、升级/卸载和完整 PDF/备份桌面操作仍是另行验收项。
 - 冻结实现后的本地 aggregate check：**116 文件 / 2295 项测试通过**；生产构建通过，原有大 chunk 提示保留。独立复审通过 23 项 Windows helper 测试、6 个实际清理函数故障注入，以及 17 项视觉/时序测试和 9 项崩溃 helper 测试。
 - 此处记录的是提交前准备与本地测试，不是 Windows 运行成功记录；必须阅读该 checkpoint 精确提交的 CI 报告和实际截图。
+
+### `0035ee07` 实际运行与诊断补丁
+
+[Actions 42210528782](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42210528782) 的测试合并提交 `403c21883dee68433fc42eddcd462c7ea627a8d3` 与分支 HEAD tree 同为 `b6e61a0c7a0c8fa22491d2ffe31488f50c8b2380`。
+
+- Node 22.13/24、2295 项测试、构建以及 **Chromium 22/22** 通过。实际 CDP 字体为本地 `Noto Sans CJK SC`，六个中文测试字形全部覆盖；原立即 SIGKILL 场景再次通过。[原始报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42210528782/artifacts/13498747443)与[已看图确认的截图](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42210528782/artifacts/13499120438)已保存。
+- Windows 52/52 Rust 与 release check 通过，之后构建标记环境检查返回 NOT RUN 并以非零码退出。NSIS 构建、安装与运行未执行，不能说整条 CI 通过，也不是已证实的产品运行故障。
+- 实际官方 runner 镜像为 `windows-2025-vs2026` / `20261030.294.1`。[对应镜像发布](https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261030.294)使用新的 `ImageOS=win25-vs2026`，原校验只接受 `win` 加数字，已在便携测试中复现拒绝。旧运行没有保存构建标记报告且丢弃了具体拒绝代码，不能证明这是那次第一个或唯一失败的断言。
+- 后续诊断补丁仅增加这个确证的官方镜像标识、保留脱敏的具体拒绝代码，并单独保存构建标记报告；不放宽托管 VM、显式 opt-in、空账户、源提交或产物检查。该补丁的本地全量 gate 为 116 文件 / 2298 项测试通过，26 项 Windows helper 定向测试与独立复审通过；安装后运行仍须再次以新提交的 CI 验证。
 
 ## 独立复审
 

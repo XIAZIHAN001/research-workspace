@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import {
   assertHostedRunner,
+  runnerGuardCode,
   selectInstaller,
   installedPaths,
   nsisInvocation,
@@ -52,6 +53,7 @@ const names = [
   'owned-cleanup',
 ];
 const report = makeReport(names);
+report.stage = process.argv.includes('--record-build-start') ? 'build-marker' : 'runtime';
 const deadline = Date.now() + 8 * 60_000;
 let cleaning = false;
 let cleanupDeadline;
@@ -372,8 +374,8 @@ try {
   await writeFile(join(reportDirectory, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   try {
     assertHostedRunner(env, process.platform);
-  } catch {
-    throw new Blocked('FRESH_GITHUB_HOSTED_WINDOWS_REQUIRED');
+  } catch (error) {
+    throw new Blocked(runnerGuardCode(error));
   }
   demand(resolve(env.GITHUB_WORKSPACE).toLowerCase() === ROOT.toLowerCase(), 'WORKSPACE_MISMATCH');
   const markerPath = join(env.RUNNER_TEMP, 'rw-windows-build-start.json');
@@ -792,6 +794,8 @@ try {
   await mkdir(reportDirectory, { recursive: true });
   await writeFile(join(reportDirectory, 'report.json'), `${JSON.stringify(final, null, 2)}\n`);
   process.stdout.write(`${final.status}: ${reportDirectory}\n`);
+  if (final.terminalError)
+    process.stdout.write(`TERMINAL ${final.terminalStep ?? final.stage}: ${final.terminalError}\n`);
   const exitCode =
     report.terminalError === 'BUILD_START_RECORDED_RUNTIME_NOT_RUN'
       ? 0
