@@ -24,6 +24,12 @@ public static class WindowsBootstrapNativeTests {
     }
     throw new InvalidOperationException("NATIVE_SELF_TEST_FAILED");
   }
+  static void RejectPolicy(Action<WindowsBootstrapNative.TokenFacts> changeSource, Action<WindowsBootstrapNative.TokenFacts> changeCandidate, string field, string reason) {
+    var source = Token(); var candidate = Token();
+    if (changeSource != null) changeSource(source);
+    if (changeCandidate != null) changeCandidate(candidate);
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(source, candidate), field, reason);
+  }
   public static int Run() {
     int count = 0;
     WindowsBootstrapNative.ValidateOrdinary(Token(), Token()); count++;
@@ -112,6 +118,35 @@ public static class WindowsBootstrapNativeTests {
     RejectDetail(() => WindowsBootstrapNative.ReadScalar(25, (int requested, IntPtr buffer, uint capacity, out uint length, out int error) => {
       unknownQueried = true; length = 4; error = 0; return true;
     }), "integrity", "scalar-class"); Check(!unknownQueried); count++;
+    RejectDetail(() => WindowsBootstrapNative.ValidateOrdinary(Token(), null), "identity", "candidate-facts-missing"); count++;
+    RejectPolicy(null, t => t.User = "other", "identity", "user-mismatch"); count++;
+    RejectPolicy(null, t => t.Authentication = "other", "identity", "authentication-mismatch"); count++;
+    RejectPolicy(null, t => t.Logon = "other", "identity", "logon-mismatch"); count++;
+    RejectPolicy(null, t => t.Session = 2, "identity", "session-mismatch"); count++;
+    RejectPolicy(null, t => t.Type = 2, "type", "primary-required"); count++;
+    RejectPolicy(null, t => t.Elevation = 1, "elevation", "nonzero-elevation"); count++;
+    RejectPolicy(null, t => t.Integrity = 12288, "integrity", "not-exact-medium"); count++;
+    RejectPolicy(null, t => t.UIAccess = 1, "ui-access", "ui-access-not-zero"); count++;
+    RejectPolicy(null, t => t.SandboxInert = 1, "sandbox", "sandbox-inert-not-zero"); count++;
+    RejectPolicy(t => t.Groups = null, null, "groups", "source-list-missing"); count++;
+    RejectPolicy(null, t => t.Groups = null, "groups", "candidate-list-missing"); count++;
+    RejectPolicy(t => t.Privileges = null, null, "privileges", "source-list-missing"); count++;
+    RejectPolicy(null, t => t.Privileges = null, "privileges", "candidate-list-missing"); count++;
+    RejectPolicy(null, t => t.Groups.Remove("S-1-5-32-544"), "groups", "source-deny-only-group-missing"); count++;
+    RejectPolicy(null, t => t.Groups["S-1-5-32-544"] = 0, "groups", "source-deny-only-flag-lost"); count++;
+    RejectPolicy(null, t => t.Groups["new-group"] = 0, "groups", "new-group-not-medium-label"); count++;
+    RejectPolicy(null, t => t.Groups["S-1-16-8192"] = 0x60, "groups", "label-source-not-higher"); count++;
+    RejectPolicy(t => t.Integrity = 12288, t => t.Groups["S-1-16-8192"] = 0x64, "groups", "label-attributes-unexpected"); count++;
+    RejectPolicy(t => t.Integrity = 12288, t => t.Groups["S-1-16-8192"] = 0, "groups", "label-integrity-attribute-missing"); count++;
+    RejectPolicy(t => t.Groups["S-1-5-32-545"] = 0, t => t.Groups["S-1-5-32-545"] = 4, "groups", "group-authority-added"); count++;
+    RejectPolicy(t => t.Groups["S-1-5-32-544"] = 0, t => t.Groups["S-1-5-32-544"] = 0, "groups", "privileged-group-not-deny-only"); count++;
+    RejectPolicy(t => t.Groups["S-1-5-32-544"] = 4, t => t.Groups["S-1-5-32-544"] = 0x14, "groups", "privileged-group-authority-present"); count++;
+    RejectPolicy(null, t => t.Privileges["SeTimeZonePrivilege"] = 0, "privileges", "privilege-added"); count++;
+    RejectPolicy(t => t.Privileges["SeChangeNotifyPrivilege"] = 0, null, "privileges", "privilege-activation-added"); count++;
+    RejectPolicy(t => t.Privileges["SeTimeZonePrivilege"] = 2, t => t.Privileges["SeTimeZonePrivilege"] = 2, "privileges", "non-traversal-privilege-enabled"); count++;
+    RejectPolicy(t => t.Privileges["SeDebugPrivilege"] = 0, t => t.Privileges["SeDebugPrivilege"] = 0, "privileges", "privilege-not-allowlisted"); count++;
+    // Earlier identity predicates retain their priority when multiple properties are invalid.
+    RejectPolicy(null, t => { t.User = "other"; t.Elevation = 1; }, "identity", "user-mismatch"); count++;
     return count;
   }
 }

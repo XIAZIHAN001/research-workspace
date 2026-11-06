@@ -200,6 +200,14 @@
 - 泛用空缓冲区长度查询错误地假设所有字段都必须先返回 122。Microsoft 将 [TOKEN_ELEVATION](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-token_elevation) 定义为单个 DWORD；既有应用诊断的固定 4 字节读取也已在 Windows 实测成功。这确认了验收调用的问题，不代表产品故障或普通权限运行已成功。
 - 下一 checkpoint 对已有的五种固定标量直接使用 4 字节缓冲区，必须 API 成功且返回长度恰为 4。变量长度查询不变，不把错误 24 当作成功、不重试其他启动方式、不修改任何 token 值判断或系统权限。模拟查询回归重现零长度请求返回 24，并要求实际标量读取器只调用一次非空 4 字节请求。真实平台结果仍待下一次 CI。
 
+### `7f7b2d3a` 固定查询通过，候选 token 校验仍拒绝
+
+[Actions 42240041533](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42240041533) 对应 HEAD `7f7b2d3ae066f94d4e37b91c8c276b557725ed4e`，测试合并提交 `3e8580a3645a1f8e33683209f7ff6bc187d57824` 与其 tree 同为 `93990249b5cdb5e30c6c35d1d314fc1de5ed341a`。Node22/24 通过，Windows 失败。
+
+- C# 编译和 67 项原生合成测试通过，原错误 24 已解除。调用者读取、SAFER、复制与 LowerIntegrity 均返回成功；候选事实读取也已完成，随后已有 `ValidateOrdinary` 比较以 `TOKEN_REJECTED` 拒绝。报告尚不能判断是哪项候选要求失败，不将 SAFER 成功等同于普通权限达标。
+- [当前探针报告](https://github.com/XIAZIHAN001/research-workspace/actions/runs/42240041533/artifacts/13514597432) ZIP SHA-256：`f46a45795ae615a3b72bedb8ba63e05f48451f39f9d82224632eed51e697fa96`。未创建 job 或子驱动，凭据未触碰；构建、安装及应用交互保持未执行。
+- 下一诊断只分类现有内存比较的拒绝谓词，保留短路顺序、循环顺序、位掩码与所有接受条件。不增加 token 读取，不公开 SID、LUID、权限名或原始属性，不放宽普通权限要求，也不增加其他启动路径。
+
 ## 独立复审
 
 复审不仅检查本轮 diff，也复查了受影响的旧路径。独立故障注入复现并关闭：

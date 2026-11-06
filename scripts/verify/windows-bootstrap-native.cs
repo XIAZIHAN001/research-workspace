@@ -240,34 +240,54 @@ public static class WindowsBootstrapNative {
     TokenNeed(Regex.IsMatch(source.Logon, @"^S-1-5-5-\d+-\d+$"), "account", "logon-shape");
   }
   public static void ValidateOrdinary(TokenFacts source, TokenFacts candidate) {
-    AccountIdentity(source); Need(candidate != null, "TOKEN_REJECTED");
-    Need(candidate.User == source.User && candidate.Authentication == source.Authentication && candidate.Logon == source.Logon && candidate.Session == source.Session, "TOKEN_REJECTED");
-    Need(source.Type == 1 && candidate.Type == 1 && candidate.Elevation == 0 && candidate.Integrity == 8192 && candidate.UIAccess == 0 && candidate.SandboxInert == 0, "TOKEN_REJECTED");
-    Need(source.Groups != null && candidate.Groups != null && source.Privileges != null && candidate.Privileges != null, "TOKEN_REJECTED");
+    AccountIdentity(source); TokenNeed(candidate != null, "identity", "candidate-facts-missing");
+    TokenNeed(candidate.User == source.User, "identity", "user-mismatch");
+    TokenNeed(candidate.Authentication == source.Authentication, "identity", "authentication-mismatch");
+    TokenNeed(candidate.Logon == source.Logon, "identity", "logon-mismatch");
+    TokenNeed(candidate.Session == source.Session, "identity", "session-mismatch");
+    TokenNeed(source.Type == 1, "type", "source-primary-required");
+    TokenNeed(candidate.Type == 1, "type", "primary-required");
+    TokenNeed(candidate.Elevation == 0, "elevation", "nonzero-elevation");
+    TokenNeed(candidate.Integrity == 8192, "integrity", "not-exact-medium");
+    TokenNeed(candidate.UIAccess == 0, "ui-access", "ui-access-not-zero");
+    TokenNeed(candidate.SandboxInert == 0, "sandbox", "sandbox-inert-not-zero");
+    TokenNeed(source.Groups != null, "groups", "source-list-missing");
+    TokenNeed(candidate.Groups != null, "groups", "candidate-list-missing");
+    TokenNeed(source.Privileges != null, "privileges", "source-list-missing");
+    TokenNeed(candidate.Privileges != null, "privileges", "candidate-list-missing");
     foreach (var pair in source.Groups) {
       if ((pair.Value & 0x10) != 0) {
         uint retained;
-        Need(candidate.Groups.TryGetValue(pair.Key, out retained) && (retained & 0x10) != 0, "TOKEN_REJECTED");
+        TokenNeed(candidate.Groups.TryGetValue(pair.Key, out retained), "groups", "source-deny-only-group-missing");
+        TokenNeed((retained & 0x10) != 0, "groups", "source-deny-only-flag-lost");
       }
     }
     foreach (var pair in candidate.Groups) {
       uint original;
       if (!source.Groups.TryGetValue(pair.Key, out original)) {
         // SetTokenInformation may replace the mandatory-label group. This only lowers it.
-        Need(pair.Key == "S-1-16-8192" && source.Integrity > 8192 && candidate.Integrity == 8192 && (pair.Value & ~0x60u) == 0 && (pair.Value & 0x20) != 0, "TOKEN_REJECTED");
+        TokenNeed(pair.Key == "S-1-16-8192", "groups", "new-group-not-medium-label");
+        TokenNeed(source.Integrity > 8192, "groups", "label-source-not-higher");
+        TokenNeed(candidate.Integrity == 8192, "groups", "label-candidate-not-medium");
+        TokenNeed((pair.Value & ~0x60u) == 0, "groups", "label-attributes-unexpected");
+        TokenNeed((pair.Value & 0x20) != 0, "groups", "label-integrity-attribute-missing");
         continue;
       }
-      Need((original & 0x10) == 0 || (pair.Value & 0x10) != 0, "TOKEN_REJECTED");
+      TokenNeed((original & 0x10) == 0 || (pair.Value & 0x10) != 0, "groups", "source-deny-only-flag-lost");
       // A disabled group must not become enabled/owner. A privileged group must be absent or deny-only.
-      Need((pair.Value & 0x0c & ~original) == 0, "TOKEN_REJECTED");
-      if (PrivilegedGroup(pair.Key)) Need((pair.Value & 0x10) != 0 && (pair.Value & 0x0c) == 0, "TOKEN_REJECTED");
+      TokenNeed((pair.Value & 0x0c & ~original) == 0, "groups", "group-authority-added");
+      if (PrivilegedGroup(pair.Key)) {
+        TokenNeed((pair.Value & 0x10) != 0, "groups", "privileged-group-not-deny-only");
+        TokenNeed((pair.Value & 0x0c) == 0, "groups", "privileged-group-authority-present");
+      }
     }
     foreach (var pair in candidate.Privileges) {
       uint original;
-      Need(source.Privileges.TryGetValue(pair.Key, out original) && (pair.Value & 3 & ~original) == 0, "TOKEN_REJECTED");
-      Need(pair.Key == "SeChangeNotifyPrivilege" || (pair.Value & 2) == 0, "TOKEN_REJECTED");
+      TokenNeed(source.Privileges.TryGetValue(pair.Key, out original), "privileges", "privilege-added");
+      TokenNeed((pair.Value & 3 & ~original) == 0, "privileges", "privilege-activation-added");
+      TokenNeed(pair.Key == "SeChangeNotifyPrivilege" || (pair.Value & 2) == 0, "privileges", "non-traversal-privilege-enabled");
       // Unknown privileges are rejected too, including privileges present but disabled.
-      Need(pair.Key == "SeChangeNotifyPrivilege" || pair.Key == "SeShutdownPrivilege" || pair.Key == "SeUndockPrivilege" || pair.Key == "SeIncreaseWorkingSetPrivilege" || pair.Key == "SeTimeZonePrivilege", "TOKEN_REJECTED");
+      TokenNeed(pair.Key == "SeChangeNotifyPrivilege" || pair.Key == "SeShutdownPrivilege" || pair.Key == "SeUndockPrivilege" || pair.Key == "SeIncreaseWorkingSetPrivilege" || pair.Key == "SeTimeZonePrivilege", "privileges", "privilege-not-allowlisted");
     }
   }
   static void LowerIntegrity(IntPtr token) {

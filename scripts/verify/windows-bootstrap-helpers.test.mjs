@@ -493,3 +493,51 @@ test('fixed scalar diagnostics retain unsupported-class refusal without widening
     { field: 'integrity', reason: 'scalar-class' },
   );
 });
+
+test('candidate policy diagnostics identify the fixed requirement without revealing token data', () => {
+  for (const [field, reason] of [
+    ['identity', 'user-mismatch'],
+    ['identity', 'authentication-mismatch'],
+    ['identity', 'logon-mismatch'],
+    ['identity', 'session-mismatch'],
+    ['type', 'primary-required'],
+    ['elevation', 'nonzero-elevation'],
+    ['integrity', 'not-exact-medium'],
+    ['ui-access', 'ui-access-not-zero'],
+    ['sandbox', 'sandbox-inert-not-zero'],
+    ['groups', 'source-deny-only-group-missing'],
+    ['groups', 'source-deny-only-flag-lost'],
+    ['groups', 'new-group-not-medium-label'],
+    ['groups', 'group-authority-added'],
+    ['groups', 'privileged-group-not-deny-only'],
+    ['privileges', 'privilege-added'],
+    ['privileges', 'privilege-activation-added'],
+    ['privileges', 'non-traversal-privilege-enabled'],
+    ['privileges', 'privilege-not-allowlisted'],
+  ]) {
+    const value = {
+      ...verified,
+      status: 'FAIL',
+      phase: 'validate-token',
+      code: 'TOKEN_REJECTED',
+      tokenFailure: {
+        field,
+        reason,
+        sid: 'private-identity',
+        privilege: 'private-privilege',
+        attributes: 'private-attributes',
+      },
+    };
+    const projected = projectNativeOutcome(value);
+    assert.deepEqual(projected.tokenFailure, { field, reason });
+    assert.equal(JSON.stringify(projected).includes('private'), false);
+    assert.equal(bootstrapOutcome('probe', id, value, child).status, 'FAIL');
+  }
+  assert.equal(
+    projectNativeOutcome({
+      ...verified,
+      tokenFailure: { field: 'identity', reason: 'private-unknown-reason' },
+    }).tokenFailure,
+    null,
+  );
+});
