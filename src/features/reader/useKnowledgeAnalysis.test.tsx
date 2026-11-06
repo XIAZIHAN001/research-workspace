@@ -454,3 +454,30 @@ describe('useKnowledgeAnalysis', () => {
     expect(hook.result.current.analysis.report).toBeNull();
   });
 });
+
+it('shares background transcript extraction with knowledge planning', async () => {
+  const { useDocumentText } = await import('./useDocumentText');
+  const getTextContent = vi.fn(async () => ({ items: [{ str: PASSAGE }] }));
+  const doc = {
+    numPages: 2,
+    getPage: vi.fn(async () => ({ getTextContent })),
+  } as unknown as PDFDocumentProxy;
+  const hook = renderHook(() => {
+    const store = useMemo(() => createKnowledgeStore(memoryStorage()), []);
+    const knowledge = useKnowledgeApi(store, makeId, () => 100);
+    return {
+      text: useDocumentText(doc, 'knowledge-shared'),
+      analysis: useKnowledgeAnalysis({
+        doc,
+        knowledge,
+        makeId,
+        locate: () => ({ location: 'missing', anchor: null }),
+      }),
+    };
+  });
+  act(() => hook.result.current.analysis.open(CONTEXT));
+  act(() => hook.result.current.analysis.prepare());
+  await waitFor(() => expect(hook.result.current.analysis.phase).toBe('ready'));
+  await waitFor(() => expect(hook.result.current.text.ready).toBe(true));
+  expect(getTextContent).toHaveBeenCalledTimes(2);
+});

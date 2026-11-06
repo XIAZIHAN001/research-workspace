@@ -115,7 +115,6 @@ export function useKnowledgeAnalysis(
   const [error, setError] = useState<string | null>(null);
   const [failedPages, setFailedPages] = useState<number[]>([]);
 
-  const cache = useRef(new Map<number, ExtractedPage>());
   const controller = useRef<AbortController | null>(null);
   /** Identifies the current extraction; an older prepare must not install its plan. */
   const prepareSeq = useRef(0);
@@ -134,7 +133,6 @@ export function useKnowledgeAnalysis(
   // The in-flight request is aborted too: its answer would be about a file the reader is no
   // longer looking at, and waiting for it would keep spending on that analysis.
   useEffect(() => {
-    cache.current.clear();
     prepareSeq.current += 1;
     runSeq.current += 1;
     controller.current?.abort();
@@ -228,11 +226,7 @@ export function useKnowledgeAnalysis(
             fragmented: false,
           };
         }
-        const cached = cache.current.get(page);
-        if (cached !== undefined) return cached;
-        const found = await extractPageText(doc, page);
-        if (found !== null) cache.current.set(page, found);
-        return found;
+        return extractPageText(doc, page);
       };
 
       for (let index = 0; index < targets.length; index += 4) {
