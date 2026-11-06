@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import { resolve, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -12,6 +13,7 @@ import { chromium } from 'playwright-core';
 import { assertFreshBuild } from './preview-gate.mjs';
 import { buildSamplePdf } from './sample-pdf.mjs';
 import { listenOnLoopback } from '../../server/loopback.mjs';
+import { armHarnessDeadline, crashRenderer } from './crash-control.mjs';
 
 /**
  * Linux/Chromium production-build acceptance, NOT Windows/Tauri acceptance.
@@ -33,6 +35,11 @@ const externalRequests = [];
 const aiRequests = [];
 const errors = [];
 const contexts = new Set();
+const ownedChromium = new Set();
+const HARNESS_TIMEOUT_MS = 8 * 60 * 1000;
+let activeTest = null;
+let browserServer;
+let buildEvidence;
 let origin;
 let browser;
 let sourceState;
@@ -42,6 +49,7 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 async function test(name, work) {
   if (FILTER !== null && !FILTER.test(name)) return;
   const start = Date.now();
+  activeTest = name;
   try {
     const detail = await work();
     results.push({ name, passed: true, durationMs: Date.now() - start, detail });
@@ -54,6 +62,8 @@ async function test(name, work) {
       error: String(error.stack ?? error),
     });
     process.stdout.write(`FAIL ${name}: ${String(error.message ?? error)}\n`);
+  } finally {
+    activeTest = null;
   }
 }
 
@@ -392,9 +402,7 @@ async function tabExclusion() {
       const loser = pages.find((page) => page !== winner);
       await assertNoStores(loser);
       const session = await context.newCDPSession(winner);
-      const crashed = winner.waitForEvent('crash');
-      await session.send('Page.crash').catch(() => {});
-      await crashed;
+      await crashRenderer(winner, session);
       await loser.reload();
       await ready(loser);
       return { states, crash: 'Chromium renderer Page.crash', recovered: true };
@@ -569,9 +577,7 @@ async function interruptedPdfRestore() {
           sha256(await readFile(PDF)),
         ),
       );
-      const crashed = page.waitForEvent('crash');
-      await session.send('Page.crash').catch(() => {});
-      await crashed;
+      await crashRenderer(page, session);
       await click;
       await observer.close();
       page = await context.newPage();
@@ -636,6 +642,7 @@ async function launchPersistent(profile) {
     ],
     { stdio: ['ignore', 'ignore', 'pipe'] },
   );
+  trackChromium(child);
   let output = '';
   const endpoint = await new Promise((resolve, reject) => {
     const timer = setTimeout(
@@ -706,9 +713,44 @@ async function crashPersistence() {
   });
 }
 
+function trackChromium(child) {
+  ownedChromium.add(child);
+  child.once('exit', () => ownedChromium.delete(child));
+}
+
+function makeReport(status) {
+  return {
+    generatedAt: new Date().toISOString(),
+    status,
+    activeTest,
+    scope:
+      'Isolated Linux Chromium against production Vite dist; NOT Windows/Tauri desktop acceptance',
+    ...buildEvidence,
+    browser: BROWSER,
+    filter: process.env.STABILITY_FILTER ?? null,
+    results,
+    passed: results.filter((result) => result.passed).length,
+    failed: results.filter((result) => !result.passed).length,
+    externalRequests,
+    aiRequests,
+    pageErrors: errors,
+    notExecuted: [
+      'Windows installation and NSIS packaging',
+      'Tauri credential lifecycle and fake-key endpoint binding',
+      'Tauri sidecar shutdown/restart/orphan process checks',
+      'Real online AI and budget settlement',
+      'Actual browser BFCache navigation (only lifecycle events injected)',
+    ],
+  };
+}
+
 await mkdir(RUN, { recursive: true });
 await writeFile(PDF, buildSamplePdf());
 assertFreshBuild(import.meta.url);
+buildEvidence = {
+  gitHead: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
+  distIndexSha256: sha256(await readFile(resolve(DIST, 'index.html'))),
+};
 const mime = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -748,10 +790,35 @@ const server = createServer(async (request, response) => {
     response.end();
   }
 });
+const cancelDeadline = armHarnessDeadline(
+  HARNESS_TIMEOUT_MS,
+  () => {
+    const message = `Acceptance harness timed out after ${HARNESS_TIMEOUT_MS} ms${activeTest === null ? '' : ` during ${activeTest}`}`;
+    results.push({ name: 'browser harness overall timeout', passed: false, error: message });
+    process.stderr.write(`${message}\n`);
+    // Synchronous writing is intentional: even a stuck CDP request or cleanup must leave evidence
+    // before this process exits, so the next CI step can upload a truthful failed report.
+    writeFileSync(
+      resolve(RUN, 'report.json'),
+      `${JSON.stringify(makeReport('timed_out'), null, 2)}\n`,
+    );
+  },
+  () => {
+    for (const child of ownedChromium) child.kill('SIGKILL');
+    process.exit(1);
+  },
+);
 const port = await listenOnLoopback(server);
 origin = `http://127.0.0.1:${port}`;
 try {
-  browser = await chromium.launch({ executablePath: BROWSER, args: ['--disable-dev-shm-usage'] });
+  // The public BrowserServer process handle lets the watchdog terminate only Chromium children
+  // owned by this isolated run, without scanning or killing unrelated browser processes.
+  browserServer = await chromium.launchServer({
+    executablePath: BROWSER,
+    args: ['--disable-dev-shm-usage'],
+  });
+  trackChromium(browserServer.process());
+  browser = await chromium.connect(browserServer.wsEndpoint());
   await startupFaults();
   await tabExclusion();
   await backupRoundtrip();
@@ -770,32 +837,20 @@ try {
   });
   process.stderr.write(`BLOCKED browser harness: ${String(error.message ?? error)}\n`);
 } finally {
+  activeTest = 'browser harness cleanup';
+  // Preserve results before cleanup too; the deadline remains armed if closing CDP hangs.
+  writeFileSync(
+    resolve(RUN, 'report.json'),
+    `${JSON.stringify(makeReport('cleaning_up'), null, 2)}\n`,
+  );
   for (const context of contexts) await context.close().catch(() => {});
   if (browser) await browser.close();
+  if (browserServer) await browserServer.close();
   await new Promise((resolve) => server.close(resolve));
-  const report = {
-    generatedAt: new Date().toISOString(),
-    scope:
-      'Isolated Linux Chromium against production Vite dist; NOT Windows/Tauri desktop acceptance',
-    gitHead: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
-    distIndexSha256: sha256(await readFile(resolve(DIST, 'index.html'))),
-    browser: BROWSER,
-    filter: process.env.STABILITY_FILTER ?? null,
-    results,
-    passed: results.filter((result) => result.passed).length,
-    failed: results.filter((result) => !result.passed).length,
-    externalRequests,
-    aiRequests,
-    pageErrors: errors,
-    notExecuted: [
-      'Windows installation and NSIS packaging',
-      'Tauri credential lifecycle and fake-key endpoint binding',
-      'Tauri sidecar shutdown/restart/orphan process checks',
-      'Real online AI and budget settlement',
-      'Actual browser BFCache navigation (only lifecycle events injected)',
-    ],
-  };
+  activeTest = null;
+  const report = makeReport(results.some((result) => !result.passed) ? 'failed' : 'completed');
   await writeFile(resolve(RUN, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
+  cancelDeadline();
   process.stdout.write(
     `Report: ${relative(ROOT, resolve(RUN, 'report.json'))}\n${report.passed} passed; ${report.failed} failed\n`,
   );
