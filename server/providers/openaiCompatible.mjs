@@ -19,6 +19,7 @@
  */
 
 import { ProviderError } from '../errors.mjs';
+import { tokenCount } from '../tokenUsage.mjs';
 
 /** A reply larger than this is not a chat-completions JSON object we should buffer. */
 export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -335,17 +336,11 @@ export function createChatCompletionsProvider({
             usage === undefined || usage === null
               ? null
               : {
-                  promptTokens:
-                    typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : null,
-                  completionTokens:
-                    typeof usage.completion_tokens === 'number' ? usage.completion_tokens : null,
+                  promptTokens: tokenCount(usage.prompt_tokens),
+                  completionTokens: tokenCount(usage.completion_tokens),
                   /** Present only in thinking mode; the part of the budget spent thinking. */
-                  reasoningTokens:
-                    typeof details?.reasoning_tokens === 'number' ? details.reasoning_tokens : null,
-                  cachedPromptTokens:
-                    typeof usage.prompt_cache_hit_tokens === 'number'
-                      ? usage.prompt_cache_hit_tokens
-                      : null,
+                  reasoningTokens: tokenCount(details?.reasoning_tokens),
+                  cachedPromptTokens: tokenCount(usage.prompt_cache_hit_tokens),
                 },
           // `length` is the documented way to learn the answer hit the token ceiling; the other
           // two mean the service stopped it for its own reasons, which also leaves it incomplete.

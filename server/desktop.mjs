@@ -24,9 +24,10 @@
  */
 
 import { createInterface } from 'node:readline';
-import { LOOPBACK_HOST, configProblems, readConfig } from './config.mjs';
+import { configProblems, readConfig } from './config.mjs';
 import { createAiServer } from './index.mjs';
 import { createLogger } from './log.mjs';
+import { listenOnLoopback } from './loopback.mjs';
 
 const READY_PREFIX = 'RW_AI_READY ';
 const SECRET_PREFIX = 'RW_AI_SECRET ';
@@ -163,25 +164,23 @@ async function start() {
     delete effective.apiKey;
   }
 
-  server.on('error', (error) => {
+  let port;
+  try {
+    port = await listenOnLoopback(server);
+  } catch (error) {
     process.stderr.write(`桌面 AI 服务启动失败：${error.message}\n`);
     process.exit(1);
-  });
-
-  server.listen(0, LOOPBACK_HOST, () => {
-    const address = server.address();
-    const port = typeof address === 'object' && address !== null ? address.port : 0;
-    process.stdout.write(
-      `${READY_PREFIX}${JSON.stringify({
-        port,
-        instanceId: health.instanceId,
-        desktopInstance: instance,
-        provider: health.provider,
-        model: health.model,
-        online: health.online,
-      })}\n`,
-    );
-  });
+  }
+  process.stdout.write(
+    `${READY_PREFIX}${JSON.stringify({
+      port,
+      instanceId: health.instanceId,
+      desktopInstance: instance,
+      provider: health.provider,
+      model: health.model,
+      online: health.online,
+    })}\n`,
+  );
 }
 
 if (Number.isInteger(parentPid) && parentPid > 0) {

@@ -46,7 +46,7 @@ export const MODEL_PRICES = {
  * `known: false` is not an error: a model can be valid and simply not have a price row yet.
  */
 export function describePrice(model) {
-  const row = MODEL_PRICES[model];
+  const row = Object.hasOwn(MODEL_PRICES, model) ? MODEL_PRICES[model] : undefined;
   if (row === undefined) {
     return {
       model,
@@ -84,7 +84,7 @@ export function estimateCostCny(
   model,
   { promptTokens, completionTokens, cachedPromptTokens } = {},
 ) {
-  const row = MODEL_PRICES[model];
+  const row = Object.hasOwn(MODEL_PRICES, model) ? MODEL_PRICES[model] : undefined;
   if (row === undefined) return null;
   const prompt = Number.isFinite(promptTokens) ? Math.max(0, promptTokens) : 0;
   const completion = Number.isFinite(completionTokens) ? Math.max(0, completionTokens) : 0;

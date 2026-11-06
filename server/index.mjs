@@ -27,6 +27,7 @@ import {
   verifyKnowledgeSuggestions,
 } from './knowledge.mjs';
 import { ProviderError } from './errors.mjs';
+import { tokenCount } from './tokenUsage.mjs';
 import {
   BodyTooLarge,
   ConcurrencyGate,
@@ -166,13 +167,10 @@ export function createAiServer({
     // in a paid-token or cost total.
     if (!online) return;
 
-    const prompt = typeof reported?.promptTokens === 'number' ? reported.promptTokens : null;
-    const completion =
-      typeof reported?.completionTokens === 'number' ? reported.completionTokens : null;
-    const reasoning =
-      typeof reported?.reasoningTokens === 'number' ? reported.reasoningTokens : null;
-    const cached =
-      typeof reported?.cachedPromptTokens === 'number' ? reported.cachedPromptTokens : null;
+    const prompt = tokenCount(reported?.promptTokens);
+    const completion = tokenCount(reported?.completionTokens);
+    const reasoning = tokenCount(reported?.reasoningTokens);
+    const cached = tokenCount(reported?.cachedPromptTokens);
 
     const promptKnown = prompt !== null;
     const completionKnown = completion !== null;
@@ -270,210 +268,63 @@ export function createAiServer({
     },
   };
 
-  async function handleAsk(request, response, origin) {
+  /** The request lifetime is shared; task validation and response formats stay below. */
+  async function handleModelRequest(request, response, errorMessage, perform) {
     const started = Date.now();
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-
-    const allowed = limiter.take();
-    if (!allowed.ok) {
+    const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+    const logRequest = (entry) =>
+      log.request({ method: 'POST', path, ms: Date.now() - started, ...entry });
+    if (!limiter.take().ok) {
       sendJson(response, 429, {
         error: 'rate-limit',
         message: '本地服务一分钟内的请求次数已达上限，请稍后再试。',
       });
-      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
+      logRequest({ status: 429 });
       return;
     }
     if (!gate.tryEnter()) {
       sendJson(response, 429, { error: 'busy', message: '同时进行的模型请求太多，请稍后再试。' });
-      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
+      logRequest({ status: 429 });
       return;
     }
 
     const controller = new AbortController();
-    // If the reader closes the page or presses stop, the upstream call goes with it.
-    response.on('close', () => {
+    const disconnected = () => controller.signal.aborted || response.destroyed;
+    const onClose = () => {
       if (!response.writableEnded) controller.abort();
-    });
+    };
+    response.on('close', onClose);
 
-    try {
-      let body;
-      try {
-        body = await readJsonBody(request, LIMITS.bodyBytes);
-      } catch (error) {
-        // A body over the cap is a 413; a body that is not JSON is the caller's mistake (400).
-        const tooLarge = error instanceof BodyTooLarge;
-        // A client that closed the connection cannot receive a reply, and writing to it would
-        // be a wasted attempt. An oversized body keeps its 413 while the client is still
-        // connected and streaming, so the incomplete check excludes that case.
-        const disconnected = controller.signal.aborted || response.destroyed;
-        if (disconnected || (!tooLarge && !request.complete)) {
-          log.request({
-            method: 'POST',
-            path: url.pathname,
-            status: 499,
-            ms: Date.now() - started,
-          });
-          return;
-        }
-        const status = tooLarge ? 413 : 400;
-        const message = tooLarge ? error.message : '请求体不是合法 JSON。';
-        sendJson(response, status, { error: 'bad-request', message });
-        log.request({ method: 'POST', path: url.pathname, status, ms: Date.now() - started });
-        return;
-      }
-
-      const normalized = normalizeAskRequest(body);
-      if (!normalized.ok) {
-        sendJson(response, 400, { error: 'bad-request', message: normalized.message });
-        log.request({ method: 'POST', path: url.pathname, status: 400, ms: Date.now() - started });
-        return;
-      }
-      const ask = normalized.value;
-      const { system, messages } = buildMessages(ask);
-      const chars = ask.passages.reduce((sum, passage) => sum + passage.text.length, 0);
+    // Only this block owns a reservation. A sent/unknown failure is conservatively charged;
+    // requestSent === false releases it. Success settles reported usage even after disconnect.
+    const complete = async (options) => {
       const maxTokens = maxTokensForCall();
-
-      // The budget check happens before the call, with a pessimistic input estimate and the
-      // generation ceiling, so a refusal is decided without spending anything.
       const reservation = reserveBudget({
-        prompt: promptText(system, messages),
+        prompt: promptText(options.system, options.messages),
         maxTokens,
       });
       if (!reservation.ok) {
         sendJson(response, 429, { error: 'budget-exceeded', message: reservation.message });
-        log.request({
-          method: 'POST',
-          path: url.pathname,
-          status: 429,
-          ms: Date.now() - started,
-          provider: chosen.name,
-        });
-        return;
+        logRequest({ status: 429, provider: chosen.name });
+        return null;
       }
-
       let outcome;
       try {
-        // The caller can disappear while the body is parsed or the budget is reserved. Do not
-        // start a model call for a caller that is already gone; this also covers providers
-        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
-        // `requestSent: false` is what tells it this call never reached the provider.
-        if (controller.signal.aborted) {
+        if (disconnected()) {
           throw new ProviderError('network', '请求已取消。', { requestSent: false });
         }
-        outcome = await chosen.complete({
-          system,
-          messages,
-          maxTokens,
-          signal: controller.signal,
-          meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
-        });
+        outcome = await chosen.complete({ ...options, maxTokens, signal: controller.signal });
       } catch (error) {
         abandonBudget(reservation, error);
         throw error;
       }
       settleBudget(reservation, outcome.usage);
-
-      const verified = verifyAnswer(outcome.text, ask.passages, { truncated: outcome.truncated });
-      const payload = {
-        provider: chosen.name,
-        providerLabel: chosen.label,
-        model: chosen.model,
-        online,
-        mode: ask.mode,
-        /**
-         * How the reply came back, in one word. The interface shows different things for a
-         * reply that followed the contract, one that had to be recovered, one that is cut off,
-         * and one that could not be read — and it never shows the protocol text itself.
-         */
-        status: verified.status,
-        answer: verified.answer,
-        groundedInText: verified.groundedInText,
-        citations: verified.citations,
-        warnings: verified.warnings,
-        /**
-         * Numbers and enums only: lengths, counts, the provider's own stop reason. Not the
-         * prompt, not the reply, not anything that came out of the paper. The panel shows these
-         * only when the reader asks to see them.
-         */
-        diagnostics: {
-          ...verified.diagnostics,
-          finishReason: typeof outcome.finishReason === 'string' ? outcome.finishReason : null,
-          truncated: outcome.truncated === true,
-        },
-        usage: outcome.usage ?? null,
-      };
-      sendJson(response, 200, payload);
-      log.request({
-        method: 'POST',
-        path: url.pathname,
-        status: 200,
-        ms: Date.now() - started,
-        provider: chosen.name,
-        model: chosen.model,
-        passages: ask.passages.length,
-        chars,
-        outputStatus: verified.status,
-        citations: verified.citations.length,
-        rejectedCitations: verified.diagnostics.citationsRejected,
-        finishReason: payload.diagnostics.finishReason,
-      });
-    } catch (error) {
-      if (controller.signal.aborted && !response.writableEnded) {
-        // The reader went away; there is nobody left to answer.
-        log.request({ method: 'POST', path: url.pathname, status: 499, ms: Date.now() - started });
-        return;
+      if (disconnected()) {
+        logRequest({ status: 499 });
+        return null;
       }
-      const isProvider = error instanceof ProviderError;
-      const code = isProvider ? error.code : 'upstream';
-      const message = isProvider
-        ? error.message
-        : '本地服务处理这次请求时出错了，没有发送任何论文内容。';
-      const status =
-        code === 'timeout' ? 504 : code === 'auth' ? 502 : code === 'rate-limit' ? 429 : 502;
-      if (!response.writableEnded) sendJson(response, status, { error: code, message });
-      log.request({
-        method: 'POST',
-        path: url.pathname,
-        status,
-        ms: Date.now() - started,
-        provider: chosen.name,
-        model: chosen.model,
-      });
-    } finally {
-      gate.leave();
-      void origin;
-    }
-  }
-
-  /**
-   * One page of the paper, analysed for the places worth understanding.
-   *
-   * Same guards as a question — rate, concurrency, body size, cancellation, no retries — and
-   * the same rule about what may leave: one page, and only when the reader turned this on.
-   */
-  async function handleDifficulties(request, response) {
-    const started = Date.now();
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-
-    const allowed = limiter.take();
-    if (!allowed.ok) {
-      sendJson(response, 429, {
-        error: 'rate-limit',
-        message: '本地服务一分钟内的请求次数已达上限，请稍后再试。',
-      });
-      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
-      return;
-    }
-    if (!gate.tryEnter()) {
-      sendJson(response, 429, { error: 'busy', message: '同时进行的模型请求太多，请稍后再试。' });
-      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
-      return;
-    }
-
-    const controller = new AbortController();
-    response.on('close', () => {
-      if (!response.writableEnded) controller.abort();
-    });
+      return outcome;
+    };
 
     try {
       let body;
@@ -481,66 +332,118 @@ export function createAiServer({
         body = await readJsonBody(request, LIMITS.bodyBytes);
       } catch (error) {
         const tooLarge = error instanceof BodyTooLarge;
-        // A client that closed the connection cannot receive a reply, and writing to it would
-        // be a wasted attempt. An oversized body keeps its 413 while the client is still
-        // connected and streaming, so the incomplete check excludes that case.
-        const disconnected = controller.signal.aborted || response.destroyed;
-        if (disconnected || (!tooLarge && !request.complete)) {
-          log.request({
-            method: 'POST',
-            path: url.pathname,
-            status: 499,
-            ms: Date.now() - started,
-          });
+        if (disconnected() || (!tooLarge && !request.complete)) {
+          logRequest({ status: 499 });
           return;
         }
         const status = tooLarge ? 413 : 400;
         const message = tooLarge ? error.message : '请求体不是合法 JSON。';
         sendJson(response, status, { error: 'bad-request', message });
-        log.request({ method: 'POST', path: url.pathname, status, ms: Date.now() - started });
+        logRequest({ status });
         return;
       }
-
-      const normalized = normalizeDifficultyRequest(body);
-      if (!normalized.ok) {
-        sendJson(response, 400, { error: 'bad-request', message: normalized.message });
-        log.request({ method: 'POST', path: url.pathname, status: 400, ms: Date.now() - started });
+      await perform({ body, complete, logRequest });
+    } catch (error) {
+      if (disconnected() && !response.writableEnded) {
+        logRequest({ status: 499 });
         return;
       }
-      const page = normalized.value;
-      const { system, messages } = buildDifficultyMessages(page);
-      const maxTokens = maxTokensForCall();
+      const isProvider = error instanceof ProviderError;
+      const code = isProvider ? error.code : 'upstream';
+      const message = isProvider ? error.message : errorMessage;
+      const status = code === 'timeout' ? 504 : code === 'rate-limit' ? 429 : 502;
+      if (!response.writableEnded) sendJson(response, status, { error: code, message });
+      logRequest({ status, provider: chosen.name, model: chosen.model });
+    } finally {
+      response.removeListener('close', onClose);
+      gate.leave();
+    }
+  }
 
-      const reservation = reserveBudget({
-        prompt: promptText(system, messages),
-        maxTokens,
-      });
-      if (!reservation.ok) {
-        sendJson(response, 429, { error: 'budget-exceeded', message: reservation.message });
-        log.request({
-          method: 'POST',
-          path: url.pathname,
-          status: 429,
-          ms: Date.now() - started,
-          provider: chosen.name,
-        });
-        return;
-      }
-
-      let outcome;
-      try {
-        // The caller can disappear while the body is parsed or the budget is reserved. Do not
-        // start a model call for a caller that is already gone; this also covers providers
-        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
-        // `requestSent: false` is what tells it this call never reached the provider.
-        if (controller.signal.aborted) {
-          throw new ProviderError('network', '请求已取消。', { requestSent: false });
+  function handleAsk(request, response) {
+    return handleModelRequest(
+      request,
+      response,
+      '本地服务处理这次请求时出错了，没有发送任何论文内容。',
+      async ({ body, complete, logRequest }) => {
+        const normalized = normalizeAskRequest(body);
+        if (!normalized.ok) {
+          sendJson(response, 400, { error: 'bad-request', message: normalized.message });
+          logRequest({ status: 400 });
+          return;
         }
-        outcome = await chosen.complete({
+        const ask = normalized.value;
+        const { system, messages } = buildMessages(ask);
+        const chars = ask.passages.reduce((sum, passage) => sum + passage.text.length, 0);
+        const outcome = await complete({
           system,
           messages,
-          maxTokens,
-          signal: controller.signal,
+          meta: { mode: ask.mode, question: ask.question, passages: ask.passages },
+        });
+        if (outcome === null) return;
+
+        const verified = verifyAnswer(outcome.text, ask.passages, { truncated: outcome.truncated });
+        const payload = {
+          provider: chosen.name,
+          providerLabel: chosen.label,
+          model: chosen.model,
+          online,
+          mode: ask.mode,
+          /**
+           * How the reply came back, in one word. The interface shows different things for a
+           * reply that followed the contract, one that had to be recovered, one that is cut off,
+           * and one that could not be read — and it never shows the protocol text itself.
+           */
+          status: verified.status,
+          answer: verified.answer,
+          groundedInText: verified.groundedInText,
+          citations: verified.citations,
+          warnings: verified.warnings,
+          /**
+           * Numbers and enums only: lengths, counts, the provider's own stop reason. Not the
+           * prompt, not the reply, not anything that came out of the paper. The panel shows these
+           * only when the reader asks to see them.
+           */
+          diagnostics: {
+            ...verified.diagnostics,
+            finishReason: typeof outcome.finishReason === 'string' ? outcome.finishReason : null,
+            truncated: outcome.truncated === true,
+          },
+          usage: outcome.usage ?? null,
+        };
+        sendJson(response, 200, payload);
+        logRequest({
+          status: 200,
+          provider: chosen.name,
+          model: chosen.model,
+          passages: ask.passages.length,
+          chars,
+          outputStatus: verified.status,
+          citations: verified.citations.length,
+          rejectedCitations: verified.diagnostics.citationsRejected,
+          finishReason: payload.diagnostics.finishReason,
+        });
+      },
+    );
+  }
+
+  function handleDifficulties(request, response) {
+    return handleModelRequest(
+      request,
+      response,
+      '本地服务分析这一页时出错了，没有发送其它页面的内容。',
+      async ({ body, complete, logRequest }) => {
+        const normalized = normalizeDifficultyRequest(body);
+        if (!normalized.ok) {
+          sendJson(response, 400, { error: 'bad-request', message: normalized.message });
+          logRequest({ status: 400 });
+          return;
+        }
+        const page = normalized.value;
+        const { system, messages } = buildDifficultyMessages(page);
+        const outcome = await complete({
+          system,
+          messages,
           meta: {
             task: 'difficulty',
             title: page.paper.title,
@@ -548,162 +451,53 @@ export function createAiServer({
             pageText: page.pageText,
           },
         });
-      } catch (error) {
-        abandonBudget(reservation, error);
-        throw error;
-      }
-      settleBudget(reservation, outcome.usage);
+        if (outcome === null) return;
 
-      const verified = verifySuggestions(outcome.text, page.pageText);
-      sendJson(response, 200, {
-        provider: chosen.name,
-        providerLabel: chosen.label,
-        model: chosen.model,
-        online,
-        page: page.paper.page,
-        rulesVersion: DIFFICULTY_RULES_VERSION,
-        status: verified.status,
-        suggestions: verified.suggestions,
-        rejected: verified.diagnostics.rejected,
-        diagnostics: verified.diagnostics,
-        usage: outcome.usage ?? null,
-      });
-      log.request({
-        method: 'POST',
-        path: url.pathname,
-        status: 200,
-        ms: Date.now() - started,
-        provider: chosen.name,
-        model: chosen.model,
-        page: page.paper.page,
-        chars: page.pageText.length,
-        outputStatus: verified.status,
-        suggestions: verified.suggestions.length,
-        rejectedSuggestions: verified.diagnostics.rejected,
-      });
-    } catch (error) {
-      if (controller.signal.aborted && !response.writableEnded) {
-        log.request({ method: 'POST', path: url.pathname, status: 499, ms: Date.now() - started });
-        return;
-      }
-      const isProvider = error instanceof ProviderError;
-      const code = isProvider ? error.code : 'upstream';
-      const message = isProvider
-        ? error.message
-        : '本地服务分析这一页时出错了，没有发送其它页面的内容。';
-      const status =
-        code === 'timeout' ? 504 : code === 'auth' ? 502 : code === 'rate-limit' ? 429 : 502;
-      if (!response.writableEnded) sendJson(response, status, { error: code, message });
-      log.request({
-        method: 'POST',
-        path: url.pathname,
-        status,
-        ms: Date.now() - started,
-        provider: chosen.name,
-        model: chosen.model,
-      });
-    } finally {
-      gate.leave();
-    }
+        const verified = verifySuggestions(outcome.text, page.pageText);
+        sendJson(response, 200, {
+          provider: chosen.name,
+          providerLabel: chosen.label,
+          model: chosen.model,
+          online,
+          page: page.paper.page,
+          rulesVersion: DIFFICULTY_RULES_VERSION,
+          status: verified.status,
+          suggestions: verified.suggestions,
+          rejected: verified.diagnostics.rejected,
+          diagnostics: verified.diagnostics,
+          usage: outcome.usage ?? null,
+        });
+        logRequest({
+          status: 200,
+          provider: chosen.name,
+          model: chosen.model,
+          page: page.paper.page,
+          chars: page.pageText.length,
+          outputStatus: verified.status,
+          suggestions: verified.suggestions.length,
+          rejectedSuggestions: verified.diagnostics.rejected,
+        });
+      },
+    );
   }
 
-  /**
-   * A bounded set of passages, analysed for concepts and the relations between them.
-   *
-   * Same guards as every other endpoint — rate, concurrency, body size, cancellation, no
-   * retries — and the same rule about what may leave: only the passages the reader's own
-   * context plan listed, never the whole paper.
-   */
-  async function handleKnowledge(request, response) {
-    const started = Date.now();
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-
-    const allowed = limiter.take();
-    if (!allowed.ok) {
-      sendJson(response, 429, {
-        error: 'rate-limit',
-        message: '本地服务一分钟内的请求次数已达上限，请稍后再试。',
-      });
-      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
-      return;
-    }
-    if (!gate.tryEnter()) {
-      sendJson(response, 429, { error: 'busy', message: '同时进行的模型请求太多，请稍后再试。' });
-      log.request({ method: 'POST', path: url.pathname, status: 429, ms: Date.now() - started });
-      return;
-    }
-
-    const controller = new AbortController();
-    response.on('close', () => {
-      if (!response.writableEnded) controller.abort();
-    });
-
-    try {
-      let body;
-      try {
-        body = await readJsonBody(request, LIMITS.bodyBytes);
-      } catch (error) {
-        const tooLarge = error instanceof BodyTooLarge;
-        // A client that closed the connection cannot receive a reply, and writing to it would
-        // be a wasted attempt. An oversized body keeps its 413 while the client is still
-        // connected and streaming, so the incomplete check excludes that case.
-        const disconnected = controller.signal.aborted || response.destroyed;
-        if (disconnected || (!tooLarge && !request.complete)) {
-          log.request({
-            method: 'POST',
-            path: url.pathname,
-            status: 499,
-            ms: Date.now() - started,
-          });
+  function handleKnowledge(request, response) {
+    return handleModelRequest(
+      request,
+      response,
+      '本地服务分析知识关联时出错了，没有发送其它页面的内容。',
+      async ({ body, complete, logRequest }) => {
+        const normalized = normalizeKnowledgeRequest(body);
+        if (!normalized.ok) {
+          sendJson(response, 400, { error: 'bad-request', message: normalized.message });
+          logRequest({ status: 400 });
           return;
         }
-        const status = tooLarge ? 413 : 400;
-        const message = tooLarge ? error.message : '请求体不是合法 JSON。';
-        sendJson(response, status, { error: 'bad-request', message });
-        log.request({ method: 'POST', path: url.pathname, status, ms: Date.now() - started });
-        return;
-      }
-
-      const normalized = normalizeKnowledgeRequest(body);
-      if (!normalized.ok) {
-        sendJson(response, 400, { error: 'bad-request', message: normalized.message });
-        log.request({ method: 'POST', path: url.pathname, status: 400, ms: Date.now() - started });
-        return;
-      }
-      const knowledgeRequest = normalized.value;
-      const { system, messages } = buildKnowledgeMessages(knowledgeRequest);
-      const maxTokens = maxTokensForCall();
-
-      const reservation = reserveBudget({
-        prompt: promptText(system, messages),
-        maxTokens,
-      });
-      if (!reservation.ok) {
-        sendJson(response, 429, { error: 'budget-exceeded', message: reservation.message });
-        log.request({
-          method: 'POST',
-          path: url.pathname,
-          status: 429,
-          ms: Date.now() - started,
-          provider: chosen.name,
-        });
-        return;
-      }
-
-      let outcome;
-      try {
-        // The caller can disappear while the body is parsed or the budget is reserved. Do not
-        // start a model call for a caller that is already gone; this also covers providers
-        // that do not inspect the signal themselves. The reservation is abandoned by the catch;
-        // `requestSent: false` is what tells it this call never reached the provider.
-        if (controller.signal.aborted) {
-          throw new ProviderError('network', '请求已取消。', { requestSent: false });
-        }
-        outcome = await chosen.complete({
+        const knowledgeRequest = normalized.value;
+        const { system, messages } = buildKnowledgeMessages(knowledgeRequest);
+        const outcome = await complete({
           system,
           messages,
-          maxTokens,
-          signal: controller.signal,
           // Classification, not prose: no deliberate sampling variety. Still checked line by line.
           temperature: 0,
           meta: {
@@ -715,77 +509,47 @@ export function createAiServer({
             existingRelations: knowledgeRequest.existingRelations,
           },
         });
-      } catch (error) {
-        abandonBudget(reservation, error);
-        throw error;
-      }
-      settleBudget(reservation, outcome.usage);
+        if (outcome === null) return;
 
-      const verified = verifyKnowledgeSuggestions(outcome.text, knowledgeRequest, {
-        truncated: outcome.truncated === true,
-      });
-      const payload = {
-        provider: chosen.name,
-        providerLabel: chosen.label,
-        model: chosen.model,
-        online,
-        rulesVersion: verified.rulesVersion,
-        status: verified.status,
-        groundedInText: verified.groundedInText,
-        concepts: verified.concepts,
-        relations: verified.relations,
-        rejected: verified.rejected,
-        rejectedDetails: verified.rejectedDetails,
-        warnings: verified.warnings,
-        diagnostics: {
-          ...verified.diagnostics,
-          finishReason: typeof outcome.finishReason === 'string' ? outcome.finishReason : null,
-        },
-        usage: outcome.usage ?? null,
-      };
-      sendJson(response, 200, payload);
-      log.request({
-        method: 'POST',
-        path: url.pathname,
-        status: 200,
-        ms: Date.now() - started,
-        provider: chosen.name,
-        model: chosen.model,
-        pages: new Set(knowledgeRequest.passages.map((passage) => passage.page)).size,
-        chars: knowledgeRequest.passages.reduce((sum, passage) => sum + passage.text.length, 0),
-        outputStatus: verified.status,
-        concepts: verified.concepts.length,
-        relations: verified.relations.length,
-        rejected: verified.rejected,
-      });
-    } catch (error) {
-      if (controller.signal.aborted && !response.writableEnded) {
-        log.request({ method: 'POST', path: url.pathname, status: 499, ms: Date.now() - started });
-        return;
-      }
-      const isProvider = error instanceof ProviderError;
-      const code = isProvider ? error.code : 'upstream';
-      const message = isProvider
-        ? error.message
-        : '本地服务分析知识关联时出错了，没有发送其它页面的内容。';
-      const status =
-        code === 'timeout' ? 504 : code === 'auth' ? 502 : code === 'rate-limit' ? 429 : 502;
-      if (!response.writableEnded) sendJson(response, status, { error: code, message });
-      log.request({
-        method: 'POST',
-        path: url.pathname,
-        status,
-        ms: Date.now() - started,
-        provider: chosen.name,
-        model: chosen.model,
-      });
-    } finally {
-      gate.leave();
-    }
+        const verified = verifyKnowledgeSuggestions(outcome.text, knowledgeRequest, {
+          truncated: outcome.truncated === true,
+        });
+        const payload = {
+          provider: chosen.name,
+          providerLabel: chosen.label,
+          model: chosen.model,
+          online,
+          rulesVersion: verified.rulesVersion,
+          status: verified.status,
+          groundedInText: verified.groundedInText,
+          concepts: verified.concepts,
+          relations: verified.relations,
+          rejected: verified.rejected,
+          rejectedDetails: verified.rejectedDetails,
+          warnings: verified.warnings,
+          diagnostics: {
+            ...verified.diagnostics,
+            finishReason: typeof outcome.finishReason === 'string' ? outcome.finishReason : null,
+          },
+          usage: outcome.usage ?? null,
+        };
+        sendJson(response, 200, payload);
+        logRequest({
+          status: 200,
+          provider: chosen.name,
+          model: chosen.model,
+          pages: new Set(knowledgeRequest.passages.map((passage) => passage.page)).size,
+          chars: knowledgeRequest.passages.reduce((sum, passage) => sum + passage.text.length, 0),
+          outputStatus: verified.status,
+          concepts: verified.concepts.length,
+          relations: verified.relations.length,
+          rejected: verified.rejected,
+        });
+      },
+    );
   }
 
   const server = createServer((request, response) => {
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
     const origin = request.headers.origin;
 
     const host = checkHost(request.headers.host);
@@ -810,6 +574,14 @@ export function createAiServer({
         response.setHeader(name, value);
     }
 
+    let url;
+    try {
+      url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    } catch {
+      // A malformed request target is untrusted input, not a fatal process exception.
+      sendJson(response, 400, { error: 'invalid-target', message: '请求地址格式不正确。' });
+      return;
+    }
     const pathCheck = checkPath(url.pathname);
     if (!pathCheck.ok) {
       sendJson(response, pathCheck.status, { error: 'not-found', message: pathCheck.message });
@@ -857,7 +629,7 @@ export function createAiServer({
       return;
     }
 
-    void handleAsk(request, response, origin);
+    void handleAsk(request, response);
   });
 
   /** Keeps a stalled client from holding a socket forever. */

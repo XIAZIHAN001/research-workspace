@@ -23,6 +23,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validAsk } from './testing.mjs';
+import { listenOnLoopback } from './loopback.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const launcher = join(here, 'desktop.mjs');
@@ -78,13 +79,10 @@ async function startUpstream(handler) {
       });
     });
   });
-  await new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', resolve);
-  });
+  const port = await listenOnLoopback(server);
   upstreams.push(server);
-  const address = server.address();
   return {
-    url: `http://127.0.0.1:${String(address.port)}`,
+    url: `http://127.0.0.1:${String(port)}`,
     requests,
   };
 }

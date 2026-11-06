@@ -5,6 +5,7 @@
  */
 
 import { request as httpRequest } from 'node:http';
+import { listenOnLoopback } from './loopback.mjs';
 
 /** A request the service should accept, in the shape the browser sends. */
 export function validAsk(overrides = {}) {
@@ -43,12 +44,9 @@ export async function startTestService(deps) {
   // `config` goes last: it is the merged one, and letting `deps.config` win would hand the
   // service a partial configuration with fields like `allowedOrigins` missing.
   const { server, health } = createAiServer({ ...deps, config });
-  await new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
+  const port = await listenOnLoopback(server);
   return {
-    base: `http://127.0.0.1:${String(address.port)}`,
+    base: `http://127.0.0.1:${String(port)}`,
     health,
     stop: () =>
       new Promise((resolve) => {

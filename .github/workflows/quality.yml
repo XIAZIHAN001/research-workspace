@@ -1,0 +1,104 @@
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main, fix/final-audit-remediation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web and service (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.13.0', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: ESLint
+        run: npm run lint
+      - name: Prettier
+        run: npm run format:check
+      - name: Vitest (offline fixtures only)
+        run: npm test
+      - name: Vite production build
+        run: npm run build
+      - name: Isolated Chromium recovery acceptance
+        if: matrix.node == '24'
+        shell: bash
+        run: |
+          chrome="$(command -v google-chrome)"
+          BROWSER_PATH="$chrome" node scripts/verify/stability.mjs
+      - name: Retain browser acceptance report
+        if: always() && matrix.node == '24'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-browser-${{ github.sha }}
+          path: .cache/stability/**/report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows:
+    name: Rust and Windows NSIS
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Prepare frontend and Windows sidecar resources
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run desktop:prepare
+      - name: Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Rust release check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --release --locked
+      - name: Build Windows Tauri NSIS installer
+        run: npm run desktop:build -- --bundles nsis
+      - name: Retain installer for isolated manual acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-workspace-windows-nsis-${{ github.sha }}
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record remaining manual release gate
+        shell: pwsh
+        run: |
+          @'
+          ## Manual desktop acceptance is still required
+          Building an installer is not an interactive desktop test and is not release approval.
+          On this exact commit, use an isolated Windows account or clean data directory and synthetic credentials only.
+          Verify installation/startup, Mock requests, fake-key save and endpoint binding, key deletion then Mock mode,
+          sidecar stop/restart, PDF import/reading, backup export/restore, forced app exit, restart persistence,
+          and absence of orphan sidecar processes. Record each result and evidence in the PR.
+          Unexecuted checks remain NOT RUN. Do not touch real workspaces or real API keys.
+          '@ >> $env:GITHUB_STEP_SUMMARY
