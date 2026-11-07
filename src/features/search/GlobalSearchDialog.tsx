@@ -2,9 +2,11 @@ import { BookOpen, Library, Network, NotebookPen, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Dialog } from '../../ui/Dialog';
 import {
-  searchWorkspace,
+  createWorkspaceSearchIndex,
+  searchWorkspaceIndex,
   SEARCH_GROUP_LIMIT,
   type WorkspaceResultKind,
+  type WorkspaceSearchIndex,
   type WorkspaceSearchResult,
   type WorkspaceSearchSource,
 } from './searchWorkspace';
@@ -59,7 +61,14 @@ interface SearchBodyProps extends Omit<GlobalSearchDialogProps, 'open'> {
 function SearchBody({ source, onClose, onOpenPaper, onOpenConcept }: SearchBodyProps) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const groups = useMemo(() => searchWorkspace(source, query), [source, query]);
+  const getIndex = useMemo(() => {
+    let index: WorkspaceSearchIndex | undefined;
+    return () => (index ??= createWorkspaceSearchIndex(source));
+  }, [source]);
+  const groups = useMemo(
+    () => (query.trim() === '' ? [] : searchWorkspaceIndex(getIndex(), query)),
+    [getIndex, query],
+  );
   const flat = useMemo(() => groups.flatMap((group) => group.results), [groups]);
   const current = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
 

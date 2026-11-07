@@ -16,6 +16,7 @@
  */
 
 import type { PDFDocumentProxy } from './pdfjs';
+import { readSharedPageText } from './sharedPageText';
 
 /** Pages scanned for one analysis. Enough for a paper's argument; far from "the whole library". */
 export const MAX_SCAN_PAGES = 48;
@@ -58,27 +59,7 @@ export async function extractPageText(
   doc: PDFDocumentProxy,
   pageNumber: number,
 ): Promise<ExtractedPage | null> {
-  try {
-    const page = await doc.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const parts: string[] = [];
-    let itemCount = 0;
-    let singleCharItems = 0;
-    for (const item of content.items) {
-      if (!('str' in item)) continue;
-      const raw = item.str ?? '';
-      if (raw.trim() === '') continue;
-      itemCount += 1;
-      if (raw.trim().length === 1) singleCharItems += 1;
-      parts.push(raw);
-      parts.push('hasEOL' in item && item.hasEOL === true ? '\n' : ' ');
-    }
-    const text = parts.join('').replace(/\s+/g, ' ').trim();
-    const fragmented = itemCount >= 8 && singleCharItems / itemCount >= 0.45;
-    return { page: pageNumber, text, itemCount, singleCharItems, fragmented };
-  } catch {
-    return null;
-  }
+  return (await readSharedPageText(doc, pageNumber))?.analysis ?? null;
 }
 
 /**

@@ -1,6 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+import { workspaceAccess } from '../services/workspaceAccess';
+import { memoryWebLocks } from './webLocks';
+
+// Every unit test runs inside the same native-lease protocol as a booted workspace.
+beforeEach(async () => {
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: memoryWebLocks() });
+  await workspaceAccess.acquire();
+  workspaceAccess.allowWrites();
+});
 
 // jsdom ships <dialog> without showModal()/close(). A minimal stand-in is enough here:
 // the tests only need `open` to toggle and the `close` event to fire.
@@ -26,7 +35,8 @@ if (typeof Element.prototype.scrollIntoView !== 'function') {
 
 // Vitest runs with globals off, so Testing Library cannot register its own
 // auto-cleanup. Unmount rendered trees and wipe storage between tests.
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await workspaceAccess.release();
   window.localStorage.clear();
 });

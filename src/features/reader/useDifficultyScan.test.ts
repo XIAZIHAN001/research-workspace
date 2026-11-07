@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DifficultyAnalysis } from '../../services/ai/client';
+import type { AiClientOptions, DifficultyAnalysis } from '../../services/ai/client';
 import {
   DIFFICULTY_PREFS_KEY,
   DIFFICULTY_STORAGE_KEY,
@@ -346,4 +346,282 @@ describe('useDifficultyScan', () => {
     expect(result.current.analysedPages).toBe(1);
     void DIFFICULTY_PREFS_KEY;
   });
+
+  /**
+   * The queue only holds pages that are waiting, so `includes` cannot see the one that is
+   * already running. Asking for that page again must join the running request instead of
+   * starting a second one.
+   */
+  it('never sends the same page twice while it is already being analysed', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const deferred = pendingAnalysis();
+    const analyze = vi.fn(() => deferred.promise);
+    const { result } = renderHook(() => useDifficultyScan(baseOptions({ analyze })));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    // The reader clicks "analyse this page" while the automatic request is still unanswered.
+    act(() => {
+      result.current.analyse(3);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      deferred.resolve(analysis());
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.current.analysedPages).toBe(1);
+  });
+
+  it('drops automatic work when the feature is turned off, and keeps manual work', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const deferred = pendingAnalysis();
+    const analyze = vi.fn((request: { paper: { page: number } }, options?: AiClientOptions) => {
+      signals.push(options?.signal ?? null);
+      return request.paper.page === 3 ? deferred.promise : Promise.resolve(okAnalysis());
+    });
+    const signals: (AbortSignal | null)[] = [];
+    const { result, rerender } = renderHook(
+      (props: DifficultyScanOptions) => useDifficultyScan(props),
+      {
+        initialProps: baseOptions({
+          analyze,
+          pageTextFor: (page) => (page === 3 || page === 4 ? PAGE_TEXT : null),
+        }),
+      },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(analyze).toHaveBeenCalledTimes(1);
+    // Page 4 is queued behind the running page 3.
+    rerender(
+      baseOptions({
+        analyze,
+        currentPage: 4,
+        pageTextFor: (page) => (page === 3 || page === 4 ? PAGE_TEXT : null),
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setEnabled(false);
+    });
+    // The automatic page that was running is cancelled, and the queued automatic page is gone.
+    expect(signals[0]?.aborted).toBe(true);
+    await act(async () => {
+      deferred.resolve(analysis());
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.current.all).toEqual([]);
+
+    // A manual request is still the reader's own action, and still works.
+    await act(async () => {
+      result.current.analyse(4);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(2);
+    expect(result.current.current).toHaveLength(1);
+  });
+
+  it('invalidates a running task when the PDF is replaced, and cannot write the old result', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const deferred = pendingAnalysis();
+    const signals: (AbortSignal | null)[] = [];
+    const analyze = vi.fn(
+      (_request: { paper: { pdfSha256: string } }, options?: AiClientOptions) => {
+        signals.push(options?.signal ?? null);
+        return deferred.promise;
+      },
+    );
+    const { result, rerender } = renderHook(
+      (props: DifficultyScanOptions) => useDifficultyScan(props),
+      { initialProps: baseOptions({ analyze }) },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    rerender(baseOptions({ analyze, pdfSha256: 'b'.repeat(64) }));
+    expect(signals[0]?.aborted).toBe(true);
+
+    // The old request settles late, successfully. It belongs to the previous file.
+    await act(async () => {
+      deferred.resolve(analysis());
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flush();
+    expect(result.current.analysedPages).toBe(0);
+    expect(result.current.all).toEqual([]);
+  });
+
+  it('invalidates a running task when the service instance changes', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const deferred = pendingAnalysis();
+    const signals: (AbortSignal | null)[] = [];
+    const analyze = vi.fn(async (_request: unknown, options?: AiClientOptions) => {
+      signals.push(options?.signal ?? null);
+      return deferred.promise;
+    });
+    const { result, rerender } = renderHook(
+      (props: DifficultyScanOptions) => useDifficultyScan(props),
+      {
+        initialProps: baseOptions({
+          analyze,
+          online: true,
+          serviceInstanceId: 'service-1',
+        }),
+      },
+    );
+    act(() => {
+      result.current.grantOnlineConsent();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    rerender(baseOptions({ analyze, online: true, serviceInstanceId: 'service-2' }));
+    expect(signals[0]?.aborted).toBe(true);
+    expect(result.current.autoPaused).toBe(true);
+
+    await act(async () => {
+      deferred.resolve(analysis());
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flush();
+    // The old answer is not written, and no new paid request was queued without consent.
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.current.all).toEqual([]);
+  });
+
+  it('does not record a cancelled request as a page failure', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const deferred = pendingAnalysis();
+    const analyze = vi
+      .fn()
+      .mockImplementationOnce(() => deferred.promise)
+      .mockResolvedValue(okAnalysis());
+    const { result } = renderHook(() => useDifficultyScan(baseOptions({ analyze })));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    act(() => {
+      result.current.setEnabled(false);
+    });
+    await act(async () => {
+      deferred.reject(new Error('aborted'));
+      await Promise.resolve();
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('idle');
+    expect(result.current.error).toBeNull();
+
+    // Turning the feature back on retries the page: a cancellation is not a failure.
+    act(() => {
+      result.current.setEnabled(true);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(2);
+    expect(result.current.current).toHaveLength(1);
+  });
+
+  it('does not retry a page automatically right after a manual attempt failed', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const analyze = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('上游失败'))
+      .mockResolvedValue(okAnalysis());
+    const { result } = renderHook(() => useDifficultyScan(baseOptions({ analyze })));
+
+    // The automatic timer is already pending when the reader asks for the page themselves.
+    await act(async () => {
+      result.current.analyse(3);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('error');
+
+    // The pending automatic timer must not turn a failed manual attempt into a second paid
+    // request. A failure is retried only by an explicit click.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it('scopes a failure to the file it happened on', async () => {
+    saveDifficultyPrefs({ enabled: true, markersVisible: true });
+    const analyze = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('上游失败'))
+      .mockResolvedValue(okAnalysis());
+    const { result, rerender } = renderHook(
+      (props: DifficultyScanOptions) => useDifficultyScan(props),
+      { initialProps: baseOptions({ analyze }) },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('error');
+
+    // The same page number in the replacement file is a different page, not a known failure.
+    rerender(baseOptions({ analyze, pdfSha256: 'b'.repeat(64) }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    await flush();
+    expect(analyze).toHaveBeenCalledTimes(2);
+    expect(result.current.current).toHaveLength(1);
+  });
 });
+
+function okAnalysis(): { ok: true; value: DifficultyAnalysis } {
+  return { ok: true, value: analysis() };
+}
+
+/** A request the test still owes the hook; the signal lets a test observe cancellation. */
+function pendingAnalysis(): {
+  promise: Promise<{ ok: true; value: DifficultyAnalysis }>;
+  resolve: (value: DifficultyAnalysis) => void;
+  reject: (error: unknown) => void;
+} {
+  let resolve!: (value: DifficultyAnalysis) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<{ ok: true; value: DifficultyAnalysis }>((settle, fail) => {
+    resolve = (value) => {
+      settle({ ok: true, value });
+    };
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}

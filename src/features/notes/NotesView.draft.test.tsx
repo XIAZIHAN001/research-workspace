@@ -218,6 +218,60 @@ describe('draft carry policy (review round 2)', () => {
     ]);
   });
 
+  it('keeps the carried quotations and notes under the service character budget', async () => {
+    // Forty notes of 8000 characters are 320k together, well past the service's 200k ceiling.
+    // The count ceiling alone would have sent all forty and been refused.
+    const items = Array.from({ length: 40 }, (_, index) =>
+      note(`long-${String(index)}`, 'p1', {
+        page: index + 1,
+        quote: 'q'.repeat(4000),
+        note: 'n'.repeat(4000),
+      }),
+    );
+    const ask = vi.fn((_request: unknown) =>
+      Promise.resolve({
+        ok: true as const,
+        echo: _request,
+        answer: {
+          provider: 'mock',
+          providerLabel: '本地模拟',
+          model: 'mock-1',
+          online: false,
+          mode: 'draft' as const,
+          status: 'valid' as const,
+          answer: '草稿',
+          groundedInText: true,
+          citations: [],
+          warnings: [],
+          diagnostics: null,
+          usage: null,
+        },
+      }),
+    );
+    render(
+      <NotesView
+        annotations={items}
+        papers={papers as Record<string, Paper>}
+        onOpenPaper={vi.fn()}
+        ai={{ ask }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'AI 整理成稿' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始整理' }));
+    await waitFor(() => {
+      expect(ask).toHaveBeenCalledTimes(1);
+    });
+    const request = ask.mock.calls[0]?.[0] as {
+      passages: Array<{ text: string }>;
+      draftNotes: Array<{ note: string }>;
+    };
+    const total =
+      request.passages.reduce((sum, passage) => sum + passage.text.length, 0) +
+      request.draftNotes.reduce((sum, entry) => sum + entry.note.length, 0);
+    expect(total).toBeLessThanOrEqual(190_000);
+    expect(request.passages.length).toBeLessThan(items.length);
+  });
+
   it('offers nothing when the carried set has no written notes at all', () => {
     render(
       <NotesView

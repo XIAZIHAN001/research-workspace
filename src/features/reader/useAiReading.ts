@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { askAi, fetchAiHealth, type AiClientOptions } from '../../services/ai/client';
 import { buildAskContext, buildHistory, type DocumentPageText } from '../../services/ai/context';
 import type {
@@ -74,6 +74,14 @@ export interface AiClient {
   health: typeof fetchAiHealth;
 }
 
+/**
+ * The part of the transport a single request needs.
+ *
+ * A host that only asks questions (the summary card) should not have to own a health probe,
+ * so the narrower shape is what the reader accepts; the full client still satisfies it.
+ */
+export type AiAskClient = Pick<AiClient, 'ask'>;
+
 const DEFAULT_CLIENT: AiClient = { ask: askAi, health: fetchAiHealth };
 
 /** Follow-up turns carry this much of the conversation back; the rest is dropped. */
@@ -86,14 +94,37 @@ function historyOf(turns: readonly AiTurn[]): AiHistoryTurn[] {
   );
 }
 
-export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
+export function useAiReading(client: AiAskClient = DEFAULT_CLIENT) {
   const [session, setSession] = useState<AiSession | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef<AbortController | null>(null);
+  /**
+   * Identifies the one request allowed to update the session.
+   *
+   * A cancelled request settles after the reader may already have asked the next question. Its
+   * late completion must not pop the new turn or clear the new request's busy state.
+   */
+  const requestSeq = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      requestSeq.current += 1;
+      inFlight.current?.abort();
+      inFlight.current = null;
+    };
+  }, []);
 
   const cancel = useCallback(() => {
-    inFlight.current?.abort();
+    const active = inFlight.current;
+    if (active === null) return;
+    // Invalidate the late completion first, then remove the blank turn this request added.
+    requestSeq.current += 1;
     inFlight.current = null;
+    active.abort();
+    setSession((current) => {
+      if (current === null) return null;
+      return { ...current, turns: current.turns.slice(0, -1) };
+    });
     setBusy(false);
   }, []);
 
@@ -114,6 +145,7 @@ export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
         documentPages: source.documentPages,
       });
 
+      const sequence = ++requestSeq.current;
       const blank: AiTurn = { mode, question, request, answer: null, failure: null };
       setSession({ source, turns: [...previous, blank] });
       setBusy(true);
@@ -124,15 +156,24 @@ export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
 
       const options: AiClientOptions = { signal: controller.signal };
       const outcome = await client.ask(request, options);
+      // A newer question or an explicit cancel owns the session now. This completion is stale:
+      // touching the turns here would delete the new blank turn or clear its busy state.
+      if (requestSeq.current !== sequence) return;
+      inFlight.current = null;
+
       if (
         controller.signal.aborted &&
         outcome.ok === false &&
         outcome.failure.kind === 'cancelled'
       ) {
-        // A cancelled turn leaves the conversation as it was before the question was asked.
-        setSession((current) =>
-          current === null ? null : { ...current, turns: current.turns.slice(0, -1) },
-        );
+        // A cancelled turn leaves the conversation as it was before this question was asked.
+        // Only this request's own blank turn may be removed.
+        setSession((current) => {
+          if (current === null) return null;
+          const last = current.turns.at(-1);
+          if (last === undefined || last.request !== request) return current;
+          return { ...current, turns: current.turns.slice(0, -1) };
+        });
         setBusy(false);
         return;
       }
@@ -141,7 +182,7 @@ export function useAiReading(client: AiClient = DEFAULT_CLIENT) {
         if (current === null) return null;
         const turns = [...current.turns];
         const last = turns.pop();
-        if (last === undefined) return current;
+        if (last === undefined || last.request !== request) return current;
         turns.push(
           outcome.ok ? { ...last, answer: outcome.answer } : { ...last, failure: outcome.failure },
         );

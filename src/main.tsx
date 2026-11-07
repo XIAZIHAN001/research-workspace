@@ -1,9 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './app/App';
-import { createProjectsStore } from './services/projectsStore';
-import { recoverInterruptedRestore } from './services/backupService';
+import { recoverInterruptedRestore, readPdfReferences } from './services/backupService';
+import { collectStartupPdfGarbage } from './services/pdfGarbageCollection';
 import { createIndexedDbJournal } from './services/restoreJournal';
+import { workspaceAccess } from './services/workspaceAccess';
+import { initializeWorkspace } from './services/workspaceStartup';
+import { createPdfBlobStore } from './services/pdfStore';
 // KaTeX's stylesheet and fonts travel with the bundle: the app is local-first and must typeset
 // mathematics with no network request. It comes before reader.css so the app's own rules on
 // sizing and colour can win where they need to.
@@ -37,21 +39,78 @@ if (container === null) throw new Error('Missing #root element');
  * the page would run on a mixture and then write it back.
  */
 async function bootstrap(): Promise<void> {
-  let recovery: Awaited<ReturnType<typeof recoverInterruptedRestore>>;
-  try {
-    recovery = await recoverInterruptedRestore({ journal: createIndexedDbJournal() });
-  } catch {
-    // A browser without usable storage still gets the interface; it will say so itself.
-    recovery = 'none';
-  }
-  createRoot(container as HTMLElement).render(
-    <StrictMode>
-      <App
-        store={createProjectsStore()}
-        restoreNotice={recovery === 'none' ? undefined : recovery}
-      />
-    </StrictMode>,
+  const root = createRoot(container as HTMLElement);
+  let diagnostic = '';
+  // Presentation for this live window only. Only acknowledged IndexedDB writes are durable.
+  let manualRecovery = '';
+  const blobs = createPdfBlobStore();
+  workspaceAccess.bindLifecycle(window, () => {
+    window.location.reload();
+  });
+  const status = await initializeWorkspace(
+    async (recovery) => {
+      // Import the application only after the recovery boundary. No store constructors,
+      // migration/quarantine writes, effects or welcome setup can run on a blocked startup.
+      const [{ App }, { createProjectsStore }] = await Promise.all([
+        import('./app/App'),
+        import('./services/projectsStore'),
+      ]);
+      root.render(
+        <StrictMode>
+          <App
+            store={createProjectsStore()}
+            blobs={blobs}
+            restoreNotice={recovery === 'none' ? undefined : recovery}
+          />
+        </StrictMode>,
+      );
+    },
+    {
+      access: workspaceAccess,
+      retainLeaseOnBlock: () => manualRecovery !== '',
+      maintain: () => collectStartupPdfGarbage(blobs, readPdfReferences),
+      recover: () =>
+        recoverInterruptedRestore({
+          journal: createIndexedDbJournal(),
+          blobs,
+          onManualRecovery: (detail) => {
+            manualRecovery = detail;
+          },
+          onProblem: (detail) => {
+            diagnostic = detail;
+          },
+        }),
+    },
   );
+  if (status.status === 'blocked') {
+    root.render(
+      <main className="backup-result" role="alert">
+        <h1>工作区已暂停</h1>
+        <p>无法安全确认工作区恢复状态，未启动工作区，也未允许正常数据写入。</p>
+        <p>{diagnostic || status.detail}</p>
+        <p>
+          {manualRecovery === ''
+            ? '请先关闭其他工作区窗口，检查浏览器存储权限后重试。'
+            : '请关闭其他工作区窗口并保持当前页面，等待人工核对恢复记录。'}
+          不要清除网站数据、恢复日志或重新安装覆盖数据。
+        </p>
+        <p>
+          若仍失败，请保留当前浏览器配置目录，并将此诊断交给维护人员；确认副本可恢复后再进行人工恢复。
+        </p>
+        {manualRecovery !== '' && <p>{manualRecovery}</p>}
+        {manualRecovery === '' && (
+          <button
+            type="button"
+            onClick={() => {
+              window.location.reload();
+            }}
+          >
+            重新检查
+          </button>
+        )}
+      </main>,
+    );
+  }
 }
 
 void bootstrap();

@@ -1,3 +1,4 @@
+import { workspaceAccess } from './workspaceAccess';
 import { projectsReducer, type ProjectsAction, type ProjectsState } from '../domain/projectsState';
 import {
   defaultStore,
@@ -48,6 +49,11 @@ export function createProjectsStore(storage: KeyValueStore | null = defaultStore
     },
     getSnapshot: () => snapshot,
     dispatch: (action) => {
+      if (!workspaceAccess.canWrite()) {
+        snapshot = { ...snapshot, persisted: false };
+        for (const notify of listeners) notify();
+        return;
+      }
       const state = projectsReducer(snapshot.state, action);
       if (state === snapshot.state) return;
       snapshot = {

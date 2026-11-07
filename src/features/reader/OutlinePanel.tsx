@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import type { PaperSummary } from '../../domain/papers';
 import { defaultBookmarkLabel, sortBookmarks, type Bookmark } from '../../domain/bookmark';
 import { ANNOTATION_KIND_LABEL, type Annotation } from '../../domain/annotation';
@@ -73,8 +74,13 @@ interface OutlinePanelProps {
   summaryNotice?: string | null;
   /** How much of the paper a request would carry, for the confirmation line. */
   summaryScope?: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
-  /** True when the service is an online provider, so the confirm line can name the cost. */
-  summaryOnline?: boolean;
+  /**
+   * Whether the service is an online provider, so the confirm line can name the cost.
+   * Null means "not checked yet" and is worded as possibly billable, never as free.
+   */
+  summaryOnline?: boolean | null;
+  /** Asks the host to look up the service before the confirm line states a cost. */
+  onPrepareSummary?: () => void;
   /** True when the card was generated from a different PDF file than the paper now holds. */
   summaryStale?: boolean;
   onGenerateSummary?: () => void;
@@ -121,7 +127,8 @@ export function OutlinePanel({
   summaryBusy = false,
   summaryNotice = null,
   summaryScope = null,
-  summaryOnline = false,
+  summaryOnline = null,
+  onPrepareSummary,
   summaryStale = false,
   onGenerateSummary,
   onClearSummary,
@@ -220,6 +227,7 @@ export function OutlinePanel({
             online={summaryOnline}
             stale={summaryStale}
             onGenerate={onGenerateSummary}
+            onPrepare={onPrepareSummary}
             onClear={onClearSummary}
           />
         )}
@@ -323,24 +331,34 @@ function SummarySection({
   online,
   stale,
   onGenerate,
+  onPrepare,
   onClear,
 }: {
   summary: PaperSummary | undefined;
   busy: boolean;
   notice: string | null;
   scope: { pagesSent: number; pagesTotal: number; truncated: boolean } | null;
-  online: boolean;
+  online: boolean | null;
   stale: boolean;
   onGenerate?: () => void;
+  onPrepare?: () => void;
   onClear?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const scopeText =
     scope === null
       ? '整篇论文的文字'
       : `整篇论文 ${String(scope.pagesSent)}/${String(scope.pagesTotal)} 页的文字` +
         (scope.truncated ? '（超长部分不发送）' : '');
-  const costText = online ? '将调用在线模型，可能产生费用。' : '当前是本地模拟，不产生任何费用。';
+  // Only a mock provider may be called free. An unchecked service is not a free one: the
+  // reader is about to send a whole paper, and silence here used to read as "no charge".
+  const costText =
+    online === true
+      ? '将调用在线模型，可能产生费用。'
+      : online === false
+        ? '当前是本地模拟，不产生任何费用。'
+        : '尚未确认 AI 服务状态；若为在线模式，将产生费用。';
 
   return (
     <section className="outline-summary" aria-label="摘要卡">
@@ -399,6 +417,7 @@ function SummarySection({
                 className="btn btn-quiet"
                 disabled={busy}
                 onClick={() => {
+                  onPrepare?.();
                   setConfirming(true);
                 }}
               >
@@ -414,6 +433,7 @@ function SummarySection({
               className="btn btn-quiet"
               disabled={busy}
               onClick={() => {
+                onPrepare?.();
                 setConfirming(true);
               }}
             >
@@ -421,7 +441,13 @@ function SummarySection({
               重新生成
             </button>
             {onClear !== undefined && (
-              <button type="button" className="btn btn-quiet" onClick={onClear}>
+              <button
+                type="button"
+                className="btn btn-quiet"
+                onClick={() => {
+                  setClearing(true);
+                }}
+              >
                 移除
               </button>
             )}
@@ -434,6 +460,21 @@ function SummarySection({
         </p>
       )}
       {busy && summary === undefined && <p className="outline-note">正在生成，稍候…</p>}
+      <ConfirmDialog
+        open={clearing}
+        title="移除摘要卡？"
+        confirmLabel="确定移除"
+        danger
+        onConfirm={() => {
+          setClearing(false);
+          onClear?.();
+        }}
+        onClose={() => {
+          setClearing(false);
+        }}
+      >
+        <p>摘要卡会从这篇论文的记录里移除；重新生成需要再调用一次模型。</p>
+      </ConfirmDialog>
     </section>
   );
 }

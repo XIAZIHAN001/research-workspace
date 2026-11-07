@@ -102,6 +102,9 @@ const READING_SAVE_DELAY = 800;
  * but it never shows the payload itself or any internal detail.
  */
 function loadIssueNotice(issue: LoadIssue): string {
+  if (issue.readFailed === true) {
+    return '无法读取本机项目存储，已暂停保存，以免覆盖尚未读取的数据。未创建恢复副本。请检查存储权限后重新载入，不要清理浏览器数据。';
+  }
   const reason: Record<LoadIssue['kind'], string> = {
     unreadable: '本地保存的项目数据已损坏，无法读取。',
     invalid: '本地保存的项目数据格式不正确，无法读取。',
@@ -109,9 +112,11 @@ function loadIssueNotice(issue: LoadIssue): string {
     'migration-failed': '本地保存的项目数据升级失败，已停止使用它。',
   };
   const kept =
-    issue.kind === 'unsupported-version' || issue.kind === 'migration-failed'
-      ? `原始数据已完整备份在本机（${PROJECTS_BACKUP_KEY}），没有被覆盖或删除。`
-      : `原始数据仍保留在本机（隔离副本 ${PROJECTS_CORRUPT_KEY}），没有被删除。`;
+    issue.recoveryCopy !== 'saved'
+      ? '未能建立安全恢复副本，已暂停保存。原始数据没有被覆盖或删除。'
+      : issue.kind === 'unsupported-version' || issue.kind === 'migration-failed'
+        ? `原始数据已完整备份在本机（${PROJECTS_BACKUP_KEY}），没有被覆盖或删除。`
+        : `原始数据仍保留在本机（隔离副本 ${PROJECTS_CORRUPT_KEY}），没有被删除。`;
   return `${reason[issue.kind]}${kept}在确认数据恢复之前，请不要清理浏览器数据。`;
 }
 
@@ -287,7 +292,10 @@ export function App({
   const reviewDue = useMemo(() => {
     let count = 0;
     for (const conceptId of confirmedIds) {
-      const card = reviewSnapshot.state.cards[conceptId];
+      // Own property only: `cards.constructor` would be an inherited function, not a card.
+      const card = Object.hasOwn(reviewSnapshot.state.cards, conceptId)
+        ? reviewSnapshot.state.cards[conceptId]
+        : undefined;
       if (card === undefined || isDue(card, now)) count += 1;
     }
     return count;
@@ -581,6 +589,12 @@ export function App({
         {!persisted && (
           <p className="banner" role="status">
             浏览器没有保存最近的改动，关闭窗口后可能丢失。
+          </p>
+        )}
+
+        {!reviewSnapshot.persisted && (
+          <p className="banner" role="status">
+            复习进度没有保存到本机，关闭窗口后可能丢失。
           </p>
         )}
 
@@ -965,17 +979,17 @@ export function App({
           setBibtexOpen(false);
         }}
         onImport={(inputs) => {
-          // addPaper decides per entry: create, reuse the record its identifiers name, or
-          // refuse a conflict. The notice counts what ended up in place, without claiming
-          // every one of them was created by this import.
-          let conflicts = 0;
-          for (const input of inputs) {
-            const outcome = actions.addPaper(input);
-            if (outcome.status === 'conflict') conflicts += 1;
-          }
+          // One dispatch for the whole bibliography: each entry is created, matched to an
+          // existing paper, or refused without re-serializing the workspace per row.
+          const outcomes = actions.addPapers(inputs);
+          const added = outcomes.filter((outcome) => outcome.status === 'added').length;
+          const conflicts = outcomes.filter((outcome) => outcome.status === 'conflict').length;
+          const invalid = outcomes.filter((outcome) => outcome.status === 'invalid').length;
           setNotice(
-            `BibTeX 导入完成：${String(inputs.length - conflicts)} 篇已就位` +
-              (conflicts > 0 ? `，${String(conflicts)} 篇因标识符冲突未导入。` : '。'),
+            `BibTeX 导入完成：${String(added)} 篇已就位` +
+              (conflicts > 0 ? `，${String(conflicts)} 篇因标识符冲突未导入` : '') +
+              (invalid > 0 ? `，${String(invalid)} 篇缺少可用标题` : '') +
+              '。',
           );
         }}
       />
@@ -1046,7 +1060,9 @@ export function App({
         onChangeLayoutPreset={(preset) => {
           layout.setPreset(preset);
           // The preset names the startup layout; choosing one arranges the live one too.
-          sidebar.setOpen(preset !== 'focus');
+          // Below the narrow breakpoint the sidebar is a drawer, and opening it behind the
+          // Settings dialog would leave the reader greeting an overlay on close.
+          if (!sidebar.narrow) sidebar.setOpen(preset !== 'focus');
         }}
         sidebarWidth={sidebar.width}
         onSidebarWidth={sidebar.setWidth}

@@ -59,6 +59,51 @@ describe('parseProjectsState (current schema)', () => {
       });
     });
 
+    it('refuses a paper registry key that would mutate the prototype', () => {
+      const papers = JSON.parse(
+        '{"__proto__":{"id":"__proto__","title":"x","authors":[],"createdAt":1,"updatedAt":2}}',
+      ) as Raw;
+      expect(parseProjectsState(rawState([], papers))).toBeNull();
+    });
+
+    it('refuses paper references that only exist on Object.prototype', () => {
+      // A bare `papers[id]` lookup returns an inherited function for these names, which used to
+      // make a missing paper look present. None of them is in the registry here.
+      for (const id of ['constructor', 'toString', 'valueOf', 'prototype']) {
+        expect(parseProjectsState(rawState([rawProject('a', { corePaperId: id })], {}))).toBeNull();
+        expect(
+          parseProjectsState(
+            rawState([rawProject('a', { relatedPaperIds: [id] })], registryOf('core-a')),
+          ),
+        ).toBeNull();
+      }
+
+      const annotation = {
+        id: 'note-1',
+        paperId: 'constructor',
+        pdfSha256: 'a'.repeat(64),
+        page: 1,
+        quote: 'a quotation',
+        prefix: '',
+        suffix: '',
+        rects: [{ x: 0, y: 0, width: 1, height: 1 }],
+        kind: 'note',
+        note: '',
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      expect(parseProjectsState(rawState([], registryOf('core-a'), null, [annotation]))).toBeNull();
+    });
+
+    it('accepts a paper whose id really is an Object.prototype property name', () => {
+      const parsed = parseProjectsState(
+        rawState([rawProject('a', { corePaperId: 'constructor' })], registryOf('constructor')),
+      );
+      expect(parsed === null ? [] : Object.keys(parsed.papers)).toEqual(['constructor']);
+      expect(parsed?.papers['constructor']?.id).toBe('constructor');
+      expect(parsed?.projects[0]?.corePaperId).toBe('constructor');
+    });
+
     it('keeps every optional paper field', () => {
       const papers = {
         'core-a': rawPaper('core-a', {

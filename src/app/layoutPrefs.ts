@@ -136,7 +136,6 @@ export function announceLayoutChange(detail: LayoutChangeDetail): void {
 export function resetLayoutDefaults(): void {
   writeItem(LAYOUT_PRESET_STORAGE_KEY, 'balanced');
   writeItem(SIDEBAR_WIDTH_STORAGE_KEY, String(SIDEBAR_DEFAULT_WIDTH));
-  writeItem(SIDEBAR_STORAGE_KEY, 'open');
   writeItem(PANEL_WIDTH_STORAGE_KEY, String(PANEL_DEFAULT_WIDTH));
   writeItem(DENSITY_STORAGE_KEY, 'standard' satisfies Density);
   writeItem(UI_FONT_STORAGE_KEY, 'default' satisfies UiFont);

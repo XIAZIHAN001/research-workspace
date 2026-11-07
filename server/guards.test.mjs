@@ -36,9 +36,11 @@ describe('checkOrigin', () => {
     expect(checkOrigin('', [])).toEqual({ ok: true });
   });
 
-  it('allows loopback origins and configured ones', () => {
-    expect(checkOrigin('http://127.0.0.1:1420', []).ok).toBe(true);
+  it('allows only origins on the explicit list, including the Vite dev origin', () => {
+    expect(checkOrigin('http://127.0.0.1:1420', ['http://127.0.0.1:1420']).ok).toBe(true);
     expect(checkOrigin('https://app.example', ['https://app.example']).ok).toBe(true);
+    // Loopback is not a password: another local dev server has the same address family.
+    expect(checkOrigin('http://127.0.0.1:3000', ['http://127.0.0.1:1420']).ok).toBe(false);
   });
 
   it('refuses a foreign origin that is not configured', () => {
@@ -49,9 +51,15 @@ describe('checkOrigin', () => {
 });
 
 describe('checkPath and checkMethod', () => {
-  it('serves exactly two endpoints and forwards nothing', () => {
-    expect(checkPath('/api/ai/health').ok).toBe(true);
-    expect(checkPath('/api/ai/ask').ok).toBe(true);
+  it('serves exactly four endpoints and forwards nothing', () => {
+    for (const path of [
+      '/api/ai/health',
+      '/api/ai/ask',
+      '/api/ai/difficulties',
+      '/api/ai/knowledge',
+    ]) {
+      expect(checkPath(path).ok).toBe(true);
+    }
     for (const path of ['/', '/api/ai/proxy', '/api/ai/ask/../health', '/v1/chat/completions']) {
       expect(checkPath(path).ok).toBe(false);
     }

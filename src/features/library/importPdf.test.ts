@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { PaperPdf, PdfBytes } from '../../domain/pdfFile';
+import { PDF_MAX_BYTES, type PaperPdf, type PdfBytes } from '../../domain/pdfFile';
 import type { Paper } from '../../domain/papers';
 import { PdfStoreError, type PdfBlobStore } from '../../services/pdfStore';
 import { preparePdfImport, type ImportDeps, type ProbePdf } from './importPdf';
@@ -141,6 +141,19 @@ describe('preparePdfImport', () => {
       { probe: acceptingProbe, papers: {} },
     );
     expect(result).toMatchObject({ status: 'failed', reason });
+    expect(log.blobCalls).toStrictEqual([]);
+  });
+
+  it('rejects an oversized file before reading its bytes', async () => {
+    const { blobs, log } = fakeBlobs();
+    const readBytes = vi.fn(() => Promise.resolve(PDF_BYTES));
+    const oversized = { size: PDF_MAX_BYTES + 1 } as File;
+    const result = await preparePdfImport(deps(blobs, { readBytes }), oversized, {
+      probe: acceptingProbe,
+      papers: {},
+    });
+    expect(result).toMatchObject({ status: 'failed', reason: 'too-large' });
+    expect(readBytes).not.toHaveBeenCalled();
     expect(log.blobCalls).toStrictEqual([]);
   });
 

@@ -17,8 +17,9 @@ npm run ai:serve:online    # 必须同时有 AI_PROVIDER 与密钥，否则拒�
 
 - 绑定 `127.0.0.1` 的**临时端口**（`AI_PORT=0`），绝不使用 8787，也不连接已在 8787 上的进程；
 - 每次启动生成随机 Bearer 凭据（`AI_SESSION_TOKEN`），前端通过 Tauri IPC 取得，普通网页拿不到；
-- 强制 `--offline` 语义，父进程环境里的 `AI_PROVIDER` / `AI_API_KEY` 不会被继承；
+- 默认以 mock 启动，在线模式必须由用户在设置里显式切换；父进程环境里的 `AI_PROVIDER` / `AI_API_KEY` 不会被继承；
 - 供应商、API 地址与模型来自桌面设置，通过环境变量传入；密钥仍只经 stdin 送入凭据通道；
+- 保存的 API Key 与保存时的 API 地址（协议与主机，含端口）绑定；更换供应商或端点后，旧的 Key 不会被发往新地址，需要重新保存；
 - 通过 stdin EOF 与父进程 PID 看门狗退出，应用关闭或崩溃后不遗留孤儿进程。
 
 `AI_SESSION_TOKEN`、`AI_DESKTOP_INSTANCE`、`AI_PARENT_PID` 是桌面壳与 sidecar 之间的内部协议，
@@ -55,19 +56,19 @@ AI_PROVIDER=deepseek AI_API_KEY=sk-… npm run ai:serve
 
 ### 环境变量
 
-| 变量                   | 默认值                     | 说明                                                                           |
-| ---------------------- | -------------------------- | ------------------------------------------------------------------------------ |
-| `AI_PROVIDER`          | `mock`                     | `mock` / `deepseek` / `openai` / `moonshot` / `zhipu` / `dashscope` / `custom` |
-| `AI_API_KEY`           | 空                         | 仅从环境变量或桌面凭据通道读取，不进前端、不进仓库                             |
-| `AI_BASE_URL`          | `https://api.deepseek.com` | 必须 https，本机服务可用 `http://127.0.0.1:…`                                  |
-| `AI_MODEL`             | `deepseek-flash`           | 任意合法模型名（允许 `/`、`:`、`@`）                                           |
-| `AI_THINKING`          | `enabled`                  | 仅 DeepSeek 使用；`enabled` 或 `disabled`                                      |
-| `AI_REASONING_EFFORT`  | `low`                      | 仅 DeepSeek 使用；`none` / `low` / `high` / `max`                              |
-| `AI_PORT`              | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置                                 |
-| `AI_TIMEOUT_MS`        | `120000`                   | 单次请求超时                                                                   |
-| `AI_MAX_OUTPUT_TOKENS` | `8192`                     | 生成上限（**含推理**），256–32000                                              |
-| `AI_ALLOWED_ORIGINS`   | 空                         | 额外允许的 Origin（逗号分隔）；回环来源始终允许                                |
-| `AI_LOG_REQUESTS`      | 开启                       | 设 `0` 关闭访问日志                                                            |
+| 变量                   | 默认值                     | 说明                                                                               |
+| ---------------------- | -------------------------- | ---------------------------------------------------------------------------------- |
+| `AI_PROVIDER`          | `mock`                     | `mock` / `deepseek` / `openai` / `moonshot` / `zhipu` / `dashscope` / `custom`     |
+| `AI_API_KEY`           | 空                         | 仅从环境变量或桌面凭据通道读取，不进前端、不进仓库                                 |
+| `AI_BASE_URL`          | `https://api.deepseek.com` | 必须 https，本机服务可用 `http://127.0.0.1:…`                                      |
+| `AI_MODEL`             | `deepseek-flash`           | 任意合法模型名（允许 `/`、`:`、`@`）                                               |
+| `AI_THINKING`          | `enabled`                  | 仅 DeepSeek 使用；`enabled` 或 `disabled`                                          |
+| `AI_REASONING_EFFORT`  | `low`                      | 仅 DeepSeek 使用；`none` / `low` / `high` / `max`                                  |
+| `AI_PORT`              | `8787`                     | 监听端口；监听地址固定为 `127.0.0.1`，不可配置                                     |
+| `AI_TIMEOUT_MS`        | `120000`                   | 单次请求超时                                                                       |
+| `AI_MAX_OUTPUT_TOKENS` | `8192`                     | 生成上限（**含推理**），256–32000                                                  |
+| `AI_ALLOWED_ORIGINS`   | 空                         | 额外允许的 Origin（逗号分隔）；默认只允许 Vite 开发端口 1440，不再信任任意回环来源 |
+| `AI_LOG_REQUESTS`      | 开启                       | 设 `0` 关闭访问日志                                                                |
 
 旧的 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL` /
 `DEEPSEEK_THINKING` / `DEEPSEEK_REASONING_EFFORT` 仍然会被读取，便于已有的脚本继续使用。
@@ -140,10 +141,10 @@ JSON（见下节）。原因是一条实测到的失败：把整段带 LaTeX 的
 ## 边界
 
 - 只监听 `127.0.0.1`，且**不可配置**——改错一个环境变量不能把它暴露到网络上。
-- 只有两个接口：`GET /api/ai/health`、`POST /api/ai/ask`。没有任何形式的转发。
+- 只有四个接口：`GET /api/ai/health`、`POST /api/ai/ask`、`POST /api/ai/difficulties`、`POST /api/ai/knowledge`。没有任何形式的转发。
 - 提供方、端点、模型全部来自进程环境，**从不来自请求**；页面无法把调用指向别处。
-- 请求体上限 256 KB，每分钟 30 次，同时最多 4 个在途请求。
-- `Host` 必须是回环地址（防 DNS rebinding）；`Origin` 必须是回环或显式允许的来源。
+- 请求体上限 2 MB，每分钟 30 次，同时最多 4 个在途请求。
+- `Host` 必须是回环地址（防 DNS rebinding）；带 `Origin` 的浏览器请求必须命中显式允许列表，不再默认信任任意回环来源。非浏览器调用（curl、测试）可以不发送 `Origin`，但仍受 Host、请求体与频率限制。
 - 日志只有方法、路径、状态、耗时、段落数与字符数——没有原文、没有问题、没有密钥。
 - 系统提示词由服务端从常量组装；**论文文本永远只出现在 `user` 消息的数据块里**，
   并且数据块分隔符会在拼接前被消解。

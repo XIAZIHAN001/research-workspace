@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import { FileText, Upload } from 'lucide-react';
 import { MAX_TITLE_LENGTH } from '../../domain/normalize';
 import type { Paper, PaperInput } from '../../domain/papers';
-import type { PaperPdf, PdfBytes } from '../../domain/pdfFile';
+import {
+  PDF_MAX_BYTES,
+  PDF_REJECTION_MESSAGE,
+  type PaperPdf,
+  type PdfBytes,
+} from '../../domain/pdfFile';
 import type { Project } from '../../domain/project';
 import type { PdfBlobStore } from '../../services/pdfStore';
 import { readPdfMetadata, type PdfMetadata } from '../reader/pdfjs';
@@ -152,6 +157,9 @@ function ImportForm({
    * is a convenience, never a requirement, so nothing here can fail the import.
    */
   const fillFromMetadata = async (chosen: File, token: number): Promise<void> => {
+    // Do not read a file the importer will refuse for its size. The picker reports the reason
+    // immediately; this guard also protects any caller that reaches here directly.
+    if (chosen.size === 0 || chosen.size > PDF_MAX_BYTES) return;
     setReadingMeta(true);
     try {
       const bytes = new Uint8Array(await chosen.arrayBuffer());
@@ -263,9 +271,20 @@ function ImportForm({
           aria-labelledby="pdf-file-label"
           onChange={(event) => {
             const chosen = event.target.files?.[0] ?? null;
+            setPending(null);
+            if (chosen !== null && (chosen.size === 0 || chosen.size > PDF_MAX_BYTES)) {
+              setFile(null);
+              setError(
+                chosen.size === 0
+                  ? PDF_REJECTION_MESSAGE.empty
+                  : PDF_REJECTION_MESSAGE['too-large'],
+              );
+              metaToken.current += 1;
+              setReadingMeta(false);
+              return;
+            }
             setFile(chosen);
             setError(null);
-            setPending(null);
             if (chosen === null) {
               metaToken.current += 1;
               setReadingMeta(false);

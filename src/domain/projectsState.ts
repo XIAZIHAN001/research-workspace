@@ -50,6 +50,8 @@ export type ProjectsAction =
   | { type: 'linkPaper'; projectId: string; paper: Paper; now: number }
   /** Adds a paper to the knowledge base without attaching it to any project. */
   | { type: 'registerPaper'; paper: Paper }
+  /** Adds a batch in one write: a bibliography import must not serialize the workspace per row. */
+  | { type: 'registerPapers'; papers: Paper[] }
   | { type: 'unlinkPaper'; projectId: string; paperId: string; now: number }
   /**
    * Changes one paper's own metadata, PDF binding or reading position. Never creates,
@@ -79,7 +81,9 @@ export type ProjectsAction =
  * wins, so a stale copy handed in by a caller can never overwrite the current metadata.
  */
 function withPaper(papers: Record<string, Paper>, paper: Paper): Record<string, Paper> {
-  return papers[paper.id] === undefined ? { ...papers, [paper.id]: paper } : papers;
+  // Own-property test: an id from restored data may be `constructor` or `toString`, and reading
+  // those from a plain object would return an inherited function instead of "not registered".
+  return Object.hasOwn(papers, paper.id) ? papers : { ...papers, [paper.id]: paper };
 }
 
 export function projectsReducer(state: ProjectsState, action: ProjectsAction): ProjectsState {
@@ -119,6 +123,17 @@ export function projectsReducer(state: ProjectsState, action: ProjectsAction): P
     case 'registerPaper': {
       const papers = withPaper(state.papers, action.paper);
       return papers === state.papers ? state : { ...state, papers };
+    }
+
+    case 'registerPapers': {
+      const papers = { ...state.papers };
+      let added = false;
+      for (const paper of action.papers) {
+        if (Object.hasOwn(papers, paper.id)) continue;
+        papers[paper.id] = paper;
+        added = true;
+      }
+      return added ? { ...state, papers } : state;
     }
 
     case 'unlinkPaper': {

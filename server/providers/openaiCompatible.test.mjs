@@ -30,6 +30,24 @@ const CONFIG = {
   model: 'gpt-4o-mini',
 };
 
+/**
+ * A response whose headers arrive and whose body then stops.
+ *
+ * This is the shape the old adapter could not escape: `fetch` had already resolved, its deadline
+ * had been cleared, and the reader waited for a chunk the upstream never sent.
+ */
+function stalledBody(onCancel = () => {}) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('{"choices":'));
+    },
+    cancel() {
+      onCancel();
+    },
+  });
+}
+
 describe('createChatCompletionsProvider', () => {
   it('posts an ordinary chat-completions request and no DeepSeek-only parameters', async () => {
     const { fetchImpl, calls } = stubFetch(() => okBody('the answer'));
@@ -51,6 +69,237 @@ describe('createChatCompletionsProvider', () => {
     expect(calls[0].body.thinking).toBeUndefined();
     expect(calls[0].body.reasoning_effort).toBeUndefined();
     expect(calls[0].body.response_format).toBeUndefined();
+    // A 307/308 must not replay the prompt to another endpoint.
+    expect(calls[0].options.redirect).toBe('error');
+  });
+
+  it('does not call fetch when the signal was already cancelled', async () => {
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      throw new Error('fetch must not be called');
+    };
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+    const controller = new AbortController();
+    controller.abort();
+
+    const error = await provider
+      .complete({ system: 'S', messages: [], maxTokens: 64, signal: controller.signal })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.code).toBe('network');
+    expect(error.message).toContain('取消');
+    // An event registered after the cancellation never fires; the synchronous check is what
+    // keeps the paper from leaving the machine.
+    expect(calls).toBe(0);
+  });
+
+  it('aborts the in-flight fetch when the caller cancels', async () => {
+    let calls = 0;
+    let upstreamSignal = null;
+    const fetchImpl = (_url, options) => {
+      calls += 1;
+      upstreamSignal = options.signal;
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    };
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+    const controller = new AbortController();
+    const pending = provider
+      .complete({ system: 'S', messages: [], maxTokens: 64, signal: controller.signal })
+      .catch((caught) => caught);
+
+    controller.abort();
+    const error = await pending;
+
+    expect(calls).toBe(1);
+    expect(upstreamSignal?.aborted).toBe(true);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.code).toBe('network');
+  });
+
+  it('times out a body that never ends after the headers, and cancels it', async () => {
+    let cancelled = false;
+    const fetchImpl = async () =>
+      new Response(
+        stalledBody(() => {
+          cancelled = true;
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 80 });
+    const started = Date.now();
+    const error = await provider
+      .complete({ system: 'S', messages: [], maxTokens: 64 })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.code).toBe('timeout');
+    // The reader really was cancelled, not merely abandoned: that is what releases the upstream
+    // connection and lets the service's concurrency slot be reused.
+    expect(cancelled).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('cancels the body read when the caller aborts after the headers', async () => {
+    let cancelled = false;
+    const fetchImpl = async () =>
+      new Response(
+        stalledBody(() => {
+          cancelled = true;
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+    const controller = new AbortController();
+    const pending = provider
+      .complete({ system: 'S', messages: [], maxTokens: 64, signal: controller.signal })
+      .catch((caught) => caught);
+    setTimeout(() => {
+      controller.abort();
+    }, 25);
+
+    const error = await pending;
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.code).toBe('network');
+    expect(error.message).toContain('取消');
+    expect(cancelled).toBe(true);
+  });
+
+  /**
+   * A stream whose underlying `cancel()` never settles is not impossible on a dead connection.
+   * Awaiting it in cleanup would leave `complete()` pending forever, which is exactly what the
+   * deadline is supposed to prevent.
+   */
+  it('settles the deadline even when the stream never finishes cancelling', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"choices":'));
+          },
+          cancel() {
+            return new Promise(() => undefined);
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 80 });
+
+    const raced = await Promise.race([
+      provider.complete({ system: 'S', messages: [], maxTokens: 64 }).catch((caught) => caught),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('hung');
+        }, 1_000);
+      }),
+    ]);
+
+    expect(raced).not.toBe('hung');
+    expect(raced).toBeInstanceOf(ProviderError);
+    expect(raced.code).toBe('timeout');
+  });
+
+  it('does not wait for a cancel that never settles when the body is over the ceiling', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('x'.repeat(64)));
+          },
+          cancel() {
+            return new Promise(() => undefined);
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Length': '4096' },
+        },
+      );
+    const provider = createChatCompletionsProvider({
+      ...CONFIG,
+      fetchImpl,
+      timeoutMs: 5_000,
+      maxResponseBytes: 64,
+    });
+
+    const raced = await Promise.race([
+      provider.complete({ system: 'S', messages: [], maxTokens: 64 }).catch((caught) => caught),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('hung');
+        }, 1_000);
+      }),
+    ]);
+
+    expect(raced).not.toBe('hung');
+    expect(raced).toBeInstanceOf(ProviderError);
+    expect(raced.message).toContain('过大');
+  });
+
+  it('does not wait for a cancel that never settles on an error response', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"error":'));
+          },
+          cancel() {
+            return new Promise(() => undefined);
+          },
+        }),
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    const provider = createChatCompletionsProvider({ ...CONFIG, fetchImpl, timeoutMs: 5_000 });
+
+    const raced = await Promise.race([
+      provider.complete({ system: 'S', messages: [], maxTokens: 64 }).catch((caught) => caught),
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('hung');
+        }, 1_000);
+      }),
+    ]);
+
+    expect(raced).not.toBe('hung');
+    expect(raced).toBeInstanceOf(ProviderError);
+    expect(raced.code).toBe('upstream');
+    expect(raced.message).toContain('500');
+  });
+
+  it('rejects a response that exceeds the byte ceiling instead of buffering it', async () => {
+    const { fetchImpl } = stubFetch(
+      () =>
+        new Response(JSON.stringify({ choices: [], padding: 'x'.repeat(500) }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    const provider = createChatCompletionsProvider({
+      ...CONFIG,
+      fetchImpl,
+      maxResponseBytes: 64,
+    });
+    const error = await provider
+      .complete({ system: 'S', messages: [], maxTokens: 64 })
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error.message).toContain('过大');
   });
 
   it('reports the id the registry chose, and has no thinking switch to describe', async () => {

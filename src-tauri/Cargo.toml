@@ -14,6 +14,8 @@ tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Drop-safe, optimizer-resistant clearing for owned credential buffers (already transitive).
+zeroize = "1"
 uuid = { version = "1", features = ["v4"] }
 # Model discovery only: one GET {base}/models when the reader asks for the list. It never
 # carries a request body or a prompt, and it is the only outbound call the shell itself makes.
@@ -22,7 +24,7 @@ reqwest = { version = "0.12", features = ["json"] }
 [target.'cfg(windows)'.dependencies]
 # Windows Credential Manager, called directly instead of through a wrapper crate: the surface
 # used here is four functions, and keeping it explicit makes the storage boundary auditable.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Storage_FileSystem"] }
 
 [profile.release]
 codegen-units = 1

@@ -3,6 +3,16 @@ import { toBibtex } from './citation';
 import { parseBibtex } from './bibtexImport';
 
 describe('parseBibtex', () => {
+  it('reads a paren-delimited entry whose quoted title contains parentheses', () => {
+    const parsed = parseBibtex(
+      '@article(key, title="Attention (Is) All You Need", author="Ada Lovelace", year=2017)',
+    );
+    expect(parsed.skipped).toHaveLength(0);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0]?.title).toBe('Attention (Is) All You Need');
+    expect(parsed.entries[0]?.authors).toEqual(['Ada Lovelace']);
+  });
+
   it('reads a plain article with authors, year and a DOI', () => {
     const result = parseBibtex(
       '@article{vaswani2017attention,\n  title = {Attention Is All You Need},\n  author = {Ashish Vaswani and Noam Shazeer},\n  year = {2017},\n  doi = {10.5555/3295222},\n}',

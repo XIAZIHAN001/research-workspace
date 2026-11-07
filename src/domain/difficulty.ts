@@ -156,11 +156,15 @@ export function parseDifficultyState(value: unknown): DifficultyState | null {
   if (!isRecord(value.pages) || !isRecord(value.ignored)) return null;
   const pages: Record<string, DifficultyPageRecord> = {};
   for (const [key, entry] of Object.entries(value.pages)) {
+    // `pages['__proto__'] = entry` would call the prototype setter and lose the record; the
+    // cache is disposable, so a key this build cannot store is skipped rather than fatal.
+    if (key === '__proto__') continue;
     if (!isDifficultyPageRecord(entry)) return null;
     pages[key] = entry;
   }
   const ignored: Record<string, string[]> = {};
   for (const [key, entry] of Object.entries(value.ignored)) {
+    if (key === '__proto__') continue;
     if (!Array.isArray(entry) || !entry.every((id) => typeof id === 'string')) return null;
     ignored[key] = entry;
   }

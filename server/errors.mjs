@@ -7,10 +7,19 @@
  */
 
 export class ProviderError extends Error {
-  constructor(code, message) {
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @param {{ requestSent?: boolean }} [options]
+   *   `requestSent` is `false` only when this service *knows* the request never left for the
+   *   provider. `undefined` means unknown, which the budget treats conservatively as "may have
+   *   been billed": a failure is not evidence that the provider did no work.
+   */
+  constructor(code, message, options = {}) {
     super(message);
     this.name = 'ProviderError';
     this.code = code;
+    this.requestSent = options.requestSent;
   }
 }
 

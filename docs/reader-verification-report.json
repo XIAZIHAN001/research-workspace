@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-25T10:22:55.164Z",
+  "generatedAt": "2026-10-25T13:18:13.227Z",
   "passed": 29,
   "failed": 0,
   "results": [
@@ -36,7 +36,7 @@
     {
       "name": "pages: jumping by number reaches page 3",
       "passed": true,
-      "detail": "{\"indicator\":\"3\",\"scrollTop\":13,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"4724.44px\"}"
+      "detail": "{\"indicator\":\"3\",\"scrollTop\":10,\"page3Top\":\"\",\"page3Rendered\":true,\"column\":\"4724.44px\"}"
     },
     {
       "name": "pages: the jumped-to page has its own text",

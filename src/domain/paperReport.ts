@@ -109,6 +109,11 @@ export function buildPaperReport({
         lines.push(`### 第 ${String(page)} 页`, '');
       }
       const badges = [ANNOTATION_KIND_LABEL[note.kind]];
+      // The page number is only true for the file the note was made on. After a replacement,
+      // saying so is the difference between a useful page reference and a wrong one.
+      if (paper.pdf !== undefined && note.pdfSha256 !== paper.pdf.sha256) {
+        badges.push('旧 PDF 文件');
+      }
       if (note.kind === 'question' && note.resolvedAt !== undefined) {
         badges.push(`已解决 ${formatExportTime(new Date(note.resolvedAt))}`);
       }

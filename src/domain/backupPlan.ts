@@ -39,6 +39,7 @@ import {
   type RejectedRelationSuggestion,
 } from './knowledge';
 import { migrateStoredPayload, SCHEMA_VERSION } from './migrate';
+import { EMPTY_REVIEW_STATE, REVIEW_VERSION, parseReviewState, type ReviewState } from './review';
 import type { Paper } from './papers';
 import type { Project } from './project';
 import type { ProjectsState } from './projectsState';
@@ -69,6 +70,8 @@ export interface BackupContents {
   projects: ProjectsState;
   knowledge: KnowledgeState;
   difficulties: DifficultyState;
+  /** The spaced-repetition schedule, keyed by concept id like the live store. */
+  review: ReviewState;
   preferences: BackupPreferences;
   /** Verbatim copies of payloads a previous build set aside. Restored, never overwritten. */
   recovery: Record<string, string>;
@@ -198,6 +201,20 @@ export function parseBackupData(value: unknown): BackupParse {
     warnings.push('备份中的难点缓存无法读取，将跳过它；论文、笔记与知识不受影响。');
   }
 
+  // The review schedule is optional in older backups. A payload this build cannot read is
+  // skipped with a warning, like the cache: it must never cost the reader their notes.
+  let review = EMPTY_REVIEW_STATE;
+  if (value.review !== undefined) {
+    const parsedReview = parseReviewState(value.review);
+    if (parsedReview === null) {
+      warnings.push('备份中的复习进度无法读取，将跳过它；论文、笔记与知识不受影响。');
+    } else if (parsedReview.blocked) {
+      warnings.push('备份中的复习进度由更新版本的应用写入，当前版本无法合并，已跳过。');
+    } else {
+      review = parsedReview.state;
+    }
+  }
+
   const preferences = parsePreferences(value.preferences, warnings);
   const recovery = parseRecovery(value.recovery, warnings);
   const missingFiles = Array.isArray(value.missingFiles)
@@ -245,6 +262,7 @@ export function parseBackupData(value: unknown): BackupParse {
       projects,
       knowledge,
       difficulties: difficulties ?? { pages: {}, ignored: {} },
+      review,
       preferences,
       recovery,
       missingFiles,
@@ -268,7 +286,15 @@ export const DEFAULT_RESTORE_CHOICE: RestoreChoice = {
   importMissingPdfs: false,
 };
 
-export type ConflictKind = 'project' | 'paper' | 'annotation' | 'concept' | 'evidence' | 'relation';
+export type ConflictKind =
+  | 'project'
+  | 'paper'
+  | 'annotation'
+  | 'bookmark'
+  | 'glossary'
+  | 'concept'
+  | 'evidence'
+  | 'relation';
 
 export interface RestoreConflict {
   kind: ConflictKind;
@@ -320,6 +346,8 @@ export interface RestoreSource {
   knowledge: KnowledgeState;
   /** Present so a merge can decide what to do with cached pages. */
   difficulties: DifficultyState;
+  /** This machine's schedule, so a restore can keep it unless the reader prefers the backup. */
+  review: ReviewState;
 }
 
 export interface PlanInput {
@@ -357,6 +385,11 @@ function paperKey(paper: Paper): unknown[] {
     paper.doi ?? null,
     paper.arxivId ?? null,
     paper.pdf?.sha256 ?? null,
+    // Reader decisions, not view state: tags, queue status and the generated summary belong
+    // to the record. Leaving them out let a same-id paper overwrite or ignore them silently.
+    paper.tags ?? null,
+    paper.status ?? null,
+    paper.summary ?? null,
   ];
 }
 
@@ -438,7 +471,9 @@ export function collectConflicts(
     }
   }
   for (const paper of Object.values(contents.projects.papers)) {
-    const existing = current.projects.papers[paper.id];
+    const existing = Object.hasOwn(current.projects.papers, paper.id)
+      ? current.projects.papers[paper.id]
+      : undefined;
     if (existing !== undefined && !sameJson(paperKey(existing), paperKey(paper))) {
       conflicts.push({ kind: 'paper', id: paper.id, label: paper.title });
     }
@@ -452,6 +487,22 @@ export function collectConflicts(
         label:
           annotation.note === '' ? annotation.quote.slice(0, 32) : annotation.note.slice(0, 32),
       });
+    }
+  }
+  for (const bookmark of contents.projects.bookmarks) {
+    const existing = current.projects.bookmarks.find((entry) => entry.id === bookmark.id);
+    if (existing !== undefined && !sameJson(existing, bookmark)) {
+      conflicts.push({
+        kind: 'bookmark',
+        id: bookmark.id,
+        label: bookmark.label === '' ? `第 ${String(bookmark.page)} 页` : bookmark.label,
+      });
+    }
+  }
+  for (const term of contents.projects.glossary) {
+    const existing = current.projects.glossary.find((entry) => entry.id === term.id);
+    if (existing !== undefined && !sameJson(existing, term)) {
+      conflicts.push({ kind: 'glossary', id: term.id, label: term.term });
     }
   }
   for (const concept of contents.knowledge.concepts) {
@@ -501,7 +552,8 @@ export function planRestore(input: PlanInput): RestorePlan {
   // An incoming paper whose identifier already points at two different local papers cannot be
   // merged without picking a winner. That is exactly the choice this module refuses to make.
   for (const incoming of Object.values(input.contents.projects.papers)) {
-    if (input.current.projects.papers[incoming.id] !== undefined) continue;
+    // Own property: an id such as `constructor` must not look like a paper already on this machine.
+    if (Object.hasOwn(input.current.projects.papers, incoming.id)) continue;
     if (identifierMatches(input.current.projects.papers, incoming).length > 1) {
       blockers.push(
         `《${incoming.title}》的 DOI/arXiv ID 在本机同时指向两篇论文，无法自动判断该并入哪一篇。`,
@@ -606,6 +658,7 @@ export interface MergeResult {
   projects: ProjectsState;
   knowledge: KnowledgeState;
   difficulties: DifficultyState;
+  review: ReviewState;
   preferences: PreferencesPatch;
   stats: MergeStats;
   identifierMerges: IdentifierMerge[];
@@ -660,7 +713,9 @@ export function mergeRestore(
   const identifierMerges: IdentifierMerge[] = [];
 
   for (const incoming of Object.values(contents.projects.papers)) {
-    const sameId = papers[incoming.id];
+    // Without `hasOwn`, `papers['constructor']` is Object's function and the incoming paper is
+    // silently treated as an existing record — skipped, while its project keeps a dangling ref.
+    const sameId = Object.hasOwn(papers, incoming.id) ? papers[incoming.id] : undefined;
     if (sameId !== undefined) {
       paperIdMap.set(incoming.id, incoming.id);
       stats.papersMatchedById += 1;
@@ -701,7 +756,7 @@ export function mergeRestore(
       .map((id) => paperIdMap.get(id))
       .filter((id): id is string => id !== undefined);
     const relatedPaperIds = [...new Set(mappedRelated)].filter(
-      (id) => id !== mappedCore && papers[id] !== undefined,
+      (id) => id !== mappedCore && Object.hasOwn(papers, id),
     );
     const index = projects.findIndex((project) => project.id === incoming.id);
     if (index >= 0) {
@@ -715,14 +770,14 @@ export function mergeRestore(
       projects[index] = {
         ...existing,
         ...(preferBackup && incoming.name.trim() !== '' ? { name: incoming.name } : {}),
-        corePaperId: papers[corePaperId] === undefined ? existing.corePaperId : corePaperId,
+        corePaperId: Object.hasOwn(papers, corePaperId) ? corePaperId : existing.corePaperId,
         relatedPaperIds: related,
         updatedAt: Math.max(existing.updatedAt, incoming.updatedAt),
       };
       stats.projectsMerged += 1;
       continue;
     }
-    if (papers[mappedCore] === undefined) {
+    if (!Object.hasOwn(papers, mappedCore)) {
       warnings.push(`项目《${incoming.name}》的核心论文不在备份里，已跳过这个项目。`);
       continue;
     }
@@ -747,7 +802,7 @@ export function mergeRestore(
       }
       continue;
     }
-    if (papers[mappedPaperId] === undefined) {
+    if (!Object.hasOwn(papers, mappedPaperId)) {
       stats.annotationsSkipped += 1;
       continue;
     }
@@ -766,7 +821,7 @@ export function mergeRestore(
       if (preferBackup && !sameJson(bookmarks[index], mapped)) bookmarks[index] = mapped;
       continue;
     }
-    if (papers[mappedPaperId] === undefined) continue;
+    if (!Object.hasOwn(papers, mappedPaperId)) continue;
     bookmarks.push(mapped);
   }
 
@@ -781,7 +836,7 @@ export function mergeRestore(
       if (preferBackup && !sameJson(glossary[index], mapped)) glossary[index] = mapped;
       continue;
     }
-    if (papers[mappedPaperId] === undefined) continue;
+    if (!Object.hasOwn(papers, mappedPaperId)) continue;
     glossary.push(mapped);
   }
 
@@ -807,6 +862,26 @@ export function mergeRestore(
   }
   const knownConceptIds = new Set(concepts.map((concept) => concept.id));
 
+  /*
+   * Review schedules follow their concepts: a card whose concept did not survive is an
+   * orphan, and an orphan cannot be reviewed. A card for an existing concept keeps this
+   * machine's schedule unless the reader explicitly chose the backup.
+   */
+  const reviewCards = { ...current.review.cards };
+  for (const [conceptId, incoming] of Object.entries(contents.review.cards)) {
+    // Own property, so a concept id like `toString` is not read as an existing card.
+    const existing = Object.hasOwn(reviewCards, conceptId) ? reviewCards[conceptId] : undefined;
+    if (existing !== undefined) {
+      if (preferBackup && !sameJson(existing, incoming)) reviewCards[conceptId] = incoming;
+      continue;
+    }
+    reviewCards[conceptId] = incoming;
+  }
+  for (const conceptId of Object.keys(reviewCards)) {
+    if (!knownConceptIds.has(conceptId)) delete reviewCards[conceptId];
+  }
+  const review: ReviewState = { version: REVIEW_VERSION, cards: reviewCards };
+
   /* Evidence: a new record needs both of its references to exist after the merge. */
   const evidence: ConceptEvidence[] = [...current.knowledge.evidence];
   for (const incoming of contents.knowledge.evidence) {
@@ -824,7 +899,7 @@ export function mergeRestore(
       }
       continue;
     }
-    if (!knownConceptIds.has(mapped.conceptId) || papers[mapped.paperId] === undefined) {
+    if (!knownConceptIds.has(mapped.conceptId) || !Object.hasOwn(papers, mapped.paperId)) {
       stats.evidenceSkipped += 1;
       continue;
     }
@@ -947,11 +1022,14 @@ export function mergeRestore(
   /* Difficulties: a disposable cache, merged without ever discarding a dismissal. */
   const pages = { ...current.difficulties.pages };
   for (const [key, record] of Object.entries(contents.difficulties.pages)) {
-    if (pages[key] === undefined || preferBackup) pages[key] = record;
+    // A page key is derived text, but it still comes from a file: an own-property test keeps
+    // the lookup from resolving `constructor` through the prototype.
+    if (!Object.hasOwn(pages, key) || preferBackup) pages[key] = record;
   }
   const ignored: Record<string, string[]> = { ...current.difficulties.ignored };
   for (const [hash, ids] of Object.entries(contents.difficulties.ignored)) {
-    ignored[hash] = [...new Set([...(ignored[hash] ?? []), ...ids])];
+    const currentIds = Object.hasOwn(ignored, hash) ? (ignored[hash] ?? []) : [];
+    ignored[hash] = [...new Set([...currentIds, ...ids])];
   }
   const difficulties: DifficultyState = { pages: trimDifficultyPages(pages), ignored };
 
@@ -986,6 +1064,7 @@ export function mergeRestore(
     projects: { projects, papers, annotations, bookmarks, glossary, selectedId },
     knowledge,
     difficulties,
+    review,
     preferences,
     stats,
     identifierMerges,

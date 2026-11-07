@@ -189,9 +189,11 @@ export interface AiBudget {
 /**
  * What this service process has spent so far.
  *
- * `exactTokens` is false when a provider omitted usage and the upper bound was recorded
- * instead. `estimatedCostCny` is an estimate from the price table, not a bill; `costKnown` is
- * false when the model has no price row at all, in which case the estimate is unreliable.
+ * `exactTokens` is false when the provider omitted usage, or when a request was sent but failed
+ * without returning usage; the reservation's upper bound is recorded instead, and
+ * `estimatedRequests` counts how many calls contributed such an estimate. `estimatedCostCny` is
+ * an estimate from the price table, not a bill; `costKnown` is false when the model has no price
+ * row at all, in which case the estimate is unreliable.
  */
 export interface AiUsageTotals {
   requests: number;
@@ -203,6 +205,8 @@ export interface AiUsageTotals {
   costKnown: boolean;
   unknownCostRequests: number;
   exactTokens: boolean;
+  /** Calls whose token figures include a conservative bound rather than a reported usage. */
+  estimatedRequests: number;
 }
 
 export interface AiPricing {

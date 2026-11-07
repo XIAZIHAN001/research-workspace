@@ -61,3 +61,75 @@ describe('GlobalSearchDialog', () => {
     expect(onOpenPaper).toHaveBeenCalledWith('id-1', undefined);
   });
 });
+
+it('reuses the source index while typing and refreshes replaced source arrays', () => {
+  const data = source();
+  let reads = 0;
+  const first = data.papers[0]!;
+  const title = first.title;
+  Object.defineProperty(first, 'title', {
+    get() {
+      reads++;
+      return title;
+    },
+  });
+  const props = {
+    open: true,
+    source: data,
+    onClose: vi.fn(),
+    onOpenPaper: vi.fn(),
+    onOpenConcept: vi.fn(),
+  };
+  const { rerender } = render(<GlobalSearchDialog {...props} />);
+  const input = screen.getByRole('textbox', { name: '搜索工作区' });
+  expect(reads).toBe(0);
+  fireEvent.change(input, { target: { value: '  \t ' } });
+  expect(reads).toBe(0);
+  fireEvent.change(input, { target: { value: 'attention' } });
+  expect(screen.getByRole('button', { name: /Attention Is All You Need/ })).toBeTruthy();
+  const initialReads = reads;
+  expect(initialReads).toBeGreaterThan(0);
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.change(input, { target: { value: 'vaswani' } });
+  expect(reads).toBe(initialReads);
+  rerender(
+    <GlobalSearchDialog
+      {...props}
+      source={{ ...data, papers: [{ ...first, title: 'Replacement', authors: ['Someone else'] }] }}
+    />,
+  );
+  expect(screen.getByText('没有找到匹配的内容。')).toBeTruthy();
+  fireEvent.change(input, { target: { value: 'replacement' } });
+  expect(screen.getByRole('button', { name: /Replacement/ })).toBeTruthy();
+});
+
+it('does not inspect sources replaced while blank or after reopening', () => {
+  const data = source();
+  const first = data.papers[0]!;
+  let reads = 0;
+  Object.defineProperty(first, 'title', {
+    get() {
+      reads++;
+      return 'Attention Is All You Need';
+    },
+  });
+  const props = {
+    open: true,
+    source: data,
+    onClose: vi.fn(),
+    onOpenPaper: vi.fn(),
+    onOpenConcept: vi.fn(),
+  };
+  const { rerender } = render(<GlobalSearchDialog {...props} />);
+  rerender(<GlobalSearchDialog {...props} source={{ ...data }} />);
+  expect(reads).toBe(0);
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索工作区' }), {
+    target: { value: 'attention' },
+  });
+  expect(screen.getByRole('button', { name: /Attention Is All You Need/ })).toBeTruthy();
+  const searchedReads = reads;
+  rerender(<GlobalSearchDialog {...props} open={false} />);
+  rerender(<GlobalSearchDialog {...props} />);
+  expect(screen.getByRole('textbox', { name: '搜索工作区' })).toHaveValue('');
+  expect(reads).toBe(searchedReads);
+});

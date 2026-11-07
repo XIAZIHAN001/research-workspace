@@ -67,12 +67,17 @@ const REACHED_TOLERANCE = 2;
  * without it the reader would report the previous page whenever it jumped to a page itself.
  */
 export function pageAtOffset(tops: readonly number[], scrollTop: number): number {
-  let page = 1;
   const anchor = scrollTop + PAGE_GAP + REACHED_TOLERANCE;
-  tops.forEach((top, index) => {
-    if (top <= anchor) page = index + 1;
-  });
-  return page;
+  // pageTops produces ascending offsets. Find the first top after the anchor instead of
+  // visiting the whole document for each scroll event; equal tops keep the later page.
+  let low = 0;
+  let high = tops.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if ((tops[middle] ?? Number.POSITIVE_INFINITY) <= anchor) low = middle + 1;
+    else high = middle;
+  }
+  return Math.max(1, low);
 }
 
 /** The range of pages to keep rendered around `current`, clamped to the document. */

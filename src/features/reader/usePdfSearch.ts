@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useReducer, useState } from 'react';
-import { findMatches, nextHitIndex, pageTextFromItems, type FindHit } from './findText';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  createFindIndex,
+  findIndexedMatches,
+  nextHitIndex,
+  type FindHit,
+  type FindIndex,
+} from './findText';
+import { readSharedPageText, MAX_SHARED_TEXT_PAGES, MAX_SHARED_TEXT_CHARS } from './sharedPageText';
 import type { PDFDocumentProxy } from './pdfjs';
 
 export type FindStatus = 'idle' | 'indexing' | 'ready';
@@ -35,7 +42,7 @@ interface SearchProgress {
 
 interface SearchResult {
   query: string;
-  pages: readonly string[];
+  pages: FindIndex;
   hits: readonly FindHit[];
 }
 
@@ -43,10 +50,10 @@ interface SearchResult {
  * The page texts of a document, kept by document identity.
  *
  * `usePdfDocument` hands out one stable proxy per file, so after the first search opening the
- * index is available immediately on every later one. A WeakMap means closing the reader lets
- * the strings go with the document.
+ * bounded index is available immediately on later openings. Oversized indexes live only in
+ * the mounted hook. Weak keys do not keep a closed document alive.
  */
-const indexCache = new WeakMap<PDFDocumentProxy, readonly string[]>();
+const indexCache = new WeakMap<PDFDocumentProxy, FindIndex>();
 
 /**
  * Builds a searchable index of the open paper and finds the query in it.
@@ -57,36 +64,41 @@ const indexCache = new WeakMap<PDFDocumentProxy, readonly string[]>();
 export function usePdfSearch(doc: PDFDocumentProxy | null, enabled: boolean): PdfSearchApi {
   const [query, setQueryState] = useState('');
   const [progress, setProgress] = useState<SearchProgress | null>(null);
-  const [indexVersion, rebuildIndexOf] = useReducer((value: number) => value + 1, 0);
+  const [built, setBuilt] = useState<{ doc: PDFDocumentProxy; index: FindIndex } | null>(null);
+  const retained = useRef<{ doc: PDFDocumentProxy; complete: boolean } | null>(null);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [active, setActive] = useState(-1);
 
-  // Read through the cache during render: finishing a build bumps `indexVersion`, which
-  // re-renders this hook and makes the new entry visible without copying it into state.
-  void indexVersion;
-  const pages = !enabled || doc === null ? null : (indexCache.get(doc) ?? null);
+  const pages =
+    !enabled || doc === null
+      ? null
+      : built?.doc === doc
+        ? built.index
+        : (indexCache.get(doc) ?? null);
 
   const setQuery = useCallback((value: string) => {
     setQueryState(value);
   }, []);
 
   useEffect(() => {
-    if (!enabled || doc === null || indexCache.has(doc)) return;
+    if (
+      !enabled ||
+      doc === null ||
+      indexCache.has(doc) ||
+      (retained.current?.doc === doc && retained.current.complete)
+    )
+      return;
     let cancelled = false;
     const pageCount = doc.numPages;
 
     void (async () => {
       const collected: string[] = [];
+      let failed = false;
       for (let page = 1; page <= pageCount; page += 1) {
         if (cancelled) return;
-        let text = '';
-        try {
-          const proxy = await doc.getPage(page);
-          const content = await proxy.getTextContent();
-          text = pageTextFromItems(content.items);
-        } catch {
-          // One unreadable page is an empty page, not the end of the search.
-        }
+        const extracted = await readSharedPageText(doc, page);
+        const text = extracted?.search ?? '';
+        if (extracted === null) failed = true;
         if (cancelled) return;
         collected.push(text);
         if (page % PAGES_PER_YIELD === 0 || page === pageCount) {
@@ -98,8 +110,15 @@ export function usePdfSearch(doc: PDFDocumentProxy | null, enabled: boolean): Pd
         }
       }
       if (cancelled) return;
-      indexCache.set(doc, collected);
-      rebuildIndexOf();
+      const index = createFindIndex(collected);
+      if (
+        !failed &&
+        collected.length <= MAX_SHARED_TEXT_PAGES &&
+        collected.reduce((sum, text) => sum + text.length, 0) <= MAX_SHARED_TEXT_CHARS
+      )
+        indexCache.set(doc, index);
+      retained.current = { doc, complete: !failed };
+      setBuilt({ doc, index });
     })();
 
     return () => {
@@ -110,7 +129,7 @@ export function usePdfSearch(doc: PDFDocumentProxy | null, enabled: boolean): Pd
   useEffect(() => {
     if (!enabled || pages === null || query.trim() === '') return;
     const timer = window.setTimeout(() => {
-      const found = findMatches(pages, query);
+      const found = findIndexedMatches(pages, query);
       setResult({ query, pages, hits: found });
       setActive(found.length > 0 ? 0 : -1);
     }, QUERY_DEBOUNCE_MS);

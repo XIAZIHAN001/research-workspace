@@ -35,7 +35,32 @@ import {
   type DesktopAiStatus,
 } from '../../services/desktop/aiService';
 
-type Note = { kind: 'success' | 'warning' | 'error'; text: string };
+type Note = { kind: 'success' | 'warning' | 'error'; text: string; savedSubject?: string };
+
+/** Persistence and activation are separate outcomes; a ready event may arrive later. */
+function savedSettingsNote(subject: string, status: DesktopAiStatus | null): Note {
+  if (status?.state === 'failed') {
+    return {
+      savedSubject: subject,
+      kind: 'error',
+      text: `${subject}已保存，但服务启动失败：${status.error ?? '未知原因'}。请重启服务后再试。`,
+    };
+  }
+  if (status?.state === 'starting') {
+    return {
+      savedSubject: subject,
+      kind: 'warning',
+      text: `${subject}已保存，服务正在启动。就绪前新设置尚未生效。`,
+    };
+  }
+  // The status panel below tracks activation, including later failures. Do not promise the
+  // saved configuration is still active: another command may have run since the save.
+  return {
+    savedSubject: subject,
+    kind: 'success',
+    text: `${subject}已保存。实际服务状态请查看运行模式。`,
+  };
+}
 
 const DEFAULT_BUDGET: AiBudgetSettings = {
   requests: 50,
@@ -281,7 +306,6 @@ export function AiSettingsPanel() {
   /** The key state of the provider the running service is configured with. */
   const [activeCredential, setActiveCredential] = useState<AiCredentialStatus | null>(null);
   const [health, setHealth] = useState<AiHealth | null>(null);
-  const [settings, setSettings] = useState<AiSettings | null>(null);
   const [budget, setBudget] = useState<AiBudgetSettings>(DEFAULT_BUDGET);
   const [draft, setDraft] = useState<AiBudgetSettings>(DEFAULT_BUDGET);
   const [modelDraft, setModelDraft] = useState<ModelDraft>({
@@ -311,6 +335,8 @@ export function AiSettingsPanel() {
   }, []);
 
   const settingsRef = useRef<AiSettings | null>(null);
+  // A lifecycle event or newer save invalidates older in-flight polling responses.
+  const refreshRevision = useRef(0);
   /** Which provider the key section is showing, readable from the polling callback. */
   const draftProviderRef = useRef(DEFAULT_PROVIDER);
   useEffect(() => {
@@ -336,7 +362,6 @@ export function AiSettingsPanel() {
     const prev = settingsRef.current;
     if (prev !== null && sameSettings(prev, next)) return;
     settingsRef.current = next;
-    setSettings(next);
     setBudget(next.budget);
     setDraft(next.budget);
     setModelDraft({
@@ -349,10 +374,11 @@ export function AiSettingsPanel() {
   }, []);
 
   const refresh = useCallback(async () => {
+    const revision = ++refreshRevision.current;
     // Read the saved settings first: the two credential lookups below depend on which provider
     // is active, and that answer comes with them.
     const nextSettings = await getAiSettings();
-    if (!alive.current) return;
+    if (!alive.current || revision !== refreshRevision.current) return;
     if (nextSettings !== null) applySettings(nextSettings);
 
     const draftProvider = draftProviderRef.current;
@@ -365,7 +391,7 @@ export function AiSettingsPanel() {
         : getAiCredentialStatus(activeProvider),
       fetchAiHealth(),
     ]);
-    if (!alive.current) return;
+    if (!alive.current || revision !== refreshRevision.current) return;
     setService(nextService);
     setCredential(nextCredential);
     setActiveCredential(nextActiveCredential ?? nextCredential);
@@ -384,7 +410,10 @@ export function AiSettingsPanel() {
     }, 3000);
     let unlisten: (() => void) | null = null;
     void onDesktopAiStatus((status) => {
-      if (alive.current) setService(status);
+      if (alive.current) {
+        refreshRevision.current += 1;
+        setService(status);
+      }
     }).then((stop) => {
       if (alive.current) unlisten = stop;
       else stop();
@@ -410,7 +439,7 @@ export function AiSettingsPanel() {
     setBusy('key');
     setNote(null);
     const provider = modelDraft.provider;
-    const result = await setAiApiKey(provider, candidate);
+    const result = await setAiApiKey(provider, candidate, modelDraft.baseUrl);
     // Drop the page's copy whether or not the write succeeded.
     setKeyInput('');
     setShowKey(false);
@@ -429,7 +458,7 @@ export function AiSettingsPanel() {
       text: 'API Key 已保存到系统凭据存储。应用不会把它写进浏览器存储、备份或日志。',
     });
     void refresh();
-  }, [keyInput, modelDraft.provider, refresh]);
+  }, [keyInput, modelDraft.baseUrl, modelDraft.provider, refresh]);
 
   const removeKey = useCallback(async () => {
     setBusy('delete');
@@ -440,12 +469,16 @@ export function AiSettingsPanel() {
     setConfirmDelete(false);
     if (!result.ok) {
       setNote({ kind: 'error', text: result.message });
+      // The shell revokes online use before it touches the store, so even a failed delete
+      // leaves the service in mock mode; the page must show that rather than the old status.
+      void refresh();
       return;
     }
     setService(result.status);
     setNote({
-      kind: 'success',
-      text: '已删除这个供应商的系统凭据；如果它正是在用的供应商，在线服务也已停止。',
+      kind: result.warning === undefined ? 'success' : 'warning',
+      text:
+        result.warning ?? '已删除这个供应商的系统凭据；如果它正是在用的供应商，在线服务也已停止。',
     });
     void refresh();
   }, [modelDraft.provider, refresh]);
@@ -496,6 +529,7 @@ export function AiSettingsPanel() {
   }, [refresh]);
 
   const saveBudget = useCallback(async () => {
+    refreshRevision.current += 1;
     setBusy('budget');
     setNote(null);
     const result = await updateAiSettings({ budget: draft });
@@ -505,15 +539,15 @@ export function AiSettingsPanel() {
       setNote({ kind: 'error', text: result.message });
       return;
     }
+    refreshRevision.current += 1;
     applySettings(result.settings);
-    setNote({
-      kind: 'success',
-      text: '预算已保存。AI 服务已重启，本次会话的用量统计从头开始。',
-    });
+    setService(result.status);
+    setNote(savedSettingsNote('预算', result.status));
     void refresh();
   }, [applySettings, draft, refresh]);
 
   const saveModel = useCallback(async () => {
+    refreshRevision.current += 1;
     setBusy('model');
     setNote(null);
     setModelNote(null);
@@ -529,11 +563,10 @@ export function AiSettingsPanel() {
       setNote({ kind: 'error', text: result.message });
       return;
     }
+    refreshRevision.current += 1;
     applySettings(result.settings);
-    setNote({
-      kind: 'success',
-      text: '供应商与模型设置已保存。AI 服务已重启；下一次提问就会使用新的设置。',
-    });
+    setService(result.status);
+    setNote(savedSettingsNote('供应商与模型设置', result.status));
     void refresh();
   }, [applySettings, modelDraft, refresh]);
 
@@ -580,13 +613,28 @@ export function AiSettingsPanel() {
       setModelNote({ kind: 'warning', text: '请先填写 API 地址，再获取模型列表。' });
       return;
     }
+    const saved = settingsRef.current;
+    const preset = providers.find((candidate) => candidate.id === modelDraft.provider);
+    const savedBase =
+      saved !== null && saved.provider === modelDraft.provider
+        ? saved.baseUrl.trim()
+        : (preset?.baseUrl ?? '').trim();
+    const candidateKey = keyInput.trim();
+    // A stored key is bound to the endpoint it was saved for. Asking a different endpoint with
+    // it would be exactly the credential-forwarding path this guard exists to close.
+    if (baseUrl !== savedBase && candidateKey === '') {
+      setModelNote({
+        kind: 'warning',
+        text: '更换 API 地址后，获取模型列表需要先在上面输入这个地址的 API Key；保存 Key 时会把地址一并绑定。',
+      });
+      return;
+    }
     setBusy('models');
     setModelNote(null);
-    // An empty key means "use the one already stored for this provider"; the shell reads it.
     const result = await listAiModels({
       provider: modelDraft.provider,
       baseUrl,
-      apiKey: '',
+      apiKey: candidateKey,
     });
     if (!alive.current) return;
     setBusy(null);
@@ -599,7 +647,7 @@ export function AiSettingsPanel() {
       kind: 'success',
       text: `查询到 ${String(result.models.length)} 个可用模型，点选即可填入。`,
     });
-  }, [modelDraft.baseUrl, modelDraft.provider]);
+  }, [keyInput, modelDraft.baseUrl, modelDraft.provider, providers]);
 
   /** Undoes unsaved edits in the model section, including a provider switch. */
   const resetModel = useCallback(() => {
@@ -630,8 +678,8 @@ export function AiSettingsPanel() {
   const currentProvider = providers.find((preset) => preset.id === modelDraft.provider);
   const currentProviderLabel = currentProvider?.label ?? modelDraft.provider;
   const supportsThinking = currentProvider?.supportsThinking === true;
-  const activeProvider = providers.find((preset) => preset.id === settings?.provider);
-  const activeProviderLabel = activeProvider?.label ?? settings?.provider ?? '在线模型';
+  const activeProvider = providers.find((preset) => preset.id === service?.provider);
+  const activeProviderLabel = activeProvider?.label ?? service?.provider ?? '在线模型';
   const providerOptions: readonly ChoiceOption<string>[] = providers.map((preset) => ({
     value: preset.id,
     label: preset.label,
@@ -641,12 +689,13 @@ export function AiSettingsPanel() {
     new Set([...(currentProvider?.models ?? []), ...fetchedModels]),
   );
 
+  const visibleNote = note?.savedSubject ? savedSettingsNote(note.savedSubject, service) : note;
   const statusText = pending
     ? 'AI 服务正在按新模式重启…'
     : service?.state === 'failed'
       ? `服务不可用：${service.error ?? '未知原因'}`
       : online
-        ? `当前：${providerModeLabel(true)} · ${activeProviderLabel} ${settings?.model ?? ''}`.trim()
+        ? `当前：${providerModeLabel(true)} · ${activeProviderLabel} ${service?.model ?? ''}`.trim()
         : `当前：${providerModeLabel(false)}`;
 
   return (
@@ -852,8 +901,9 @@ export function AiSettingsPanel() {
             </h3>
             <p className="ai-settings__hint">
               供应商决定调用哪家服务；API 地址和模型名称都可以手动填写。也可以先保存密钥，
-              再用「获取可用模型」读取这个账号实际可用的模型列表。离线模拟不会调用模型，
-              但这里的设置会保留，切换到在线模式后生效。
+              再用「获取可用模型」读取这个账号实际可用的模型列表。Key 会绑定保存时的 API
+              地址（协议与主机）：更换地址后需要重新保存 Key，旧 Key
+              不会自动发往新地址。离线模拟不会调用 模型，但这里的设置会保留，切换到在线模式后生效。
             </p>
             <div className="ai-settings__budget">
               <Choice
@@ -1033,9 +1083,12 @@ export function AiSettingsPanel() {
               </div>
             </dl>
             <p className="ai-settings__hint">
-              token 用量来自模型服务的返回值；如果模型服务没有返回用量，统计会改用保守上界
-              {usage?.exactTokens === false ? '（本次已发生）' : ''}。费用是根据价格表做的估算，
-              不是账单，实际金额以服务方结算为准。
+              token 用量来自模型服务的返回值；如果模型服务没有返回可用用量（例如请求在中途失败），
+              统计会改用保守上界
+              {usage?.exactTokens === false
+                ? `（其中 ${String(usage.estimatedRequests)} 次为保守估算）`
+                : ''}
+              。费用是根据价格表做的估算，不是账单，实际金额以服务方结算为准。
             </p>
             {pricing !== undefined && (
               <p className="ai-settings__pricing" data-known={pricing.known}>
@@ -1122,9 +1175,9 @@ export function AiSettingsPanel() {
         </div>
       </section>
 
-      {note !== null && (
-        <p className="ai-settings__note" data-kind={note.kind} role="status">
-          {note.text}
+      {visibleNote !== null && (
+        <p className="ai-settings__note" data-kind={visibleNote.kind} role="status">
+          {visibleNote.text}
         </p>
       )}
     </section>

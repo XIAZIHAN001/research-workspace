@@ -40,6 +40,9 @@ export function checkHost(hostHeader) {
  * refused. An absent `Origin` means the caller is not a browser (curl, the test suite, another
  * local process) — and such a caller can already read the environment directly, so refusing it
  * would buy no safety while making the service untestable by hand.
+ *
+ * Loopback is not automatically trusted: any other local dev server is also loopback, and an
+ * un-tokened browser deployment must not let it spend the reader's credit.
  */
 export function checkOrigin(originHeader, allowedOrigins) {
   if (originHeader === undefined || originHeader === null || originHeader === '') {
@@ -48,12 +51,8 @@ export function checkOrigin(originHeader, allowedOrigins) {
   if (typeof originHeader !== 'string') {
     return { ok: false, status: 403, message: 'Origin 头不是字符串。' };
   }
-  if (isLoopback(originHeader) || allowedOrigins.includes(originHeader)) return { ok: true };
+  if (allowedOrigins.includes(originHeader)) return { ok: true };
   return { ok: false, status: 403, message: `来源 ${originHeader} 不在允许列表里。` };
-}
-
-function isLoopback(origin) {
-  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
 }
 
 /**
@@ -154,6 +153,11 @@ export function readJsonBody(request, maxBytes) {
       }
     });
     request.on('error', reject);
+    // A client can close the connection mid-body. Without this, `readJsonBody` would wait for
+    // an `end` that never comes and the handler would hold a concurrency slot forever.
+    request.on('close', () => {
+      if (!request.complete) reject(new Error('客户端已断开连接。'));
+    });
   });
 }
 

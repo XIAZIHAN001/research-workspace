@@ -86,14 +86,25 @@ export function sortGlossary(entries: readonly GlossaryEntry[]): GlossaryEntry[]
   );
 }
 
+function isWordChar(character: string | undefined): boolean {
+  return character !== undefined && /[A-Za-z0-9_]/.test(character);
+}
+
 /**
- * The entry a hover should show for a piece of page text, if any.
+ * ASCII words have boundaries; CJK does not.
  *
- * PDF text layers split a line into spans, and a term that straddles a span boundary will not
- * be found inside any single one. Rather than splice spans together (that way lies re-layout
- * of the reader), the match is honest about what it can see: a term wholly inside the hovered
- * span. Abbreviations — the terms glossaries exist for — almost always fit.
+ * Without this, the term `AI` matched inside `PAIR` or `said`, and a two-letter abbreviation
+ * opened its card while the pointer was on an unrelated word. Chinese terms keep substring
+ * matching, which is what a CJK reader expects from a glossary.
  */
+function atWordBoundary(haystack: string, at: number, needle: string): boolean {
+  const before = haystack[at - 1];
+  const after = haystack[at + needle.length];
+  if (isWordChar(before) && isWordChar(needle[0])) return false;
+  if (isWordChar(after) && isWordChar(needle[needle.length - 1])) return false;
+  return true;
+}
+
 /**
  * The entry whose occurrence covers a caret offset in the span text, if any.
  *
@@ -115,8 +126,13 @@ export function matchGlossaryAt(
     for (;;) {
       const at = haystack.indexOf(needle, from);
       if (at < 0) break;
-      if (offset >= at && offset < at + needle.length) {
-        if (best === null || entry.term.length > best.term.length) best = entry;
+      if (
+        offset >= at &&
+        offset < at + needle.length &&
+        atWordBoundary(haystack, at, needle) &&
+        (best === null || entry.term.length > best.term.length)
+      ) {
+        best = entry;
         break;
       }
       from = at + 1;
@@ -125,6 +141,14 @@ export function matchGlossaryAt(
   return best;
 }
 
+/**
+ * The entry a hover should show for a piece of page text, if any.
+ *
+ * PDF text layers split a line into spans, and a term that straddles a span boundary will not
+ * be found inside any single one. Rather than splice spans together (that way lies re-layout
+ * of the reader), the match is honest about what it can see: a term wholly inside the hovered
+ * span. Abbreviations — the terms glossaries exist for — almost always fit.
+ */
 export function matchGlossary(
   entries: readonly GlossaryEntry[],
   spanText: string,
@@ -133,7 +157,19 @@ export function matchGlossary(
   let best: GlossaryEntry | null = null;
   for (const entry of entries) {
     if (entry.term.length < 2) continue;
-    if (!haystack.includes(entry.term.toLowerCase())) continue;
+    const needle = entry.term.toLowerCase();
+    let from = 0;
+    let found = false;
+    for (;;) {
+      const at = haystack.indexOf(needle, from);
+      if (at < 0) break;
+      if (atWordBoundary(haystack, at, needle)) {
+        found = true;
+        break;
+      }
+      from = at + 1;
+    }
+    if (!found) continue;
     if (best === null || entry.term.length > best.term.length) best = entry;
   }
   return best;

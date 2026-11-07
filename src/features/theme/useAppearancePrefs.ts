@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { LAYOUT_CHANGE_EVENT, type LayoutChangeDetail } from '../../app/layoutPrefs';
 import {
   applyDensity,
@@ -33,15 +33,17 @@ export function useAppearancePrefs(): {
   const [uiFont, setUiFontState] = useState<UiFont>(() => readUiFont());
   const [scrollEdge, setScrollEdgeState] = useState<ScrollEdge>(() => readScrollEdge());
 
-  useEffect(() => {
+  // Layout effects, so the stored density/font/edge apply in the same commit as the first
+  // render: a passive effect lets the browser paint the defaults once and then swap them.
+  useLayoutEffect(() => {
     applyDensity(document.documentElement, density);
   }, [density]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyUiFont(document.documentElement, uiFont);
   }, [uiFont]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyScrollEdge(document.documentElement, scrollEdge);
   }, [scrollEdge]);
 

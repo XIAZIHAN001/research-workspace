@@ -104,6 +104,34 @@ describe('backup container', () => {
     expect(canonicalJson(null)).toBe('null');
   });
 
+  it('uses the same undefined and array-hole semantics as JSON.stringify', () => {
+    const list: unknown[] = [];
+    list[1] = 'kept';
+    list[2] = undefined;
+    const data = {
+      omitted: undefined,
+      list,
+      nested: { gone: undefined, kept: 1 },
+    };
+    const roundTripped = JSON.parse(JSON.stringify(data));
+    expect(canonicalJson(data)).toBe(canonicalJson(roundTripped));
+    expect(canonicalJson(data)).toBe('{"list":[null,"kept",null],"nested":{"kept":1}}');
+  });
+
+  it('opens a backup whose data contained optional undefined fields', async () => {
+    const list: unknown[] = [];
+    list[1] = 1;
+    const data = { preferences: { theme: undefined, paper: 'warm' }, list };
+    const { blob } = await createBackupBlob({
+      data,
+      files: [],
+      createdAt: '2026-10-17T00:00:00.000Z',
+      app: { name: 'test', projectsSchema: 10, knowledgeVersion: 2 },
+    });
+    const opened = await openBackup(blob);
+    expect(opened.ok).toBe(true);
+  });
+
   it('reads a backup whose data was serialised in a different key order', async () => {
     const { blob } = await build(1);
     const reordered = await rewrite(blob, (header) => {

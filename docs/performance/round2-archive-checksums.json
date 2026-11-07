@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "originalCheckpoint": "22c94c0d2cbc1c3cb4668ce341bbac09a3a983e2",
+  "description": "Lossless copies of the original measured JSON bytes; no measurements were regenerated or edited. The source checkpoint remains a local rollback point. Source revision mappings are in checkpoint-2026-11-07.md.",
+  "files": [
+    {
+      "file": "round2-baseline-05d7163.json.gz",
+      "encoding": "gzip",
+      "compressedBytes": 52062,
+      "compressedSha256": "6011396f11c7d1dada078bb807fe0a1f0b5f9bf53e1d2c5eedcb680a2b670982",
+      "originalFile": "round2-baseline-05d7163.json",
+      "originalBytes": 1086734,
+      "originalSha256": "3c525273a0df3df3d3dc9d00a656c7ee7e327e49f2608d35ea7e7895e4884af4"
+    },
+    {
+      "file": "round2-candidate-65b3a2f.json.gz",
+      "encoding": "gzip",
+      "compressedBytes": 52110,
+      "compressedSha256": "9dfdccdbd0802ae68ac3a3f33beb376de3975efcf124cb78ad30d2aa6e313def",
+      "originalFile": "round2-candidate-65b3a2f.json",
+      "originalBytes": 1086855,
+      "originalSha256": "8335f1fb65a8bde7ef63fd52b978ec2e9e702b5c6f2e857dbcb67934a1da9ed3"
+    },
+    {
+      "file": "search-lifecycle-65b3a2f.json.gz",
+      "encoding": "gzip",
+      "compressedBytes": 3671,
+      "compressedSha256": "3b2fd40e2d9e1f1e25d23bffd2a4669ac99145b640e9b146e421536335748964",
+      "originalFile": "search-lifecycle-65b3a2f.json",
+      "originalBytes": 38700,
+      "originalSha256": "60000768ac1e4e26ace607346e6890b996c588812d27b2afee929c55bff8b532"
+    }
+  ]
+}

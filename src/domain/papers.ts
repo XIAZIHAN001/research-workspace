@@ -234,7 +234,8 @@ export function applyPaperEdit(
   edit: PaperEdit,
   now: number,
 ): PaperEditResult {
-  const current = papers[paperId];
+  // A bare index would treat `constructor`/`toString` as an existing paper via the prototype.
+  const current = Object.hasOwn(papers, paperId) ? papers[paperId] : undefined;
   if (current === undefined) return { ok: false, failure: { reason: 'unknown-paper' } };
 
   const updated: Paper = { ...current };
@@ -382,6 +383,62 @@ export function resolvePaperIdentity(
   if (only === undefined) return { kind: 'none' };
   if (others.length === 0) return { kind: 'match', paper: only };
   return { kind: 'conflict', papers: matches };
+}
+
+/** A batch-local snapshot. Append newly created papers; rebuild after edits or removals. */
+export interface PaperIdentityIndex {
+  resolve(ids: ExternalIds): PaperIdentityResolution;
+  add(paper: Paper): void;
+}
+
+/**
+ * Index the registry once for a bibliography rather than scan it for every input.
+ * Stored identifiers are already canonical: keep their exact values, just as the scan
+ * resolver does. Buckets retain registry order and every record, including malformed
+ * duplicate identifiers/IDs. Query-time ID deduplication preserves DOI-first precedence
+ * even when two different records carry the same paper ID.
+ */
+export function createPaperIdentityIndex(
+  papers: Readonly<Record<string, Paper>>,
+): PaperIdentityIndex {
+  const byDoi = new Map<string, Paper[]>();
+  const byArxiv = new Map<string, Paper[]>();
+  const append = (buckets: Map<string, Paper[]>, value: string | undefined, paper: Paper): void => {
+    if (value === undefined) return;
+    const bucket = buckets.get(value);
+    if (bucket === undefined) buckets.set(value, [paper]);
+    else bucket.push(paper);
+  };
+  const add = (paper: Paper): void => {
+    append(byDoi, paper.doi, paper);
+    append(byArxiv, paper.arxivId, paper);
+  };
+  for (const paper of Object.values(papers)) add(paper);
+
+  return {
+    add,
+    resolve(ids) {
+      const doi = ids.doi == null ? null : normalizeDoi(ids.doi);
+      const arxivId = ids.arxivId == null ? null : normalizeArxivId(ids.arxivId);
+      const matches: Paper[] = [];
+      const seen = new Set<string>();
+      for (const bucket of [
+        doi === null ? undefined : byDoi.get(doi),
+        arxivId === null ? undefined : byArxiv.get(arxivId),
+      ]) {
+        if (bucket === undefined) continue;
+        for (const paper of bucket) {
+          if (seen.has(paper.id)) continue;
+          seen.add(paper.id);
+          matches.push(paper);
+        }
+      }
+      const only = matches[0];
+      if (only === undefined) return { kind: 'none' };
+      if (matches.length === 1) return { kind: 'match', paper: only };
+      return { kind: 'conflict', papers: matches };
+    },
+  };
 }
 
 /** Short author credit for dense UI: "Vaswani 等", "He", or null when unknown. */

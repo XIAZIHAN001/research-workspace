@@ -1,3 +1,4 @@
+import { workspaceAccess } from './workspaceAccess';
 /**
  * Where the knowledge graph lives.
  *
@@ -16,7 +17,7 @@ import {
   type KnowledgeState,
 } from '../domain/knowledge';
 import { knowledgeReducer, type KnowledgeAction } from '../domain/knowledgeState';
-import { defaultStore, readItem, writeItem, type KeyValueStore } from './storage';
+import { defaultStore, writeItem, type KeyValueStore } from './storage';
 
 export const KNOWLEDGE_STORAGE_KEY = 'rw.knowledge';
 export const KNOWLEDGE_BACKUP_KEY = 'rw.knowledge.corrupt';
@@ -32,8 +33,8 @@ export interface KnowledgeLoad {
   /** True when the unreadable payload was copied aside before we continued empty. */
   backupSaved: boolean;
   /**
-   * True when this build must not write at all: the payload is from a newer schema, and a
-   * reduced rewrite would destroy fields this build cannot even name.
+   * True when this build must not write: storage could not be read, or the payload is from
+   * a newer schema whose fields a reduced rewrite would destroy.
    */
   writeBlocked: boolean;
 }
@@ -50,7 +51,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * copied aside first whenever anything had to be dropped.
  */
 export function loadKnowledge(store: KeyValueStore | null = defaultStore()): KnowledgeLoad {
-  const raw = readItem(KNOWLEDGE_STORAGE_KEY, store);
+  let raw: string | null;
+  try {
+    if (store === null) throw new Error('LocalStorage 不可用。');
+    raw = store.getItem(KNOWLEDGE_STORAGE_KEY);
+  } catch {
+    return {
+      state: EMPTY_KNOWLEDGE,
+      issue: 'unreadable',
+      dropped: 0,
+      backupSaved: false,
+      writeBlocked: true,
+    };
+  }
   if (raw === null) {
     return {
       state: EMPTY_KNOWLEDGE,
@@ -145,10 +158,16 @@ export function loadKnowledge(store: KeyValueStore | null = defaultStore()): Kno
 
 /** Copies an unreadable payload aside, but never over a different one already there. */
 function keepCopy(raw: string, store: KeyValueStore | null): boolean {
-  const existing = readItem(KNOWLEDGE_BACKUP_KEY, store);
-  if (existing === raw) return true;
-  if (existing !== null) return false;
-  return writeItem(KNOWLEDGE_BACKUP_KEY, raw, store);
+  if (store === null) return false;
+  try {
+    const existing = store.getItem(KNOWLEDGE_BACKUP_KEY);
+    if (existing === raw) return true;
+    if (existing !== null) return false;
+    return writeItem(KNOWLEDGE_BACKUP_KEY, raw, store);
+  } catch {
+    // A read failure cannot establish that the existing recovery copy is absent.
+    return false;
+  }
 }
 
 export function saveKnowledge(
@@ -189,7 +208,7 @@ export function createKnowledgeStore(
   const writesBlocked = loaded.writeBlocked || (loaded.issue !== null && !loaded.backupSaved);
   let snapshot: KnowledgeSnapshot = {
     state: loaded.state,
-    persisted: true,
+    persisted: !writesBlocked,
     issue: loaded.issue,
     dropped: loaded.dropped,
     writesBlocked,
@@ -205,6 +224,11 @@ export function createKnowledgeStore(
     },
     getSnapshot: () => snapshot,
     dispatch: (action) => {
+      if (!workspaceAccess.canWrite()) {
+        snapshot = { ...snapshot, persisted: false };
+        for (const notify of listeners) notify();
+        return;
+      }
       const state = knowledgeReducer(snapshot.state, action);
       if (state === snapshot.state) return;
       snapshot = {

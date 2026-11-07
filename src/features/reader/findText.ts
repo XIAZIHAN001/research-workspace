@@ -110,13 +110,45 @@ export interface FindHit {
  * records nothing will display.
  */
 export function findMatches(pages: readonly string[], query: string, limit = 300): FindHit[] {
+  return findIndexedMatches(createFindIndex(pages), query, limit);
+}
+
+/** Fold caches are bounded; oversized/evicted pages remain fully searchable. */
+export const MAX_FIND_CACHED_PAGES = 256;
+export const MAX_FIND_CACHED_CHARS = 2_000_000;
+export interface FindIndex {
+  readonly pages: readonly string[];
+}
+const folds = new WeakMap<FindIndex, { pages: Map<number, FoldedText>; chars: number }>();
+
+export function createFindIndex(pages: readonly string[]): FindIndex {
+  const index = { pages: Object.freeze([...pages]) };
+  folds.set(index, { pages: new Map(), chars: 0 });
+  return index;
+}
+
+export function findIndexedMatches(index: FindIndex, query: string, limit = 300): FindHit[] {
   const needle = foldForFind(query).text;
   if (needle === '' || limit <= 0) return [];
 
   const hits: FindHit[] = [];
-  pages.forEach((pageText, index) => {
+  index.pages.forEach((pageText, pageIndex) => {
     if (hits.length >= limit) return;
-    const folded = foldForFind(pageText);
+    const cache = folds.get(index);
+    let folded = cache?.pages.get(pageIndex);
+    if (folded === undefined) {
+      folded = foldForFind(pageText);
+      // Admit a stable prefix instead of evicting on a full-document scan: repeated
+      // misses on a large paper must not thrash every cached page.
+      if (
+        cache !== undefined &&
+        cache.pages.size < MAX_FIND_CACHED_PAGES &&
+        cache.chars + folded.text.length <= MAX_FIND_CACHED_CHARS
+      ) {
+        cache.pages.set(pageIndex, folded);
+        cache.chars += folded.text.length;
+      }
+    }
     if (folded.text === '') return;
 
     let ordinal = 0;
@@ -129,7 +161,7 @@ export function findMatches(pages: readonly string[], query: string, limit = 300
       const last = folded.map[at + needle.length - 1];
       if (start !== undefined && last !== undefined) {
         hits.push({
-          page: index + 1,
+          page: pageIndex + 1,
           start,
           end: last + 1,
           snippet: pageText.slice(start, last + 1),

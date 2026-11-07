@@ -41,6 +41,71 @@ export interface ReviewCard {
   lastAt: number;
 }
 
+/**
+ * The schedule's own version, independent of the projects schema.
+ *
+ * It lives here rather than in the store because the backup also has to read and write the
+ * same shape; a second parser would be a second thing to keep in step.
+ */
+export const REVIEW_VERSION = 1;
+
+export interface ReviewState {
+  version: typeof REVIEW_VERSION;
+  /** Keyed by concept id: a card stops matching when its concept is deleted. */
+  cards: Record<string, ReviewCard>;
+}
+
+export const EMPTY_REVIEW_STATE: ReviewState = { version: REVIEW_VERSION, cards: {} };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** A card survives validation or it does not exist; the rest of the schedule is unaffected. */
+export function parseReviewCard(value: unknown): ReviewCard | null {
+  if (!isRecord(value)) return null;
+  const { conceptId, ease, intervalDays, reps, lapses, dueAt, lastAt } = value;
+  if (typeof conceptId !== 'string' || conceptId === '') return null;
+  for (const number of [ease, intervalDays, reps, lapses, dueAt, lastAt]) {
+    if (typeof number !== 'number' || !Number.isFinite(number)) return null;
+  }
+  // Hand-edited or restored values still have to describe a schedule this build can run.
+  // Clamping here keeps a bad number from producing a card that is never due or has an
+  // impossible ease, without discarding the rest of the record.
+  return {
+    conceptId,
+    ease: Math.max(MIN_EASE, ease as number),
+    intervalDays: Math.max(0, Math.floor(intervalDays as number)),
+    reps: Math.max(0, Math.floor(reps as number)),
+    lapses: Math.max(0, Math.floor(lapses as number)),
+    dueAt: dueAt as number,
+    lastAt: lastAt as number,
+  };
+}
+
+/**
+ * Reads a persisted schedule, or null when the payload is not one.
+ *
+ * `blocked` means the payload was written by a newer build: its cards are left untouched on
+ * disk rather than overwritten with an older shape. The caller decides whether that is a
+ * session-only condition (the live store) or a reason to skip the section (a backup).
+ */
+export function parseReviewState(value: unknown): { state: ReviewState; blocked: boolean } | null {
+  if (!isRecord(value)) return null;
+  const { version } = value;
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) return null;
+  if (version > REVIEW_VERSION) return { state: EMPTY_REVIEW_STATE, blocked: true };
+  if (!isRecord(value.cards)) return null;
+  const cards: Record<string, ReviewCard> = {};
+  for (const [id, card] of Object.entries(value.cards)) {
+    // `cards['__proto__'] = …` would change the map's prototype and hide the record.
+    if (id === '__proto__') continue;
+    const parsed = parseReviewCard(card);
+    if (parsed !== null) cards[id] = parsed;
+  }
+  return { state: { version: REVIEW_VERSION, cards }, blocked: false };
+}
+
 /** A card is due when its time has come; a card with no schedule at all is a new card. */
 export function isDue(card: ReviewCard, now: number): boolean {
   return card.dueAt <= now;

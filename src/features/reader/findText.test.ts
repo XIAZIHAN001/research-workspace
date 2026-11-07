@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { findMatches, foldForFind, nextHitIndex, pageTextFromItems } from './findText';
 
 describe('pageTextFromItems', () => {
@@ -101,4 +101,39 @@ describe('nextHitIndex', () => {
   it('reports no result when the list is empty', () => {
     expect(nextHitIndex(-1, 0, 1)).toBe(-1);
   });
+});
+
+describe('indexed find', () => {
+  it('reuses page folds across queries and preserves Unicode offsets', async () => {
+    const { createFindIndex, findIndexedMatches } = await import('./findText');
+    const pages = ['  İ 😀 机 器 学 习 A  MACHINE', 'cat '.repeat(400)];
+    const index = createFindIndex(pages);
+    for (const query of ['机器学习', 'i', '😀', 'machine', 'cat']) {
+      expect(findIndexedMatches(index, query)).toEqual(findMatches(pages, query));
+    }
+    const lower = vi.spyOn(String.prototype, 'toLowerCase');
+    findIndexedMatches(index, 'A');
+    expect(lower).toHaveBeenCalledTimes(1);
+    lower.mockRestore();
+    pages[0] = 'replacement';
+    expect(findIndexedMatches(index, 'machine')[0]?.snippet).toBe('MACHINE');
+  });
+});
+
+it('retains admitted folds on repeated scans beyond the page budget', async () => {
+  const { createFindIndex, findIndexedMatches, MAX_FIND_CACHED_PAGES } = await import('./findText');
+  const index = createFindIndex(Array.from({ length: MAX_FIND_CACHED_PAGES + 2 }, () => 'A'));
+  expect(findIndexedMatches(index, 'z')).toEqual([]);
+  const lower = vi.spyOn(String.prototype, 'toLowerCase');
+  findIndexedMatches(index, 'z');
+  expect(lower).toHaveBeenCalledTimes(3); // Query and only the two unadmitted pages.
+  lower.mockRestore();
+});
+
+it('does not retain folds over the character budget, without truncating matches', async () => {
+  const { createFindIndex, findIndexedMatches, MAX_FIND_CACHED_CHARS } = await import('./findText');
+  const text = 'a'.repeat(MAX_FIND_CACHED_CHARS + 1) + 'Z';
+  const index = createFindIndex([text]);
+  expect(findIndexedMatches(index, 'Z')[0]?.start).toBe(MAX_FIND_CACHED_CHARS + 1);
+  expect(findIndexedMatches(index, 'Z')[0]?.start).toBe(MAX_FIND_CACHED_CHARS + 1);
 });

@@ -69,6 +69,13 @@ describe('fetchPaperMetadata', () => {
     });
   });
 
+  it('distinguishes a rate-limited registry from being offline', async () => {
+    const limited: FetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 429 })));
+    expect(await fetchPaperMetadata({ doi: '10.1000/xyz' }, limited)).toStrictEqual({
+      status: 'busy',
+    });
+  });
+
   it('refuses to ask anything without a usable identifier', async () => {
     const fetchImpl = vi.fn();
     expect(await fetchPaperMetadata({ doi: 'not-a-doi', arxivId: '' }, fetchImpl)).toStrictEqual({

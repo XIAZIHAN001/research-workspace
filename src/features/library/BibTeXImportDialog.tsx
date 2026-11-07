@@ -1,7 +1,7 @@
 import { FileText } from 'lucide-react';
 import { useState } from 'react';
 import { parseBibtex, type BibtexEntry, type BibtexSkipped } from '../../domain/bibtexImport';
-import type { Paper, PaperInput } from '../../domain/papers';
+import { createPaperIdentityIndex, type Paper, type PaperInput } from '../../domain/papers';
 import { Dialog } from '../../ui/Dialog';
 
 interface BibTeXImportDialogProps {
@@ -19,6 +19,10 @@ interface PreviewRow {
   existing: Paper | null;
 }
 
+/** Bounds for one import: a whole library, not a reason to freeze the page for minutes. */
+const MAX_BIB_BYTES = 5 * 1024 * 1024;
+const MAX_BIB_ENTRIES = 500;
+
 /**
  * Imports papers from a .bib file.
  *
@@ -34,15 +38,55 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
   const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
+  // The dialog's body unmounts on close, but its preview state lives here. Every close path
+  // goes through this reset, so a reopened dialog starts from the file picker rather than
+  // from the last file's stale rows and checkmarks.
+  const reset = (): void => {
+    setRows(null);
+    setSkipped([]);
+    setFileName('');
+    setChecked(new Set());
+    setError(null);
+  };
+  const close = (): void => {
+    reset();
+    onClose();
+  };
+
   const read = async (file: File): Promise<void> => {
     setError(null);
+    setRows(null);
+    setSkipped([]);
+    setFileName('');
+    setChecked(new Set());
+    if (file.size > MAX_BIB_BYTES) {
+      setError('这个文件超过 5 MB，无法一次导入；请拆分后再试。');
+      return;
+    }
     try {
       const text = await file.text();
       const result = parseBibtex(text);
-      const nextRows = result.entries.map((entry) => ({
-        entry,
-        existing: findExisting(papers, entry),
-      }));
+      if (result.entries.length > MAX_BIB_ENTRIES) {
+        setError(
+          `这个文件有 ${String(result.entries.length)} 条记录，单次最多导入 ${String(MAX_BIB_ENTRIES)} 条；请拆分后再试。`,
+        );
+        return;
+      }
+      const identities = createPaperIdentityIndex(papers);
+      const nextRows = result.entries.map((entry) => {
+        const identity = identities.resolve(entry);
+        return {
+          entry,
+          // Preview keeps its DOI-first existing-paper label. Import still reports full
+          // conflicts rather than selecting a winner if a caller submits such an entry.
+          existing:
+            identity.kind === 'match'
+              ? identity.paper
+              : identity.kind === 'conflict'
+                ? (identity.papers[0] ?? null)
+                : null,
+        };
+      });
       setRows(nextRows);
       setSkipped(result.skipped);
       setFileName(file.name);
@@ -84,13 +128,12 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
         arxivId: entry.arxivId ?? null,
       })),
     );
-    setRows(null);
-    setChecked(new Set());
+    reset();
     onClose();
   };
 
   return (
-    <Dialog open={open} title="从 BibTeX 导入" onClose={onClose}>
+    <Dialog open={open} title="从 BibTeX 导入" onClose={close}>
       <div className="bibtex-import">
         <label className="field">
           <span className="field-label">选择 .bib 文件</span>
@@ -101,6 +144,9 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file !== undefined) void read(file);
+              // Re-selecting the same path must still fire: the value, not the file, is what
+              // the browser remembers between picks.
+              event.currentTarget.value = '';
             }}
           />
         </label>
@@ -168,15 +214,7 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
         )}
 
         <div className="dialog-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setRows(null);
-              setChecked(new Set());
-              onClose();
-            }}
-          >
+          <button type="button" className="btn" onClick={close}>
             取消
           </button>
           <button
@@ -191,18 +229,4 @@ export function BibTeXImportDialog({ open, papers, onClose, onImport }: BibTeXIm
       </div>
     </Dialog>
   );
-}
-
-/** The paper that already owns this entry's DOI or arXiv id, if any. */
-function findExisting(papers: Readonly<Record<string, Paper>>, entry: BibtexEntry): Paper | null {
-  const registered = Object.values(papers);
-  if (entry.doi !== undefined) {
-    const byDoi = registered.find((paper) => paper.doi === entry.doi);
-    if (byDoi !== undefined) return byDoi;
-  }
-  if (entry.arxivId !== undefined) {
-    const byArxiv = registered.find((paper) => paper.arxivId === entry.arxivId);
-    if (byArxiv !== undefined) return byArxiv;
-  }
-  return null;
 }

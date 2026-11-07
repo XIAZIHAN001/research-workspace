@@ -818,7 +818,13 @@ async function main() {
       `${String(aiRequests.length)} request(s)`,
     );
 
-    const unexpected = consoleIssues.filter((issue) => issue.text.includes('error'));
+    // pdf.js logs this when a reader closes while background text extraction is still
+    // running: the worker is terminated on purpose, and the page extractor says so. It is
+    // benign, and its wording happens to contain "error", which the gate must not count.
+    const benignPdfWarning = /getTextContent - ignoring errors|Worker task was terminated/;
+    const unexpected = consoleIssues.filter(
+      (issue) => issue.text.includes('error') && !benignPdfWarning.test(issue.text),
+    );
     check(
       'console: nothing failed unexpectedly',
       unexpected.length === 0,

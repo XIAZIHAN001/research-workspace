@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { probeProxy } from './offline.mjs';
+import { listenOnLoopback } from '../../server/loopback.mjs';
 
 /**
  * The guard that decides whether an acceptance run is allowed to open a browser.
@@ -13,11 +14,7 @@ async function serving(handler) {
   const server = createServer((request, response) => {
     handler(request, response);
   });
-  await new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  const port = await listenOnLoopback(server);
   return {
     origin: `http://127.0.0.1:${String(port)}/`,
     stop: () =>

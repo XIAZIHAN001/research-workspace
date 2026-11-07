@@ -258,6 +258,8 @@ function parsePaperRegistry(value: unknown): Record<string, Paper> | null {
   if (!isRecord(value)) return null;
   const papers: Record<string, Paper> = {};
   for (const [id, entry] of Object.entries(value)) {
+    // Assigning this key to a plain object mutates its prototype instead of adding a record.
+    if (id === '__proto__') return null;
     const paper = parsePaper(entry);
     // The key must be the paper's own id: two ids for one paper would make the
     // registry ambiguous, and nothing this app writes can produce that.
@@ -285,9 +287,11 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
   }
   if (new Set(projects.map((p) => p.id)).size !== projects.length) return null;
 
+  // `Object.hasOwn`, not a bare index: an id such as `constructor` or `toString` would otherwise
+  // resolve to a property inherited from Object.prototype and look like an existing paper.
   for (const project of projects) {
-    if (papers[project.corePaperId] === undefined) return null;
-    if (project.relatedPaperIds.some((paperId) => papers[paperId] === undefined)) return null;
+    if (!Object.hasOwn(papers, project.corePaperId)) return null;
+    if (project.relatedPaperIds.some((paperId) => !Object.hasOwn(papers, paperId))) return null;
   }
 
   // A payload written before highlights existed has no list at all; anything else that is not a
@@ -301,7 +305,7 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
       if (annotation === null) return null;
       // A highlight without its paper cannot be shown, and nothing this app writes can
       // produce one, so it is treated as corruption rather than silently dropped.
-      if (papers[annotation.paperId] === undefined) return null;
+      if (!Object.hasOwn(papers, annotation.paperId)) return null;
       annotations.push(annotation);
     }
     if (new Set(annotations.map((annotation) => annotation.id)).size !== annotations.length) {
@@ -318,7 +322,7 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
     for (const entry of rawBookmarks) {
       const bookmark = parseBookmark(entry);
       if (bookmark === null) return null;
-      if (papers[bookmark.paperId] === undefined) return null;
+      if (!Object.hasOwn(papers, bookmark.paperId)) return null;
       bookmarks.push(bookmark);
     }
     if (new Set(bookmarks.map((bookmark) => bookmark.id)).size !== bookmarks.length) return null;
@@ -333,7 +337,7 @@ export function parseProjectsState(value: unknown): ProjectsState | null {
     for (const entry of rawGlossary) {
       const glossaryEntry = parseGlossaryEntry(entry);
       if (glossaryEntry === null) return null;
-      if (papers[glossaryEntry.paperId] === undefined) return null;
+      if (!Object.hasOwn(papers, glossaryEntry.paperId)) return null;
       glossary.push(glossaryEntry);
     }
     if (new Set(glossary.map((entry) => entry.id)).size !== glossary.length) return null;

@@ -40,6 +40,7 @@ export const PROVIDER_NAMES = [
 export const ROUTES = {
   health: '/api/ai/health',
   ask: '/api/ai/ask',
+  difficulties: '/api/ai/difficulties',
   knowledge: '/api/ai/knowledge',
 };
 
@@ -188,13 +189,15 @@ function isAllowedBaseUrl(value) {
 }
 
 /**
- * Loopback origins are always acceptable; anything else must be listed explicitly.
+ * Origins accepted by default in browser development.
  *
- * The Origin check defends against a *web page* the reader happens to have open making requests
- * to this service: such a page can only ever present an origin from wherever it was served, and
- * it cannot serve itself from the reader's own loopback address. A configured allowlist exists
- * for the unusual case of an app served from a fixed non-loopback origin.
+ * The Vite dev server is the only page that should be able to talk to the un-tokened service.
+ * Accepting *any* loopback origin would let another local dev server (or an XSS in it) spend
+ * the reader's API credit. Additional origins can still be listed explicitly through
+ * `AI_ALLOWED_ORIGINS`.
  */
+export const DEFAULT_DEV_ORIGINS = ['http://127.0.0.1:1440', 'http://localhost:1440'];
+
 export function isLoopbackOrigin(origin) {
   return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
 }
@@ -211,6 +214,7 @@ export function readConfig(
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value !== '');
+  const allowedOrigins = [...new Set([...DEFAULT_DEV_ORIGINS, ...extraOrigins])];
 
   // An effort that enables thinking would contradict a disabled thinking mode, so the two are
   // resolved here rather than sent upstream as a request that means two different things.
@@ -289,7 +293,7 @@ export function readConfig(
         BUDGET_BOUNDS.tokensPerSession,
       ),
     },
-    allowedOrigins: extraOrigins,
+    allowedOrigins,
     /** Where the mock provider's answers come from; see providers/mock.mjs. */
     logRequests: env.AI_LOG_REQUESTS !== '0',
   };

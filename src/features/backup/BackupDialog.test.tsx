@@ -1,3 +1,4 @@
+import * as backupService from '../../services/backupService';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -123,4 +124,83 @@ describe('BackupDialog', () => {
       expect(screen.getByText(/不能恢复/)).toBeInTheDocument();
     });
   });
+});
+
+it.each([false, true])(
+  'requires reload and disables editing after rollback (complete=%s)',
+  async (rolledBack) => {
+    const execute = vi.spyOn(backupService, 'executeRestore').mockResolvedValueOnce({
+      status: 'failed',
+      stage: 'data',
+      message: 'rollback needs reload',
+      rolledBack,
+      reloadRequired: true,
+      problems: [],
+      pdfsCopied: 0,
+    });
+    const onClose = vi.fn();
+    const onReload = vi.fn();
+    try {
+      render(
+        <BackupDialog
+          open
+          onClose={onClose}
+          projects={stateWithProject('本机的项目')}
+          knowledge={EMPTY_KNOWLEDGE}
+          blobs={blobs}
+          onReload={onReload}
+        />,
+      );
+      await choose(await backupFile('本机的项目'));
+      await userEvent.click(screen.getByRole('button', { name: '校验并完成恢复' }));
+      await screen.findByText('rollback needs reload');
+      expect(screen.getByLabelText('选择备份文件')).toBeDisabled();
+      expect(screen.getByRole('button', { name: /导出备份文件/ })).toBeDisabled();
+      expect(screen.getByRole('button', { name: '校验并完成恢复' })).toBeDisabled();
+      await userEvent.keyboard('{Escape}');
+      expect(onClose).not.toHaveBeenCalled();
+      await userEvent.click(screen.getByRole('button', { name: /重新载入以重试恢复检查/ }));
+      expect(onReload).toHaveBeenCalledOnce();
+    } finally {
+      execute.mockRestore();
+    }
+  },
+);
+
+it('withholds reload and keeps the dialog frozen when durable conflict invalidation failed', async () => {
+  const execute = vi.spyOn(backupService, 'executeRestore').mockResolvedValueOnce({
+    status: 'failed',
+    stage: 'verify',
+    message: 'durable invalidation failed',
+    rolledBack: false,
+    reloadRequired: true,
+    manualRecoveryRequired: true,
+    problems: [],
+    pdfsCopied: 0,
+  });
+  const onClose = vi.fn();
+  const onReload = vi.fn();
+  try {
+    render(
+      <BackupDialog
+        open
+        onClose={onClose}
+        projects={stateWithProject('本机的项目')}
+        knowledge={EMPTY_KNOWLEDGE}
+        blobs={blobs}
+        onReload={onReload}
+      />,
+    );
+    await choose(await backupFile('本机的项目'));
+    await userEvent.click(screen.getByRole('button', { name: '校验并完成恢复' }));
+    await screen.findByText('durable invalidation failed');
+    expect(screen.queryByRole('button', { name: /重新载入/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('选择备份文件')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '校验并完成恢复' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onReload).not.toHaveBeenCalled();
+  } finally {
+    execute.mockRestore();
+  }
 });

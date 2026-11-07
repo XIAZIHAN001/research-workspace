@@ -3,14 +3,30 @@ import type { DocumentPageText } from '../../services/ai/context';
 import type { PDFDocumentProxy } from './pdfjs';
 import { extractPageText } from './paperRetrieval';
 
-/**
- * Extracted text is kept for the life of the window, per file.
- *
- * Re-opening the same paper should not pay the extraction cost again, and the text is small
- * enough (tens of kilobytes for a paper) that a Map is the whole cache. Keyed by SHA-256, so a
- * re-imported copy of the same bytes shares the entry.
- */
+/** Validated SHA keys allow the same bytes reopened through a new proxy to reuse a transcript. */
 const cache = new Map<string, readonly DocumentPageText[]>();
+const MAX_TRANSCRIPTS = 4;
+const MAX_TRANSCRIPT_CHARS = 2_000_000;
+const MAX_TRANSCRIPT_PAGES = 2048;
+let cachedChars = 0;
+
+function remember(key: string, pages: readonly DocumentPageText[]): void {
+  const size = pages.reduce((total, page) => total + page.text.length, 0);
+  if (pages.length > MAX_TRANSCRIPT_PAGES || size > MAX_TRANSCRIPT_CHARS) return;
+  const previous = cache.get(key);
+  if (previous !== undefined) {
+    cachedChars -= previous.reduce((total, page) => total + page.text.length, 0);
+    cache.delete(key);
+  }
+  while (cache.size >= MAX_TRANSCRIPTS || cachedChars + size > MAX_TRANSCRIPT_CHARS) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cachedChars -= cache.get(oldest)?.reduce((total, page) => total + page.text.length, 0) ?? 0;
+    cache.delete(oldest);
+  }
+  cache.set(key, pages);
+  cachedChars += size;
+}
 
 export interface DocumentTextState {
   /** Pages in reading order. Empty until the first extraction finishes. */
@@ -31,9 +47,12 @@ export function useDocumentText(
   doc: PDFDocumentProxy | null,
   key: string | null,
 ): DocumentTextState {
-  const [result, setResult] = useState<{ key: string; pages: readonly DocumentPageText[] } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{
+    doc: PDFDocumentProxy;
+    key: string;
+    pages: readonly DocumentPageText[];
+  } | null>(null);
+
   const cached = key === null || key === '' ? undefined : cache.get(key);
 
   useEffect(() => {
@@ -42,16 +61,18 @@ export function useDocumentText(
     let cancelled = false;
     void (async () => {
       const pages: DocumentPageText[] = [];
+      let failed = false;
       for (let page = 1; page <= doc.numPages; page += 1) {
         const extracted = await extractPageText(doc, page);
         if (cancelled) return;
+        if (extracted === null) failed = true;
         if (extracted !== null && extracted.text.trim() !== '') {
           pages.push({ page, text: extracted.text });
         }
       }
       if (cancelled) return;
-      cache.set(key, pages);
-      setResult({ key, pages });
+      if (!failed) remember(key, pages);
+      setResult({ doc, key, pages });
     })();
 
     return () => {
@@ -61,6 +82,7 @@ export function useDocumentText(
 
   if (doc === null || key === null || key === '') return { pages: [], ready: false };
   if (cached !== undefined) return { pages: cached, ready: true };
-  if (result === null || result.key !== key) return { pages: [], ready: false };
+  if (result === null || result.key !== key || result.doc !== doc)
+    return { pages: [], ready: false };
   return { pages: result.pages, ready: true };
 }
