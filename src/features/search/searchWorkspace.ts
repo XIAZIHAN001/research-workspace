@@ -54,6 +54,47 @@ const GROUP_ORDER: readonly WorkspaceResultKind[] = ['paper', 'note', 'concept',
 interface IndexedRecord {
   readonly text: string;
   readonly title: string;
+  /** Replace raw values once displayed, so the index never retains both representations. */
+  snapshot: RecordSnapshot | RecordPresentation;
+}
+
+type RecordSnapshot =
+  | ({ readonly kind: 'paper' } & Readonly<
+      Pick<Paper, 'id' | 'title' | 'authors' | 'year' | 'doi' | 'arxivId'>
+    >)
+  | {
+      readonly kind: 'note';
+      readonly id: string;
+      readonly title: string;
+      readonly paperId: string;
+      readonly paperTitle: string;
+      readonly page: number;
+      readonly annotationKind: Annotation['kind'];
+      readonly quote: string;
+      readonly snippetText: string;
+    }
+  | {
+      readonly kind: 'concept';
+      readonly id: string;
+      readonly title: string;
+      readonly status: Concept['status'];
+      readonly projectId: string | undefined;
+      readonly summary: string;
+    }
+  | {
+      readonly kind: 'evidence';
+      readonly id: string;
+      readonly title: string;
+      readonly paperId: string;
+      readonly paperTitle: string;
+      readonly page: number;
+      readonly quote: string;
+      readonly conceptId: string;
+      readonly conceptName: string;
+      readonly note: string;
+    };
+
+interface RecordPresentation {
   readonly result: Readonly<WorkspaceSearchResult>;
   readonly snippetText: string;
   readonly snippetLower: string;
@@ -74,21 +115,16 @@ export function createWorkspaceSearchIndex(source: WorkspaceSearchSource): Works
     evidence: [],
   };
   const add = (
-    result: WorkspaceSearchResult,
+    snapshot: RecordSnapshot,
     values: readonly (string | number | undefined)[],
-    snippetText = '',
   ): void => {
-    const clean = snippetText.replace(/\s+/g, ' ').trim();
-    groups[result.kind].push({
-      result,
+    groups[snapshot.kind].push({
+      snapshot,
       text: values
         .filter((value) => value !== undefined)
-        .map(String)
         .join('\n')
         .toLowerCase(),
-      title: result.title.toLowerCase(),
-      snippetText: clean,
-      snippetLower: clean.toLowerCase(),
+      title: snapshot.title.toLowerCase(),
     });
   };
   for (const paper of source.papers) {
@@ -97,64 +133,62 @@ export function createWorkspaceSearchIndex(source: WorkspaceSearchSource): Works
     );
     add(
       {
-        id: `paper:${paper.id}`,
+        id: paper.id,
         kind: 'paper',
         title: paper.title,
-        meta: paperMeta(paper),
-        snippet: identifiers.join(' · '),
-        paperId: paper.id,
+        authors: [...paper.authors],
+        year: paper.year,
+        doi: paper.doi,
+        arxivId: paper.arxivId,
       },
       [paper.title, paper.authors.join(' '), paper.year, identifiers.join(' ')],
     );
   }
   for (const annotation of source.annotations) {
     const note = annotation.note.trim();
-    const quote = annotation.quote.trim();
     add(
       {
-        id: `note:${annotation.id}`,
+        id: annotation.id,
         kind: 'note',
-        title: truncate(note !== '' ? note : quote, 90),
-        meta: `${paperTitles.get(annotation.paperId) ?? '未知论文'} · 第 ${String(annotation.page)} 页 · ${ANNOTATION_KIND_LABEL[annotation.kind]}`,
-        snippet: '',
+        title: truncate(note !== '' ? note : annotation.quote, 90),
+        paperTitle: paperTitles.get(annotation.paperId) ?? '未知论文',
+        annotationKind: annotation.kind,
         paperId: annotation.paperId,
         page: annotation.page,
         quote: annotation.quote,
+        snippetText: note !== '' ? annotation.quote : '',
       },
       [annotation.note, annotation.quote],
-      note !== '' ? quote : '',
     );
   }
   for (const concept of source.concepts) {
     add(
       {
-        id: `concept:${concept.id}`,
+        id: concept.id,
         kind: 'concept',
         title: concept.name,
-        meta: concept.status === 'suggested' ? '概念 · 待确认' : '概念',
-        snippet: '',
-        conceptId: concept.id,
+        status: concept.status,
         projectId: concept.projectIds[0],
+        summary: concept.summary,
       },
       [concept.name, concept.aliases.join(' '), concept.summary],
-      concept.summary,
     );
   }
   for (const entry of source.evidence) {
     add(
       {
-        id: `evidence:${entry.id}`,
+        id: entry.id,
         kind: 'evidence',
         title: truncate(entry.quote, 90),
-        meta: `${conceptNames.get(entry.conceptId) ?? '未知概念'} · ${paperTitles.get(entry.paperId) ?? '未知论文'} · 第 ${String(entry.page)} 页`,
-        snippet: '',
+        conceptName: conceptNames.get(entry.conceptId) ?? '未知概念',
+        paperTitle: paperTitles.get(entry.paperId) ?? '未知论文',
         paperId: entry.paperId,
         page: entry.page,
         quote: entry.quote,
         conceptId: entry.conceptId,
+        note: entry.note,
       },
       [entry.quote, entry.note],
-      entry.note.trim(),
     );
   }
   return { groups };
@@ -189,10 +223,14 @@ export function searchWorkspaceIndex(
       kind,
       title: SEARCH_GROUP_TITLES[kind],
       total,
-      results: selected.map((record) => ({
-        ...record.result,
-        snippet: kind === 'paper' ? record.result.snippet : snippetAround(record, tokens),
-      })),
+      results: selected.map((record) => {
+        const presentation = materializeRecord(record);
+        return {
+          ...presentation.result,
+          snippet:
+            kind === 'paper' ? presentation.result.snippet : snippetAround(presentation, tokens),
+        };
+      }),
     });
   }
   return groups;
@@ -216,7 +254,71 @@ function queryTokens(rawQuery: string): string[] {
     .filter((token) => token !== '');
 }
 
-function paperMeta(paper: Paper): string {
+/** Only the bounded visible rows need metadata and normalized snippet strings. */
+function materializeRecord(record: IndexedRecord): RecordPresentation {
+  const snapshot = record.snapshot;
+  if ('result' in snapshot) return snapshot;
+  let result: WorkspaceSearchResult;
+  let rawSnippet = '';
+  switch (snapshot.kind) {
+    case 'paper':
+      result = {
+        id: `paper:${snapshot.id}`,
+        kind: 'paper',
+        title: snapshot.title,
+        meta: paperMeta(snapshot),
+        snippet: [snapshot.doi, snapshot.arxivId]
+          .filter((value) => value !== undefined)
+          .join(' · '),
+        paperId: snapshot.id,
+      };
+      break;
+    case 'note':
+      result = {
+        id: `note:${snapshot.id}`,
+        kind: 'note',
+        title: snapshot.title,
+        meta: `${snapshot.paperTitle} · 第 ${String(snapshot.page)} 页 · ${ANNOTATION_KIND_LABEL[snapshot.annotationKind]}`,
+        snippet: '',
+        paperId: snapshot.paperId,
+        page: snapshot.page,
+        quote: snapshot.quote,
+      };
+      rawSnippet = snapshot.snippetText;
+      break;
+    case 'concept':
+      result = {
+        id: `concept:${snapshot.id}`,
+        kind: 'concept',
+        title: snapshot.title,
+        meta: snapshot.status === 'suggested' ? '概念 · 待确认' : '概念',
+        snippet: '',
+        conceptId: snapshot.id,
+        projectId: snapshot.projectId,
+      };
+      rawSnippet = snapshot.summary;
+      break;
+    case 'evidence':
+      result = {
+        id: `evidence:${snapshot.id}`,
+        kind: 'evidence',
+        title: snapshot.title,
+        meta: `${snapshot.conceptName} · ${snapshot.paperTitle} · 第 ${String(snapshot.page)} 页`,
+        snippet: '',
+        paperId: snapshot.paperId,
+        page: snapshot.page,
+        quote: snapshot.quote,
+        conceptId: snapshot.conceptId,
+      };
+      rawSnippet = snapshot.note;
+      break;
+  }
+  const clean = rawSnippet.replace(/\s+/g, ' ').trim();
+  record.snapshot = { result, snippetText: clean, snippetLower: clean.toLowerCase() };
+  return record.snapshot;
+}
+
+function paperMeta(paper: Pick<Paper, 'authors' | 'year' | 'doi'>): string {
   const parts: string[] = [];
   const credit = authorCredit(paper);
   if (credit !== null) parts.push(credit);
@@ -231,7 +333,7 @@ function truncate(text: string, length: number): string {
 }
 
 /** A window of text around the first matching token, so the result shows *why* it matched. */
-function snippetAround(record: IndexedRecord, tokens: readonly string[], radius = 54): string {
+function snippetAround(record: RecordPresentation, tokens: readonly string[], radius = 54): string {
   const clean = record.snippetText;
   if (clean === '') return '';
   const lower = record.snippetLower;
