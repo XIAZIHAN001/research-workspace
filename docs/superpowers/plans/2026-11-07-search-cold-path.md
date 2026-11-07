@@ -22,27 +22,31 @@
 
 Files: `scripts/performance/run.mjs`, a small comparison helper and its tests, and `docs/performance/README.md`.
 
-- [ ] Add a failing CLI regression proving incompatible provenance is currently accepted.
-- [ ] Add focused tests for mismatched or missing schema, checksums, runtime/CPU metadata and sample counts; allow different source commits, timestamps, timings and implementation modes.
-- [ ] Validate provenance before full result comparison and before writing a candidate report; include the helper in the harness fingerprint.
-- [ ] Run focused tests and independent review, then create a checkpoint commit.
+- [x] Add a failing CLI regression proving incompatible provenance is currently accepted.
+- [x] Add focused tests for mismatched or missing schema, checksums, runtime/CPU metadata and sample counts; allow different source commits, timestamps, timings and implementation modes.
+- [x] Validate provenance before full result comparison and before writing a candidate report; include the helper in the harness fingerprint.
+- [x] Run focused tests and independent review, then create a checkpoint commit.
 
 ## Stage 2: Lower search cold-path cost
 
 Files: `src/features/search/searchWorkspace.ts`, `GlobalSearchDialog.tsx` and their existing tests.
 
-- [ ] Add failing tests for unnecessary presentation work, blank dialog construction, repeated queries, source replacement and mutable-source isolation.
-- [ ] Defer presentation work to bounded displayed candidates using index-owned value snapshots. Retain matching and ranking behavior.
-- [ ] Preserve lazy index reuse within each dialog source lifetime and release it when that lifetime ends.
-- [ ] Run the existing golden-result snapshots, focused structural tests and independent differential checks.
-- [ ] Commit the candidate and rerun baseline and candidate sequentially with the same finalized harness, dependencies, environment and sample settings. Require all 34 workload outputs to match; report both cold and warm distributions and memory costs.
+- [x] Add failing tests for unnecessary presentation work, blank dialog construction, repeated queries, source replacement and mutable-source isolation.
+- [x] Defer presentation work to bounded displayed candidates using index-owned value snapshots. Retain matching and ranking behavior.
+- [x] Preserve lazy index reuse within each dialog source lifetime and release it when that lifetime ends.
+- [x] Run the existing golden-result snapshots, focused structural tests and independent differential checks.
+- [x] Commit the candidate and rerun baseline and candidate sequentially with the same finalized harness, dependencies, environment and sample settings. Require all 34 workload outputs to match; report both cold and warm distributions and memory costs.
 
 ## Release gate
 
-- [ ] Run `npm run check` and `npm run build` on the final candidate; report every failure or skipped stage.
-- [ ] Obtain an independent review of the combined diff and measurements. Fix important findings and recheck.
-- [ ] Record results, tradeoffs and deferred work in a dated checkpoint report.
-- [ ] Recheck the remote head before publishing the current construction branch. Preserve prior commits and confirm published trees match tested trees.
+- [x] Run `npm run check` and `npm run build` on the final candidate; report every failure or skipped stage.
+- [x] Obtain an independent review of the combined diff and measurements. Fix important findings and recheck.
+- [x] Record results, tradeoffs and deferred work in a dated checkpoint report.
+- [x] Recheck the remote head before publishing the current construction branch. Preserve prior commits and confirm published trees match tested trees.
 - [ ] Verify the new CI run against the published source, keeping Linux browser and Windows/macOS native acceptance distinct.
 
 Full PDF component virtualization and persistence architecture changes remain outside this bounded checkpoint. macOS availability is assessed separately from platform implementation: source-level portability does not prove native builds, installable artifacts or real Mac runtime acceptance.
+
+## Checkpoint outcome
+
+Code, correctness review and same-environment measurements are complete. See `docs/performance/checkpoint-2026-11-07.md` for cold/warm timing, lifecycle memory regressions, reproducible artifacts and platform limits. Publication and exact-source CI status are recorded in the PR.
