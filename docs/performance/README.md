@@ -6,7 +6,7 @@ version (no installs, network, PDF files, credentials, or paid AI required):
 ```sh
 node scripts/performance/run.mjs --out /tmp/baseline.json
 node scripts/performance/run.mjs --ref <candidate-commit> --out /tmp/candidate.json --compare /tmp/baseline.json
-npx vitest run scripts/performance/metrics.test.mjs
+npx vitest run scripts/performance/metrics.test.mjs scripts/performance/compare.test.mjs
 ```
 
 The default baseline is the immutable commit
@@ -38,9 +38,28 @@ must be available, and the output parent directory must already exist.
   virtualization, scroll event dispatch or geometry acceptance.
 
 Full output objects and SHA-256 checksums are recorded, including result order,
-metadata, snippets, offsets, totals and conflict paper order. `--compare` requires the
-same ordered workload keys and deep-equal results; it fails before writing an output
-report if any differ. Every timed operation's final result is also checked against the
+metadata, snippets, offsets, totals and conflict paper order. `--compare` first validates
+the baseline's provenance before extracting source, compiling or running workloads. Both
+reports must use schema 1 and have identical, valid values for:
+
+- `harnessChecksum` (including the runner, workloads, metrics and comparison helper)
+- `packageLockChecksum`
+- `environment.node`, `environment.platform`, `environment.arch`, `environment.cpu`
+  and `environment.logicalCpus`
+- `warmups` and `samples`
+
+Missing or invalid provenance is rejected, even if both reports omit the same field.
+There is no override for differing provenance. Existing schema-1 reports remain supported
+when all these fields are present and match. The checked-in historical baseline and
+candidate can still be compared to each other, but their older harness checksum will not
+match this runner: regenerate both reports with the current harness before a new timing
+comparison. Do not edit historical report metadata to make it match.
+
+After measurement, `--compare` also requires the same ordered workload keys and deep-equal
+full results. Either check fails before writing an output report. Source commit and
+recording timestamp may differ, as may measured timings, heap deltas, construction costs
+and implementation modes such as `scan-repeat` versus `indexed-warm`. Every timed
+operation's final result is also checked against the
 revision's compatibility API outside the timed region. These synthetic cases supplement,
 not replace, the production regression suite.
 
@@ -69,6 +88,11 @@ memory. GC behavior, object lifetimes, JIT compilation and other machine activit
 produce negative or noisy deltas. Do not interpret these numbers as a memory bound, leak
 test, browser/WebView2 measurement or user-facing latency guarantee. Repeat on a quiet
 machine with identical dependencies and sample counts before drawing conclusions.
+Matching recorded provenance is necessary, but does not establish identical physical
+machines or machine load. CPU model and logical CPU count are the recorded hardware
+checks; background activity, CPU frequency and other unrecorded runtime conditions can
+still affect measurements. A lockfile checksum does not verify the installed dependencies;
+use a clean lockfile-based install for both runs.
 
 ## Recorded baseline
 

@@ -4,7 +4,8 @@ import { tmpdir, cpus, platform, arch } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
-import { checksum, compareResults } from './metrics.mjs';
+import { checksum } from './metrics.mjs';
+import { compareReports, validateComparisonProvenance } from './compare.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
@@ -22,6 +23,31 @@ const warmups = Number(option('--warmups', '2'));
 const samples = Number(option('--samples', '7'));
 if (!Number.isInteger(warmups) || warmups < 0 || !Number.isInteger(samples) || samples < 1)
   throw new Error('Invalid sample counts');
+const report = {
+  schema: 1,
+  harnessChecksum: checksum(
+    ['run.mjs', 'workloads.mjs', 'metrics.mjs', 'compare.mjs'].map((name) =>
+      readFileSync(join(root, 'scripts/performance', name), 'utf8'),
+    ),
+  ),
+  packageLockChecksum: checksum(readFileSync(join(root, 'package-lock.json'), 'utf8')),
+  commit,
+  recordedAt: new Date().toISOString(),
+  environment: {
+    node: process.version,
+    platform: platform(),
+    arch: arch(),
+    cpu: cpus()[0]?.model,
+    logicalCpus: cpus().length,
+  },
+  warmups,
+  samples,
+  memoryNote:
+    'Heap deltas are before/after forced GC with output retained; they are noisy whole-process observations, not peak allocation, browser memory, or a leak test. Timings exclude GC and correctness hashing.',
+};
+const baselineFile = option('--compare', null);
+const baseline = baselineFile ? JSON.parse(readFileSync(resolve(baselineFile), 'utf8')) : null;
+if (baselineFile) validateComparisonProvenance(baseline, report);
 const temporary = mkdtempSync(join(tmpdir(), 'research-performance-'));
 try {
   const snapshot = join(temporary, 'source');
@@ -53,33 +79,9 @@ try {
     },
   );
   const records = JSON.parse(raw);
-  const report = {
-    schema: 1,
-    harnessChecksum: checksum(
-      ['run.mjs', 'workloads.mjs', 'metrics.mjs'].map((name) =>
-        readFileSync(join(root, 'scripts/performance', name), 'utf8'),
-      ),
-    ),
-    packageLockChecksum: checksum(readFileSync(join(root, 'package-lock.json'), 'utf8')),
-    commit,
-    recordedAt: new Date().toISOString(),
-    environment: {
-      node: process.version,
-      platform: platform(),
-      arch: arch(),
-      cpu: cpus()[0]?.model,
-      logicalCpus: cpus().length,
-    },
-    warmups,
-    samples,
-    memoryNote:
-      'Heap deltas are before/after forced GC with output retained; they are noisy whole-process observations, not peak allocation, browser memory, or a leak test. Timings exclude GC and correctness hashing.',
-    records,
-  };
-  const baselineFile = option('--compare', null);
+  report.records = records;
   if (baselineFile) {
-    const baseline = JSON.parse(readFileSync(resolve(baselineFile), 'utf8'));
-    compareResults(baseline.records, records);
+    compareReports(baseline, report);
     report.comparedWith = { commit: baseline.commit, exactResultsEqual: true };
   }
   writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
