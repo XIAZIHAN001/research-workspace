@@ -173,7 +173,8 @@ it('rejects incomparable provenance without writing a CLI report', () => {
       [
         'scripts/performance/run.mjs',
         '--ref',
-        baseline.commit,
+        // The candidate must resolve even in CI's depth-1 checkout.
+        'HEAD',
         '--warmups',
         '0',
         '--samples',
@@ -188,7 +189,7 @@ it('rejects incomparable provenance without writing a CLI report', () => {
     expect(run.error).toBeUndefined();
     expect(run.signal).toBeNull();
     expect(run.status).not.toBe(0);
-    expect(run.stderr).toContain('harnessChecksum');
+    expect(run.stderr).toContain('Incomparable benchmark reports: harnessChecksum differs');
     expect(existsSync(outputPath)).toBe(false);
   } finally {
     rmSync(temporary, { recursive: true, force: true });
